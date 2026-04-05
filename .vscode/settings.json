@@ -1,0 +1,6 @@
+{
+  "yaml.schemaStore.enable": false,
+  "yaml.schemas": {
+    "./docs/schemas/meta.json": "data/**/meta.yaml"
+  }
+}

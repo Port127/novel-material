@@ -1,0 +1,22 @@
+# scenes_manifest.yaml schema
+# 场景清单（压缩视图，用于快速浏览和检索预筛选）
+# 路径: data/novels/{material_id}/scenes_manifest.yaml
+
+material_id: nm_xxx
+total_scenes: 907
+built_at: "2026-04-05T12:00:00Z"
+
+scenes:
+  - id: ch01_s01
+    chapter: "第1章 喝酒不开车"
+    title: "应酬酒桌上的陈总"
+    summary: "35岁的陈汉升在酒店参加应酬..."   # 截断到50字
+    scene_type: [宴会]
+    conflict: [利益]
+    tension: 2
+    pacing: 蓄力
+    plot_function: [铺垫]
+    characters: [陈汉升]                        # 仅角色名列表
+    emotion: [平静, 压抑]
+    reader_effect: [会心一笑]
+    plot_threads: ["陈汉升重生秘密"]             # 线索名（如有）

@@ -1,0 +1,5 @@
+# 人物索引（自动汇总，只读）
+# 从各小说 characters.yaml 自动聚合
+# 当前无已处理人物体系，待 /novel-characters 执行后自动生成
+
+entries: []

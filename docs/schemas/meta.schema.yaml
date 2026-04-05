@@ -1,0 +1,15 @@
+# meta.yaml schema
+# 每部小说的元数据文件
+# 路径: data/novels/{material_id}/meta.yaml
+
+material_id: nm_{type}_{YYYYMMDD}_{random4}
+type: novel
+name: "《书名》"
+author: 作者名
+source: source.txt
+added: YYYY-MM-DD
+status: raw          # raw → outlined → tagged → complete
+                     # raw:      仅有原文
+                     # outlined: 大纲+人物已完成
+                     # tagged:   场景拆分+标签已完成
+                     # complete: 全部索引已就绪

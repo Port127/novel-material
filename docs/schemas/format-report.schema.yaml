@@ -1,0 +1,46 @@
+# format_report.yaml schema
+# 源文件格式化报告
+# 路径: data/novels/{material_id}/format_report.yaml
+
+material_id: nm_xxx
+formatted_at: "2026-04-05T12:00:00Z"
+
+# 章节结构
+chapters:
+  total_detected: 1070
+  title_pattern: "第{N}章 {name}"     # 识别到的主要章节标题模式
+  missing: [233, 567]                  # 缺失的章节号
+  duplicates:
+    - chapter: 445
+      duplicate_of: 444
+      similarity: 0.95
+  short_chapters:                      # 异常短章（< 200字）
+    - chapter: 789
+      char_count: 120
+      note: "疑似截断"
+
+# 修复统计
+fixes:
+  traditional_to_simplified: 1203      # 繁→简转换字数
+  quote_fixed: 87                      # 引号修复处数
+  ads_removed: 15                      # 广告段落删除数
+  garbled_cleaned: 3                   # 乱码清理处数
+  chapter_title_normalized: 1070       # 章节名标准化数
+  whitespace_fixed: 500                # 空白修复处数
+  punctuation_fixed: 200               # 标点修复处数
+
+# 需人工确认的问题
+suspicious:
+  - chapter: 233
+    issue: "章节缺失，从232直接跳到234"
+    severity: high                     # high / medium / low
+  - chapter: 789
+    issue: "章节字数仅120字，疑似截断"
+    severity: medium
+
+# 前后对比
+diff_summary:
+  original_chars: 3500000              # 原始总字数
+  cleaned_chars: 3480000               # 清洗后总字数
+  removed_chars: 20000                 # 删除字数
+  modified_lines: 2500                 # 修改行数

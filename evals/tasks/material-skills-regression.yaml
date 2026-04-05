@@ -1,0 +1,136 @@
+# Material Skills Regression Tasks
+# Skill 功能回归测试任务集
+
+tasks:
+
+  - task_id: material-add-001
+    skill: material-add
+    description: 添加小说素材到素材库
+    input:
+      path: "data/novels/test-sample.txt"
+      type: novel
+    expected_output:
+      folder_created: true
+      meta_yaml_exists: true
+      source_txt_exists: true
+      scenes_dir_exists: true
+      index_updated: true
+      id_format: "nm_novel_*"
+      meta_fields: ["material_id", "type", "name", "author", "source", "added", "status"]
+      status: raw
+    grader: deterministic
+
+  - task_id: novel-outline-001
+    skill: novel-outline
+    description: 为入库小说生成故事大纲
+    input:
+      material_id: nm_novel_test_xxxx
+    expected_output:
+      outline_yaml_exists: true
+      outline_fields: ["material_id", "premise", "structure", "foreshadowing"]
+      structure_has_acts: true
+      status_updated: outlined
+    grader: deterministic
+
+  - task_id: novel-characters-001
+    skill: novel-characters
+    description: 为入库小说生成人物体系
+    input:
+      material_id: nm_novel_test_xxxx
+    expected_output:
+      characters_yaml_exists: true
+      roster_not_empty: true
+      relations_not_empty: true
+      arc_fields: ["stage", "state", "chapter"]
+    grader: deterministic
+
+  - task_id: novel-tags-001
+    skill: novel-tags
+    description: 为入库小说生成整体标签
+    input:
+      material_id: nm_novel_test_xxxx
+    expected_output:
+      tags_yaml_exists: true
+      tags_fields: ["material_id", "genre", "theme", "tone", "narrative", "style", "good_for"]
+      tags_from_dictionary: true
+      status_updated: tagged
+    grader: deterministic
+
+  - task_id: novel-scenes-001
+    skill: novel-scenes
+    description: 按章节范围拆分场景并打多维标签
+    input:
+      material_id: nm_novel_test_xxxx
+      chapter_range: "1-3"
+    expected_output:
+      scene_files_created: true
+      scene_id_format: "ch*_s*"
+      scene_has_6_layers: true
+      tag_layers: ["content", "people", "emotion", "structure", "craft", "setting"]
+      tags_from_dictionary: true
+      summary_length: "50-100字"
+    grader: deterministic
+
+  - task_id: material-search-001
+    skill: material-search
+    description: 关键词检索素材
+    input:
+      keyword: "修真"
+    expected_output:
+      results_returned: true
+      result_count: "1-10"
+      format_valid: true
+    grader: deterministic
+
+  - task_id: material-search-scene-001
+    skill: material-search-scene
+    description: 按多维标签检索场景（自然语言）
+    input:
+      query: "恋人之间吵架的场景"
+    expected_output:
+      tags_parsed: true
+      parsed_includes: ["relationship: 恋人", "scene_type: 争吵"]
+      scenes_returned: true
+      format_valid: true
+    grader: rubric
+
+  - task_id: material-search-scene-002
+    skill: material-search-scene
+    description: 按多维标签检索场景（复合需求）
+    input:
+      query: "弱者反杀强者的对决"
+    expected_output:
+      tags_parsed: true
+      parsed_includes: ["power_dynamic: 翻转", "scene_type: 对决"]
+      scenes_returned: true
+      format_valid: true
+    grader: rubric
+
+  - task_id: tag-add-001
+    skill: tag-add
+    description: 向标签字典新增标签值
+    input:
+      dimension: "scene_type"
+      value: "决斗"
+    expected_output:
+      tags_yaml_updated: true
+      value_in_dimension: true
+      no_duplicate: true
+    grader: deterministic
+
+  - task_id: tag-merge-001
+    skill: tag-merge
+    description: 合并同义标签值
+    input:
+      dimension: "scene_type"
+      old_value: "决斗"
+      new_value: "对决"
+    expected_output:
+      tags_yaml_updated: true
+      old_value_removed: true
+      new_value_present: true
+      scenes_updated: true
+    grader: deterministic
+
+# 运行方式:
+# python evals/run.py --tasks material-skills-regression.yaml

@@ -1,0 +1,114 @@
+# stats.yaml schema
+# 全书统计数据（由 novel-stats 生成）
+# 路径: data/novels/{material_id}/stats.yaml
+# 配套可视化报告: data/novels/{material_id}/stats.md
+
+material_id: nm_xxx
+generated_at: "2026-04-05T12:00:00Z"
+
+# 基础数据
+basics:
+  total_chapters: 1070
+  total_scenes: 907
+  avg_scenes_per_chapter: 0.85
+
+# 场景类型分布
+scene_type_distribution:
+  - type: 日常
+    count: 203
+    ratio: 0.224
+  - type: 争吵
+    count: 87
+    ratio: 0.096
+
+# 冲突类型分布
+conflict_distribution:
+  - type: 情感
+    count: 250
+    ratio: 0.276
+
+# 转折统计
+turning_points:
+  total: 45
+  scenes:
+    - scene: ch89_s01
+      chapter: 89
+      title: "场景标题"
+      type: 转折
+  rhythm:
+    avg_interval: 23.7
+    min_interval: 3
+    max_interval: 89
+    assessment: "前密后疏，第二幕转折最为密集"
+
+# 紧张度曲线（按章）
+tension_curve:
+  - chapter: 1
+    avg_tension: 2.0
+    max_tension: 2
+  - chapter: 2
+    avg_tension: 2.5
+    max_tension: 3
+
+# 节奏分布
+pacing_distribution:
+  加速: 150
+  减速: 120
+  爆发: 80
+  喘息: 200
+  蓄力: 250
+  骤停: 15
+pacing_pattern: "蓄力→爆发→喘息循环，约每50章一个大周期"
+
+# 伏笔统计
+foreshadowing:
+  total_plants: 45
+  total_payoffs: 38
+  unresolved: 7
+  avg_span: 234
+  longest:
+    plant_scene: ch03_s02
+    payoff_scene: ch956_s01
+    span: 953
+  shortest:
+    plant_scene: ch100_s01
+    payoff_scene: ch103_s02
+    span: 3
+  unresolved_list:
+    - scene: ch45_s01
+      description: "未回收的伏笔描述"
+
+# 人物统计
+character_stats:
+  total_named: 85
+  top_appearances:
+    - name: 陈汉升
+      scenes: 780
+      ratio: 0.86
+    - name: 萧容鱼
+      scenes: 234
+      ratio: 0.26
+  moment_distribution:
+    性格展示: 320
+    道德抉择: 45
+    成长顿悟: 28
+
+# 情感统计
+emotion_stats:
+  dominant: [紧张, 温馨, 平静]
+  reader_effect_distribution:
+    会心一笑: 189
+    揪心: 78
+    催泪: 45
+    爽感: 120
+
+# 技法统计
+craft_stats:
+  technique_distribution:
+    对比: 150
+    闪回: 80
+    象征隐喻: 45
+  dialogue_distribution:
+    争吵: 87
+    试探: 120
+    告白: 35

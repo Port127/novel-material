@@ -1,0 +1,46 @@
+# outline.yaml schema
+# 故事大纲：全书骨架 + 节奏 + 转折点
+# 路径: data/novels/{material_id}/outline.yaml
+
+material_id: nm_xxx
+
+# 全书概要
+premise: "一句话核心前提"
+theme: [主题1, 主题2]
+tone: [整体基调]
+
+# 结构骨架（按幕/卷拆分）
+structure:
+  - act: "第一幕"
+    title: "幕名（可选）"
+    chapters: [1, 2, 3]           # 对应章节号范围
+    arc: "本幕主要叙事弧线"
+    key_event: "核心事件"
+    turning_point: "转折点描述"
+    pacing_note: "节奏特征（如：慢启动渐加速）"
+
+# 时间线（多线叙事时使用）
+timelines:
+  - name: "主线名称"
+    description: "简述"
+    chapters: [1, 3, 5]           # 涉及的章节
+
+# 伏笔追踪
+foreshadowing:
+  - id: f001
+    plant_chapter: 3              # 埋设章节
+    plant_description: "伏笔描述"
+    payoff_chapter: 28            # 回收章节
+    payoff_description: "回收描述"
+
+# 节奏曲线标注（可选）
+pacing_curve:
+  - chapter: 1
+    tension: 2
+    note: "日常切入"
+  - chapter: 12
+    tension: 4
+    note: "中点反转"
+  - chapter: 32
+    tension: 5
+    note: "最终高潮"

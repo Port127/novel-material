@@ -1,0 +1,5 @@
+# 剧情索引（自动汇总，只读）
+# 从各小说 scenes/*.yaml 的 plot_stage / plot_function 标签自动聚合
+# 当前无已处理场景，待 /novel-scenes 执行后自动生成
+
+entries: []

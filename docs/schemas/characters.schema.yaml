@@ -1,0 +1,48 @@
+# characters.yaml schema
+# 人物名册 + 关系网 + 人物弧线
+# 路径: data/novels/{material_id}/characters.yaml
+
+material_id: nm_xxx
+
+# 人物名册
+roster:
+  - name: "角色名"
+    aliases: [别名, 外号]
+    role: protagonist              # protagonist / antagonist / supporting / minor
+    first_appearance: "第X章"
+    description: "核心特征一句话"
+    traits: [性格特征1, 性格特征2]
+    moral_spectrum: 正义             # 正义 / 灰色 / 黑暗 / 亦正亦邪
+
+    # 人物弧线
+    arc:
+      - stage: "起点"
+        state: "人物在故事开始时的状态"
+        chapter: 1
+      - stage: "转变"
+        state: "关键变化描述"
+        trigger: "触发转变的事件"
+        chapter: 15
+      - stage: "终点"
+        state: "人物在故事结束时的状态"
+        chapter: 36
+
+# 关系网
+relations:
+  - from: "角色A"
+    to: "角色B"
+    type: 师徒                      # 恋人/师徒/对手/父子/挚友/同门/君臣/主仆/...
+    description: "关系描述"
+    evolution:                      # 关系变化轨迹（可选）
+      - stage: "初期"
+        state: "信任依赖"
+        chapter: 5
+      - stage: "破裂"
+        state: "背叛决裂"
+        chapter: 26
+
+# 阵营/势力（可选）
+factions:
+  - name: "势力名称"
+    members: [角色1, 角色2]
+    stance: "立场描述"

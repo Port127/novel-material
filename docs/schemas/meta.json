@@ -1,0 +1,44 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Novel Material Meta",
+  "description": "小说素材元数据",
+  "type": "object",
+  "required": ["material_id", "type", "name", "author", "source", "added", "status"],
+  "properties": {
+    "material_id": {
+      "type": "string",
+      "pattern": "^nm_\\w+_\\d{8}_\\w{4}$"
+    },
+    "type": {
+      "type": "string",
+      "enum": ["novel", "image", "reference"]
+    },
+    "name": {
+      "type": "string"
+    },
+    "author": {
+      "type": "string"
+    },
+    "source": {
+      "type": "string"
+    },
+    "added": {
+      "type": "string",
+      "format": "date"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["raw", "outlined", "tagged", "complete"]
+    },
+    "chapters": {
+      "type": "integer"
+    },
+    "pipeline": {
+      "mode": {
+        "type": "string",
+        "enum": ["full", "quick", "continue", "stage"]
+      }
+    }
+  },
+  "additionalProperties": false
+}
