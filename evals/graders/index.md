@@ -20,5 +20,5 @@ grader: deterministic  # 或 rubric
 
 ## Related Docs
 
-- [docs/evals/index.md](../docs/evals/index.md)
+- [docs/evals/index.md](../../docs/evals/index.md)
 - [../tasks/material-skills-regression.yaml](../tasks/material-skills-regression.yaml)

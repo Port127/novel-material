@@ -24,5 +24,13 @@ materials:
     name: "《我真没想重生啊》"
     author: 柳岸花又明
     folder: data/novels/nm_novel_20260405_zhbk
-    status: complete
+    status: refined
+    added: 2026-04-05
+
+  - id: nm_novel_20260405_s4t1
+    type: novel
+    name: "《三体1》地球往事"
+    author: 刘慈欣
+    folder: data/novels/nm_novel_20260405_s4t1
+    status: raw
     added: 2026-04-05

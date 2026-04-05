@@ -38,22 +38,28 @@
                | Data Store (YAML)         |
                +---------------------------+
                | data/index.yaml           |  总索引（路由层）
-               | data/plot_index.yaml      |  剧情索引（自动汇总）
-               | data/character_index.yaml |  人物索引（自动汇总）
+               | data/plot_index.yaml      |  剧情索引（planned）
+               | data/character_index.yaml |  人物索引（planned）
                | data/tags.yaml            |  标签维度字典
                +---------------------------+
                               |
                               v
-               +---------------------------+
-               | Per-Novel Store           |
-               +---------------------------+
-               | novels/{id}/meta.yaml     |  元数据
-               | novels/{id}/source.txt    |  原文
-               | novels/{id}/outline.yaml  |  故事大纲
-               | novels/{id}/characters.yaml| 人物体系
-               | novels/{id}/tags.yaml     |  小说级标签
-               | novels/{id}/scenes/*.yaml |  场景（含多维标签）
-               +---------------------------+
+               +-------------------------------+
+               | Per-Novel Store               |
+               +-------------------------------+
+               | novels/{id}/meta.yaml         |  元数据
+               | novels/{id}/source.txt        |  清洗后原文
+               | novels/{id}/source.raw.txt    |  原始备份
+               | novels/{id}/format_report.yaml|  清洗报告
+               | novels/{id}/outline.yaml      |  大纲（+精调）
+               | novels/{id}/characters.yaml   |  人物（+精调）
+               | novels/{id}/tags.yaml         |  标签（+精调）
+               | novels/{id}/scenes/*.yaml     |  场景
+               | novels/{id}/scenes_index.yaml |  倒排索引
+               | novels/{id}/scenes_manifest.yaml |  场景清单
+               | novels/{id}/stats.yaml        |  统计数据
+               | novels/{id}/stats.md          |  可视化报告
+               +-------------------------------+
 ```
 
 ## Layers
@@ -67,8 +73,8 @@
 || `novel-pipeline` | 流程路由 + 阶段门禁 | 模式 + 参数 | 执行报告 |
 
 支持的流程模式：
-- `full`: material-add → outline → characters → tags → scenes
-- `quick`: material-add → outline → characters
+- `full`: material-add → source-format → outline → characters → tags → scenes → build-index → refine → novel-stats
+- `quick`: material-add → source-format → outline → characters
 - `continue`: 从中断点恢复
 - `stage`: 执行指定阶段
 
@@ -97,8 +103,8 @@ Skills 作为具体操作执行者：
 || 文件 | 职责 |
 ||------|------|
 || `data/index.yaml` | 素材路由表（material_id → 文件夹路径） |
-|| `data/plot_index.yaml` | 剧情索引（从 scenes 自动汇总） |
-|| `data/character_index.yaml` | 人物索引（从 characters 自动汇总） |
+|| `data/plot_index.yaml` | 剧情索引（planned，从 scenes 自动汇总） |
+|| `data/character_index.yaml` | 人物索引（planned，从 characters 自动汇总） |
 || `data/tags.yaml` | 标签维度字典（定义合法维度和值） |
 
 ### Layer 3 — Per-Novel Store
@@ -177,7 +183,7 @@ novel-stats           refined: 生成统计报告+可视化
 (auto-aggregate)      refined: 汇总到全局索引
 ```
 
-注意：`novel-scenes` 可按章节范围分批执行，不必一次处理全书。
+注意：`novel-scenes` 支持 `all` 模式自动循环分批处理全书，也可手动指定章节范围。
 
 ## Package Invariants
 
@@ -187,7 +193,7 @@ novel-stats           refined: 生成统计报告+可视化
 4. **ID 唯一性** — `nm_{type}_{YYYYMMDD}_{random4}` 格式
 5. **标签从字典选取** — 场景标签和小说标签均取自 `data/tags.yaml`
 6. **每部小说自治** — 独立文件夹，全局索引为汇总视图
-7. **渐进处理** — 场景拆分可分批，状态字段追踪进度
+7. **渐进处理** — 场景拆分自动循环分批（all 模式），状态字段追踪进度，支持中断恢复
 8. **索引优先检索** — 检索场景时优先查 `scenes_index.yaml`，避免遍历全部场景文件
 9. **后处理不读原文** — `build-index`、`refine`、`novel-stats` 只读场景 YAML 数据
 

@@ -5,7 +5,7 @@
 || 维度 | 权重 | 当前得分 | 目标 | 备注 |
 ||------|------|----------|------|------|
 || 文档覆盖 | 20% | TBD | 80% | AGENTS.md + docs/ 结构已完成 |
-|| Skill 可用性 | 30% | TBD | 90% | 9 个 skills 已定义 |
+|| Skill 可用性 | 30% | TBD | 90% | 14 个 skills 已定义 |
 || 检索准确性 | 25% | TBD | 85% | 待 Eval 验证 |
 || 索引一致性 | 15% | TBD | 95% | 待验证 |
 || 标签规范度 | 10% | TBD | 90% | tags.yaml 已定义 |
@@ -42,10 +42,15 @@
 ### Skills（活跃）
 
 - [x] material-add
+- [x] source-format
 - [x] novel-outline
 - [x] novel-characters
 - [x] novel-tags
 - [x] novel-scenes
+- [x] build-index
+- [x] refine
+- [x] novel-stats
+- [x] novel-pipeline
 - [x] material-search
 - [x] material-search-scene
 - [x] tag-add

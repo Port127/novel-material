@@ -54,7 +54,7 @@
 重新执行对应 skill：
 - `/novel-outline [素材ID]`
 - `/novel-characters [素材ID]`
-- `/novel-scenes [素材ID] [章节范围]`
+- `/novel-scenes [素材ID] [章节范围 | all]`
 
 ### 标签混乱
 

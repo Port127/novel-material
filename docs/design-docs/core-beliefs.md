@@ -14,7 +14,7 @@ Agent 运行时无需外部依赖（聊天记录、Google Docs 等）。
 
 ## Skills 作为唯一入口
 
-9 个活跃 skills 封装所有操作逻辑：
+14 个活跃 skills 封装所有操作逻辑（完整列表见 [AGENTS.md](../../AGENTS.md)）：
 - 用户不直接操作 YAML 文件
 - Skills 保证操作一致性和验证
 - Skills 提供清晰的输入输出契约
@@ -66,6 +66,15 @@ Agent 从小开始，跟随链接而非一次性加载所有内容。
 - 改进计划可追溯
 
 反模式：编造覆盖率百分比
+
+## 索引优先检索
+
+检索场景时三级回退：
+1. 倒排索引 `scenes_index.yaml` — O(1) 命中
+2. 场景清单 `scenes_manifest.yaml` — 内存筛选
+3. 遍历 `scenes/*.yaml` — 最后手段
+
+反模式：每次检索遍历全部场景文件
 
 ## Related Docs
 

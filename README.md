@@ -20,14 +20,20 @@
 
 ## 使用方式
 
-在 Claude Code 中打开本目录，使用 `/material-*` 系列命令。
+在 Cursor / Claude Code 中打开本目录，使用命令操作。完整命令列表见 [AGENTS.md](AGENTS.md)。
+
+常用命令：
+- `/novel-pipeline full [路径]` — 一键完整处理
+- `/material-search [关键词]` — 关键词检索
+- `/material-search-scene [需求描述]` — 多维标签检索
 
 ## 目录说明
 
 | 目录 | 内容 |
 |------|------|
-| `data/novels/` | 小说素材原文 |
-| `data/images/` | 图片素材 |
-| `data/references/` | 参考资料 |
-| `data/chunks/` | 分段索引 |
-| `data/*.yaml` | 各类索引文件 |
+| `data/novels/` | 每部小说独立文件夹（原文+大纲+人物+场景+索引） |
+| `data/index.yaml` | 素材路由表 |
+| `data/tags.yaml` | 标签维度字典（6 层 19 维） |
+| `docs/` | 设计文档、schema 模板、计划 |
+| `scripts/` | 固化处理脚本 |
+| `.claude/skills/` | Agent skill 定义 |

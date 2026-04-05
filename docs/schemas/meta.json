@@ -28,7 +28,7 @@
     },
     "status": {
       "type": "string",
-      "enum": ["raw", "outlined", "tagged", "complete"]
+      "enum": ["raw", "outlined", "tagged", "complete", "refined"]
     },
     "chapters": {
       "type": "integer"

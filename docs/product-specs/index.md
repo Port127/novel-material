@@ -6,11 +6,16 @@
 
 || Skill | 用途 | 状态 |
 ||-------|------|------|
+|| novel-pipeline | 一键流程编排（full/quick/continue/stage） | 活跃 |
 || material-add | 素材入库 | 活跃 |
+|| source-format | 格式清洗（繁简/广告/引号/章节名） | 活跃 |
 || novel-outline | 故事大纲（结构+节奏+伏笔） | 活跃 |
 || novel-characters | 人物体系（名册+关系+弧线） | 活跃 |
 || novel-tags | 小说级多维标签 | 活跃 |
-|| novel-scenes | 场景拆分+多维标签 | 活跃 |
+|| novel-scenes | 场景拆分+多维标签（支持 all 模式） | 活跃 |
+|| build-index | 构建倒排索引+场景清单 | 活跃 |
+|| refine | 精调大纲/人物/标签 | 活跃 |
+|| novel-stats | 统计报告+可视化 | 活跃 |
 || material-search | 关键词检索 | 活跃 |
 || material-search-scene | 多维标签检索 | 活跃 |
 || tag-add | 新增标签值 | 活跃 |

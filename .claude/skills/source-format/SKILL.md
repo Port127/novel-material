@@ -10,6 +10,8 @@ arguments: material_id
 
 对已入库的小说原文 `source.txt` 进行格式清洗，输出清洗后的文本和格式报告。
 
+**优先使用固化脚本** `scripts/source_format.py`，仅在脚本不满足需求时动态补充。
+
 ## 前置检查
 
 1. 读取 `data/index.yaml`，确认 material_id 存在且 status 为 `raw`
@@ -21,57 +23,51 @@ arguments: material_id
 
 将 `source.txt` 复制为 `source.raw.txt`（仅首次执行）。
 
-### 2. 章节结构分析
+### 2. 运行固化脚本
 
-扫描全文，提取章节标题行：
-- 识别章节标题模式（"第X章"/"第X回"/"Chapter X"/纯数字等）
-- 统计总章节数
-- 检测章节号连续性，标记缺失章节
-- 检测重复章节（标题重复或内容高度相似）
-- 检测空章/短章（字数 < 200 的异常章节）
+```bash
+python scripts/source_format.py \
+  data/novels/{material_id}/source.txt \
+  data/novels/{material_id}/source.txt \
+  data/novels/{material_id}/format_report.yaml
+```
 
-### 3. 章节名标准化
+脚本覆盖的清洗操作：
 
-统一章节标题格式为 `第{N}章 {章节名}`：
-- "第一章" → "第1章"
-- "Chapter 1" → "第1章"
-- 去除多余空格、特殊字符
-- 保留原始章节名（副标题部分不改）
+| 功能 | 实现方式 |
+|------|----------|
+| 章节结构分析（缺章/重复/短章） | 正则匹配 + 连续性检测 |
+| 章节名标准化（中文数字→阿拉伯、格式统一） | 中文数字转换 + 正则替换 |
+| 繁简转换 | `opencc` 库（需安装） |
+| 引号修复（双重引号、直引号→弯引号） | 字符串替换 + 奇偶配对 |
+| 广告/乱码清理 | 预置正则模式列表 |
+| 标点统一（省略号、破折号） | 正则替换 |
+| 空白格式标准化（多空行、行首空白） | 逐行处理 |
 
-### 4. 繁简转换
+首次运行前安装依赖：`pip install -r scripts/requirements.txt`
 
-全文繁体中文 → 简体中文。保留人名、地名中的繁体用法除外（如有特殊需求由用户指定）。
+### 3. 检查脚本输出
 
-### 5. 引号修复
+读取脚本的 stdout 摘要和生成的 `format_report.yaml`，检查：
 
-- 检测不配对引号（单引号、双引号）
-- 修复 `""` 双重引号 → `"`
-- 统一引号风格为中文引号 `「」`/`""` （以原文主流风格为准）
+- **opencc 是否可用**：如 stdout 含 `WARNING: opencc 未安装`，提示用户安装
+- **SUSPICIOUS 项**：逐条检查是否需要人工确认
+- **异常情况**：脚本未覆盖的特殊格式问题
 
-### 6. 广告/乱码清理
+### 4. 动态补充处理（仅在需要时）
 
-移除常见干扰内容：
-- 网站广告语（"本书来自xx网"、"更多好书请访问"等）
-- 求票/求订阅语句
-- 乱码字符（非 CJK/ASCII 的异常字节）
-- 连续重复的分隔符行
+如果脚本输出中发现以下情况，**才**动态生成补充脚本：
 
-### 7. 格式统一
+| 场景 | 处理方式 |
+|------|----------|
+| 原文使用非标准章节格式（如自定义分卷、番外） | 动态生成针对性正则 |
+| 特殊引号风格（如日式「」混用） | 动态调整引号规则 |
+| 脚本未识别的广告模式 | 追加广告正则并重跑 |
+| 编码异常（非 UTF-8 源文件） | 动态检测编码并转换 |
 
-- 段落间距标准化（空行统一为单空行）
-- 去除行首/行尾多余空白
-- 统一省略号为 `……`（6个点）
-- 统一破折号为 `——`（2个）
+**如果脚本输出正常、无异常，跳过此步骤。**
 
-### 8. 生成格式报告
-
-输出 `format_report.yaml`，参照 `docs/schemas/format-report.schema.yaml`。
-
-### 9. 覆写 source.txt
-
-用清洗后的文本覆写 `source.txt`。
-
-### 10. 更新 meta.yaml
+### 5. 更新 meta.yaml
 
 在 `meta.yaml` 中增加 `formatted: true` 和 `format_date` 字段。
 
@@ -107,9 +103,11 @@ arguments: material_id
 - 原始文件始终保留备份 `source.raw.txt`
 - 不修改实际内容（剧情、对话等），只做格式层面清洗
 - 遇到无法自动判断的问题标记为 suspicious，交由用户确认
-- 大文件分段处理，避免 token 溢出
+- 固化脚本处理大文件无 token 限制，agent 只需读取脚本的输出摘要
 
 ## References
 
+- [scripts/source_format.py](../../../scripts/source_format.py) — 固化清洗脚本
+- [scripts/requirements.txt](../../../scripts/requirements.txt) — 脚本依赖
 - [format-report.schema.yaml](../../../docs/schemas/format-report.schema.yaml)
 - [AGENTS.md](../../AGENTS.md)

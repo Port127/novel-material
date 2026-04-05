@@ -15,4 +15,4 @@
 ## Related Docs
 
 - [../DESIGN.md](../DESIGN.md)
-- [../AGENTS.md](../../AGENTS.md)
+- [../../AGENTS.md](../../AGENTS.md)
