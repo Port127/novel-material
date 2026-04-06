@@ -30,6 +30,10 @@
       "type": "string",
       "enum": ["raw", "outlined", "tagged", "complete", "refined"]
     },
+    "format_date": {
+      "type": "string",
+      "format": "date"
+    },
     "chapters": {
       "type": "integer"
     },

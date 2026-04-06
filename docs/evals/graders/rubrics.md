@@ -137,7 +137,67 @@ rubric:
 
 Pass 阈值：平均分 ≥ 4
 
+## Unknown 逃逸口
+
+当信息不足以做出判断时，grader 应返回 `Unknown` 而非猜测。
+
+```yaml
+escape_clause:
+  condition: "场景内容缺失、标签无法解析、需求描述模糊"
+  action: "返回 Unknown，不计入 pass/fail"
+  report: "在结果中标记 'requires_human_review'"
+```
+
+**何时使用 Unknown：**
+- 输入数据不完整（场景文件损坏）
+- 需求描述歧义（多种合理解释）
+- 标签字典不包含匹配值
+- 检索结果格式异常
+
+**何时不应使用 Unknown：**
+- Agent 明确失败
+- 格式违反契约
+- 可明确判断的 pass/fail
+
+## 人工校准流程
+
+每个新增 rubric 或修改评分维度后，需进行人工校准：
+
+### 校准步骤
+
+1. **准备样本**：收集 5-10 个典型案例（pass + fail + edge）
+2. **独立评分**：两位领域专家独立评分
+3. **对比差异**：记录评分差异 >1 的维度
+4. **调整标准**：修订 rubric 直至专家评分一致率 ≥90%
+5. **记录 baseline**：写入校准结果到 `docs/evals/results/calibration/`
+
+### 校准记录格式
+
+```yaml
+calibration:
+  rubric_name: "material-search-scene"
+  date: "2026-04-06"
+  samples: 7
+  experts: ["expert_a", "expert_b"]
+  agreement_rate: 0.91
+  adjusted_dimensions:
+    - name: tag_match
+      old_criteria: "返回场景符合标签条件"
+      new_criteria: "返回场景完全符合所有显式标签条件"
+```
+
+### 校准触发条件
+
+| 事件 | 需校准 |
+|------|--------|
+| 新增 rubric | 必须 |
+| 修改评分维度 | 必须 |
+| 新增 skill | 必须 |
+| LLM 版本升级 | 建议校准 |
+| 季度例行检查 | 建议 |
+
 ## 相关文档
 
 - [../index.md](../index.md)
 - [deterministic.md](deterministic.md)
+- [../results/calibration/](../results/calibration/)

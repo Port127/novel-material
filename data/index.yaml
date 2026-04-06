@@ -34,3 +34,11 @@ materials:
     folder: data/novels/nm_novel_20260405_s4t1
     status: raw
     added: 2026-04-05
+
+  - id: nm_novel_20260406_774D
+    type: novel
+    name: "《大王饶命》"
+    author: 会说话的肘子
+    folder: data/novels/nm_novel_20260406_774D
+    status: raw
+    added: 2026-04-06

@@ -89,6 +89,15 @@ AD_PATTERNS = [
     re.compile(r'.*喜欢本书请.{0,10}推荐.*'),
     re.compile(r'.*本章未完.*点击下一页.*'),
     re.compile(r'.*正在手打中.*请稍等.*'),
+    re.compile(r'（请记住.*?网站，观看最快的章节更新）'),
+    re.compile(r'请记住.*?网站'),
+    re.compile(r'更新不易，请?记得分享，速读谷，rg,看最新.*?章节！'),
+    re.compile(r'\(本章完\)'),
+    re.compile(r'\(ps：.*?\)'),
+    re.compile(r'\(PS：.*?\)'),
+    re.compile(r'ps：求.*?月票'),
+    re.compile(r'PS：求.*?月票'),
+    re.compile(r'\n求.*?月票.*'),
     re.compile(r'^\s*[─━═—_\-~·.。]{10,}\s*$'),  # 重复分隔符行
 ]
 
