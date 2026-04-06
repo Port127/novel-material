@@ -1,7 +1,9 @@
 # stats.yaml schema
 # 全书统计数据（由 novel-stats 生成）
 # 路径: data/novels/{material_id}/stats.yaml
-# 配套可视化报告: data/novels/{material_id}/stats.md
+# 配套可视化报告:
+#   data/novels/{material_id}/stats.md   — 轻量 Mermaid 版
+#   data/novels/{material_id}/stats.html — 交互版（ECharts + 关系图谱）
 
 material_id: nm_xxx
 generated_at: "2026-04-05T12:00:00Z"
@@ -112,3 +114,16 @@ craft_stats:
     争吵: 87
     试探: 120
     告白: 35
+
+# 人物关系图谱数据（用于 stats.html 可视化）
+relationship_graph:
+  nodes:
+    - name: "角色名"
+      role: protagonist           # protagonist/antagonist/supporting/minor
+      faction: "所属阵营"
+      scenes: 780                 # 出场场景数
+  edges:
+    - from: "角色A"
+      to: "角色B"
+      type: "关系类型"
+      weight: 3                   # 关系强度（互动场景数）

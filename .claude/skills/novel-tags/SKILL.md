@@ -31,6 +31,7 @@ arguments: material_id
 - **tone**：基调
 - **narrative**：叙事结构、视角、时间处理
 - **style**：文笔风格、写作长板
+- **tropes**：叙事套路/常见模式（从 `data/tags.yaml` 的 `tropes` 维度选取）
 - **good_for**：适合参考的方向
 
 ### 2. 写入 tags.yaml

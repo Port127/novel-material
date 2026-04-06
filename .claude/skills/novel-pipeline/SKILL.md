@@ -8,7 +8,7 @@ arguments: mode, params
 
 # 任务
 
-一键触发素材处理流程，串联 `material-add → source-format → novel-outline → novel-characters → novel-tags → novel-scenes → build-index → refine → novel-stats`。
+一键触发素材处理流程，串联 `material-add → source-format → novel-outline → novel-worldbuilding → novel-characters → novel-tags → novel-scenes → build-index → refine → novel-stats`。
 
 ## 角色定位
 
@@ -22,10 +22,10 @@ arguments: mode, params
 
 | 模式 | 触发词 | 流程 | 参数 |
 |------|--------|------|------|
-| `full` | 一键处理、完整流程、全自动 | material-add → source-format → outline → characters → tags → scenes → build-index → refine → novel-stats | `[路径]` |
-| `quick` | 快速处理、仅骨架 | material-add → source-format → outline → characters | `[路径]` |
+| `full` | 一键处理、完整流程、全自动 | material-add → source-format → outline → worldbuilding → characters → tags → scenes → build-index → refine → novel-stats | `[路径]` |
+| `quick` | 快速处理、仅骨架 | material-add → source-format → outline → worldbuilding → characters | `[路径]` |
 | `continue` | 继续、恢复、接着处理 | 从上次中断点恢复 | `[material_id]` |
-| `stage` | 大纲、人物、标签、场景、格式化、索引、精调、统计 | 仅执行指定阶段 | `[material_id] [阶段名]` |
+| `stage` | 大纲、世界观、人物、标签、场景、格式化、索引、精调、统计 | 仅执行指定阶段 | `[material_id] [阶段名]` |
 
 **MUST 先输出「流程预览 + 确认请求」，仅在用户明确确认后开始执行。**
 
@@ -44,12 +44,13 @@ INIT → ROUTE_IDENTIFIED → PREVIEW_READY → AWAIT_CONFIRM → EXECUTING → 
 | 1 | `material-add` | material-add | 文件路径 | material_id |
 | 2 | `source-format` | source-format | material_id | 清洗后 source.txt + format_report.yaml |
 | 3 | `outline` | novel-outline | material_id | outline.yaml |
-| 4 | `characters` | novel-characters | material_id | characters.yaml |
-| 5 | `tags` | novel-tags | material_id | tags.yaml |
-| 6 | `scenes` | novel-scenes | material_id + 章节范围 | scenes/*.yaml |
-| 7 | `build-index` | build-index | material_id | scenes_index.yaml + scenes_manifest.yaml |
-| 8 | `refine` | refine | material_id | 精调后的 outline/characters/tags |
-| 9 | `novel-stats` | novel-stats | material_id | stats.yaml + stats.md |
+| 4 | `worldbuilding` | novel-worldbuilding | material_id | worldbuilding.yaml |
+| 5 | `characters` | novel-characters | material_id | characters.yaml |
+| 6 | `tags` | novel-tags | material_id | tags.yaml |
+| 7 | `scenes` | novel-scenes | material_id + 章节范围 | scenes/*.yaml |
+| 8 | `build-index` | build-index | material_id | scenes_index.yaml + scenes_manifest.yaml |
+| 9 | `refine` | refine | material_id | 精调后的 outline/characters/tags/worldbuilding |
+| 10 | `novel-stats` | novel-stats | material_id | stats.yaml + stats.md + stats.html |
 
 ## 执行步骤
 
@@ -72,15 +73,16 @@ INIT → ROUTE_IDENTIFIED → PREVIEW_READY → AWAIT_CONFIRM → EXECUTING → 
 素材：{路径 或 material_id}
 
 将执行以下阶段：
-  1. material-add     → 入库（状态：raw）
-  2. source-format    → 格式清洗（状态：raw）
-  3. novel-outline    → 生成大纲（状态：outlined）
-  4. novel-characters → 生成人物体系（状态：outlined）
-  5. novel-tags       → 生成小说标签（状态：tagged）
-  6. novel-scenes     → 拆分场景（状态：complete）
-  7. build-index      → 构建索引（状态：complete）
-  8. refine           → 精调大纲/人物/标签（状态：refined）
-  9. novel-stats      → 生成统计报告（状态：refined）
+  1. material-add        → 入库（状态：raw）
+  2. source-format       → 格式清洗（状态：raw）
+  3. novel-outline       → 生成大纲（状态：outlined）
+  4. novel-worldbuilding → 提取世界观设定（状态：outlined）
+  5. novel-characters    → 生成人物体系（状态：outlined）
+  6. novel-tags          → 生成小说标签（状态：tagged）
+  7. novel-scenes        → 拆分场景（状态：complete）
+  8. build-index         → 构建索引（状态：complete）
+  9. refine              → 精调大纲/人物/标签（状态：refined）
+  10. novel-stats        → 生成统计报告+交互图表（状态：refined）
 
 预计耗时：{估算}
   ⚠️ 场景拆分将自动循环分批执行（批次大小根据章节长度自适应）
@@ -96,16 +98,15 @@ INIT → ROUTE_IDENTIFIED → PREVIEW_READY → AWAIT_CONFIRM → EXECUTING → 
 
 ### 4. 执行阶段
 
-按序调用子 skill，每个阶段：
+用户确认后，按序自动调用子 skill，**不再逐阶段请求确认**：
 
 1. 调用对应子 skill（读取其 SKILL.md 并执行）
 2. 等待子 skill 完成
 3. 收集输出结果
 4. 根据结果决定下一步：
-   - 成功 → 进入下一阶段
-   - 需确认 → 停留，请求用户确认
-   - 阻塞 → 停止，回显阻塞原因
-   - 失败 → 进入 FAILED，请求用户决定
+   - 成功 → **立即进入下一阶段**（不停顿）
+   - 有告警（如 source-format 的 suspicious 项）→ 记录到报告中，**继续执行**
+   - 失败 → 进入 FAILED，输出失败原因，请求用户决定
 
 ### 5. 场景处理
 
@@ -132,6 +133,7 @@ INIT → ROUTE_IDENTIFIED → PREVIEW_READY → AWAIT_CONFIRM → EXECUTING → 
   - source.raw.txt         (原始备份)
   - format_report.yaml     (格式清洗报告)
   - outline.yaml           (故事大纲，已精调)
+  - worldbuilding.yaml     (世界观设定)
   - characters.yaml        (人物体系，已精调)
   - tags.yaml              (小说标签，已精调)
   - scenes/*.yaml          ({N} 个场景)
@@ -139,6 +141,7 @@ INIT → ROUTE_IDENTIFIED → PREVIEW_READY → AWAIT_CONFIRM → EXECUTING → 
   - scenes_manifest.yaml   (场景清单)
   - stats.yaml             (统计数据)
   - stats.md               (可视化报告)
+  - stats.html             (交互报告+关系图谱)
 
 状态：refined
 
@@ -155,7 +158,9 @@ INIT → ROUTE_IDENTIFIED → PREVIEW_READY → AWAIT_CONFIRM → EXECUTING → 
 2. 检查 `status` 和 `pipeline` 字段：
    - `raw` + 未格式化 → 从 `source-format` 阶段恢复
    - `raw` + 已格式化 → 从 `outline` 阶段恢复
-   - `outlined` → 从 `tags` 阶段恢复
+   - `outlined` + 无 worldbuilding → 从 `worldbuilding` 阶段恢复
+   - `outlined` + 有 worldbuilding + 无 characters → 从 `characters` 阶段恢复
+   - `outlined` + 有 worldbuilding + 有 characters → 从 `tags` 阶段恢复
    - `tagged` → 从 `scenes` 阶段恢复（检查已处理章节）
    - `complete` + 未构建索引 → 从 `build-index` 阶段恢复
    - `complete` + 未精调 → 从 `refine` 阶段恢复
@@ -170,7 +175,7 @@ INIT → ROUTE_IDENTIFIED → PREVIEW_READY → AWAIT_CONFIRM → EXECUTING → 
 pipeline:
   mode: full
   current_stage: scenes
-  stages_completed: [material-add, source-format, outline, characters, tags]
+  stages_completed: [material-add, source-format, outline, worldbuilding, characters, tags]
   scenes_processed: [1-5, 6-10]
   formatted: true
   index_built: false
@@ -181,12 +186,14 @@ pipeline:
 
 ## 硬约束
 
-- MUST 先 preview 再执行
-- MUST 写操作前用户确认
+- MUST 先 preview 再执行（仅在流程启动前确认一次）
+- MUST 用户确认后，所有阶段自动连续执行，不再逐阶段请求确认
 - MUST 每阶段记录状态
 - MUST 场景拆分通过自动循环分批执行（all 模式）
 - MUST 支持中断恢复
+- MUST source-format 的 suspicious 项记录在报告中，不阻塞流程
 - NEVER 跳过阶段门禁
+- NEVER 在 full/quick 模式用户确认后再次停下等待确认
 
 ## 示例
 
@@ -200,29 +207,32 @@ novel-pipeline:
   模式：full
   素材：/path/to/novel.txt
   
-  将执行 9 个阶段...
+  将执行 10 个阶段...
   
   确认开始执行？
 
 用户: yes
 
 novel-pipeline:
-  [1/9] 执行 material-add...
+  [1/10] 执行 material-add...
   ✅ 入库完成，ID: nm_novel_20260405_x1y2
   
-  [2/9] 执行 source-format...
+  [2/10] 执行 source-format...
   ✅ 格式清洗完成（修复 87 处引号，标准化 1070 个章节名）
   
-  [3/9] 执行 novel-outline...
+  [3/10] 执行 novel-outline...
   ✅ 大纲已生成
   
-  [4/9] 执行 novel-characters...
+  [4/10] 执行 novel-worldbuilding...
+  ✅ 世界观设定已提取
+  
+  [5/10] 执行 novel-characters...
   ✅ 人物体系已生成
   
-  [5/9] 执行 novel-tags...
+  [6/10] 执行 novel-tags...
   ✅ 小说标签已生成
   
-  [6/9] 执行 novel-scenes (all 模式)...
+  [7/10] 执行 novel-scenes (all 模式)...
   [批次 1/214] 第 1-5 章完成，15 个场景
   [批次 2/214] 第 6-10 章完成，12 个场景
   ...
@@ -230,14 +240,14 @@ novel-pipeline:
   📊 覆盖检查：1070 章全部覆盖 ✓
   ✅ 全书场景拆分完成（3842 个场景）
   
-  [7/9] 执行 build-index...
+  [8/10] 执行 build-index...
   ✅ 索引构建完成（倒排索引 + 场景清单）
   
-  [8/9] 执行 refine...
+  [9/10] 执行 refine...
   ✅ 精调完成（伏笔 +15、节奏曲线 +1070 点、弧线细化 8 角色）
   
-  [9/9] 执行 novel-stats...
-  ✅ 统计报告已生成
+  [10/10] 执行 novel-stats...
+  ✅ 统计报告已生成（stats.yaml + stats.md + stats.html）
   
   ✅ 处理流程全部完成
 ```

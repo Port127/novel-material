@@ -21,7 +21,8 @@ arguments: material_id
 ## 输出文件
 
 - `data/novels/{material_id}/stats.yaml` — 原始统计数据
-- `data/novels/{material_id}/stats.md` — 可视化报告（Markdown + Mermaid 图表）
+- `data/novels/{material_id}/stats.md` — 轻量可视化报告（Markdown + Mermaid 图表）
+- `data/novels/{material_id}/stats.html` — 交互版报告（ECharts 图表 + 人物关系图谱）
 
 ## 执行步骤
 
@@ -175,7 +176,29 @@ emotion_stats:
     爽感: 120
 ```
 
-### 11. 生成可视化报告 stats.md
+### 11. 采集人物关系图谱数据
+
+从 `characters.yaml` 提取关系网数据，构建图谱：
+
+```yaml
+relationship_graph:
+  nodes:
+    - name: "角色名"
+      role: protagonist
+      faction: "所属阵营"
+      scenes: 780
+  edges:
+    - from: "角色A"
+      to: "角色B"
+      type: "恋人"
+      weight: 3
+```
+
+- **nodes**: 从 `characters.yaml` 的 `roster` 提取，附加出场统计
+- **edges**: 从 `characters.yaml` 的 `relations` 提取，weight 为共同出场场景数
+- 阵营信息从 `factions` 提取，用于图谱节点着色
+
+### 12. 生成可视化报告 stats.md（轻量版）
 
 使用 Mermaid 图表：
 
@@ -211,12 +234,37 @@ emotion_stats:
 (Mermaid xychart-beta 堆叠图)
 ```
 
-### 12. 写入文件
+### 13. 生成交互版报告 stats.html
 
-- `stats.yaml` — 所有原始统计数据
-- `stats.md` — 可视化报告
+单文件 HTML，内嵌 ECharts CDN，包含以下交互图表：
 
-### 13. 更新 meta.yaml
+**必须包含的图表**：
+1. **紧张度曲线** — 折线图（支持缩放、tooltip 显示章节详情）
+2. **场景类型分布** — 饼图/环形图
+3. **冲突类型分布** — 柱状图
+4. **转折节奏** — 散点图（x=章节号，y=转折类型）
+5. **人物出场频率 Top 15** — 横向柱状图
+6. **情感分布** — 雷达图或饼图
+7. **节奏模式** — 堆叠面积图（按章节段）
+8. **人物关系图谱** — ECharts Graph 力导向图
+   - 节点 = 人物（大小按出场频率，颜色按阵营）
+   - 边 = 关系（标签显示关系类型，粗细按 weight）
+   - 支持拖拽、缩放、hover 显示详情
+
+**HTML 模板要求**：
+- 单文件，所有 CSS/JS 内联（ECharts 通过 CDN 引入）
+- 响应式布局，适配桌面和平板
+- 深色/浅色主题自适应
+- 顶部导航栏快速跳转各图表
+- 参考 `docs/templates/stats-template.html` 模板（如存在）
+
+### 14. 写入文件
+
+- `stats.yaml` — 所有原始统计数据（含 relationship_graph）
+- `stats.md` — 轻量可视化报告（Mermaid）
+- `stats.html` — 交互版报告（ECharts + 关系图谱）
+
+### 15. 更新 meta.yaml
 
 ```yaml
 pipeline:
@@ -240,6 +288,7 @@ pipeline:
 
 📄 数据文件：data/novels/{id}/stats.yaml
 📄 可视化报告：data/novels/{id}/stats.md
+📄 交互报告：data/novels/{id}/stats.html
 ```
 
 ## 注意事项
@@ -249,6 +298,8 @@ pipeline:
 - 统计数据必须基于实际标签，不编造
 - Mermaid 图表注意数据量控制（紧张度曲线可按10章采样）
 - stats.yaml 保留完整数据，stats.md 做适当精简
+- stats.html 使用 ECharts CDN（https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js）
+- 人物关系图谱数据来源：characters.yaml（roster + relations + factions）+ 场景出场统计
 
 ## References
 

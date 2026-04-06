@@ -9,6 +9,8 @@ roster:
   - name: "角色名"
     aliases: [别名, 外号]
     role: protagonist              # protagonist / antagonist / supporting / minor
+    archetype: 英雄                # 角色原型（从 tags.yaml archetype 选取）
+    narrative_function: 推动主线    # 叙事功能（从 tags.yaml narrative_function 选取）
     first_appearance: "第X章"
     description: "核心特征一句话"
     traits: [性格特征1, 性格特征2]
@@ -41,8 +43,12 @@ relations:
         state: "背叛决裂"
         chapter: 26
 
-# 阵营/势力（可选）
+# 阵营/势力（人物视角：关注谁属于哪个阵营）
+# 与 worldbuilding.yaml 的 factions_world 互补（后者关注势力本身的设定）
 factions:
   - name: "势力名称"
     members: [角色1, 角色2]
+    leader: "角色名"
     stance: "立场描述"
+    internal_hierarchy: ["层级1", "层级2"]
+    rival_factions: ["对立势力"]

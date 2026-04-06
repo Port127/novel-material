@@ -8,7 +8,7 @@ arguments: material_id
 
 # 任务
 
-在所有 scenes 完成后，利用场景级标签数据精调 `outline.yaml`、`characters.yaml`、`tags.yaml`。
+在所有 scenes 完成后，利用场景级标签数据精调 `outline.yaml`、`worldbuilding.yaml`、`characters.yaml`、`tags.yaml`。
 
 **不读原文，只读 scene YAML 数据。**
 
@@ -17,6 +17,7 @@ arguments: material_id
 1. 读取 `data/novels/{material_id}/meta.yaml`，确认 status 为 `complete` 或 `tagged`
 2. 确认 `scenes/` 目录下有场景文件
 3. 确认 `outline.yaml`、`characters.yaml`、`tags.yaml` 均已存在
+4. 如存在 `worldbuilding.yaml`，一并纳入精调
 
 如果存在 `scenes_manifest.yaml`，优先读取 manifest 而非逐个读 scene 文件。
 
@@ -117,14 +118,22 @@ evolution:
 
 为每个角色补充 `appearance_count` 和 `active_chapters` 范围。
 
-### 4. 精调 tags.yaml（小说级）
+### 4. 精调 worldbuilding.yaml（如存在）
+
+基于场景数据补充世界观信息：
+- 从场景的 `setting` 标签统计高频地点 → 补充 `geography.regions`
+- 从场景中出现的势力/组织信息 → 校准 `factions_world` 的关系和实力
+- 从角色能力描写 → 补充 `power_system` 的等级和能力细节
+- 新增的信息标记 `source: refine`
+
+### 5. 精调 tags.yaml（小说级）
 
 基于场景标签的统计分布，补充或校准小说级标签：
 - 主导 scene_type 分布 → 校准小说的 `dominant_scene_types`
 - 主导 emotion 分布 → 校准 `emotional_profile`
 - technique 分布 → 校准 `craft_profile`
 
-### 5. 标记精调完成
+### 6. 标记精调完成
 
 在 `meta.yaml` 中记录精调状态：
 
@@ -137,6 +146,7 @@ pipeline:
     pacing_points_added: 1070
     character_arcs_enriched: 8
     relations_enriched: 12
+    worldbuilding_enriched: true
 ```
 
 ## 输出格式
@@ -157,6 +167,10 @@ pipeline:
     - 关系演变：{n} 条关系链
     - 出场统计：已标注
 
+  🗺️ worldbuilding.yaml
+    - 地理补充：{n} 个地点
+    - 势力校准：{n} 处
+
   🏷️ tags.yaml
     - 标签校准：{n} 个维度
 
@@ -176,6 +190,7 @@ pipeline:
 ## References
 
 - [outline.schema.yaml](../../../docs/schemas/outline.schema.yaml)
+- [worldbuilding.schema.yaml](../../../docs/schemas/worldbuilding.schema.yaml)
 - [characters.schema.yaml](../../../docs/schemas/characters.schema.yaml)
 - [novel-tags.schema.yaml](../../../docs/schemas/novel-tags.schema.yaml)
 - [AGENTS.md](../../AGENTS.md)

@@ -1,0 +1,61 @@
+# worldbuilding.yaml schema
+# 世界观设定：力量体系 + 地理 + 势力 + 背景知识
+# 路径: data/novels/{material_id}/worldbuilding.yaml
+
+material_id: nm_xxx
+
+# 力量体系
+power_system:
+  name: "力量体系名称"
+  type: "灵气/魔法/斗气/科技/超能力/..."
+  ranks: ["等级1", "等级2", "等级3"]
+  rules: ["核心规则1", "核心规则2"]
+  limitations: ["限制条件"]
+  special_abilities:
+    - name: "能力名称"
+      description: "简要描述"
+      users: ["使用者"]
+
+# 地理空间
+geography:
+  spatial_hierarchy: "空间层级描述（如：九天十地、三界六道）"
+  regions:
+    - name: "地区名"
+      type: "大陆/城市/秘境/星球/国度/..."
+      description: "简要描述"
+      sub_locations: ["子地点1", "子地点2"]
+      connections: ["相邻/可达的地区"]
+      significance: "剧情中的重要性"
+
+# 势力与组织（世界观视角：关注势力本身的设定）
+factions_world:
+  - name: "势力/组织名"
+    type: "宗门/王朝/公司/家族/军团/教会/..."
+    territory: "势力范围"
+    stance: "立场/定位"
+    power_level: "实力等级"
+    key_figures: ["重要人物"]
+    relationships_with:
+      - faction: "其他势力名"
+        relation: "敌对/同盟/从属/竞争/..."
+
+# 背景知识
+lore:
+  history:
+    - event: "历史事件名"
+      description: "简要描述"
+      impact: "对当前剧情的影响"
+  culture: ["文化要素描述"]
+  species: ["种族/物种"]
+  artifacts:
+    - name: "道具/神器名"
+      description: "简要描述"
+      owner: "持有者（可选）"
+  terminology:
+    - term: "专有名词"
+      meaning: "含义"
+
+# 世界规则
+rules_of_world:
+  - category: "类别（社会规则/自然法则/禁忌/...）"
+    rules: ["规则描述"]

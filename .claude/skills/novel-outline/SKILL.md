@@ -66,7 +66,7 @@ arguments: material_id
 📁 文件：data/novels/{id}/outline.yaml
 
 后续步骤：
-  /novel-characters {id}    # 生成人物体系
+  /novel-worldbuilding {id}  # 提取世界观设定
 ```
 
 ## 注意事项
