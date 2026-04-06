@@ -117,6 +117,12 @@ INIT → ROUTE_IDENTIFIED → PREVIEW_READY → AWAIT_CONFIRM → EXECUTING → 
 - 全书完成后自动执行覆盖检查
 - 中断后可通过 `continue` 从未处理章节恢复
 
+**场景质量门禁**（每批完成后自动执行）：
+- 随机对比该批内 2 个场景文件，确认 `scene_type` + `emotion` 标签组合互不相同
+- 确认 `title` 为有语义的短语（非"场景N"编号）
+- 确认 `summary` 各不相同且概括了场景核心事件
+- 任一检查未通过 → 标记该批为 FAILED，重做该批
+
 ### 6. 生成报告
 
 所有阶段完成后输出最终报告：

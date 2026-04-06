@@ -12,6 +12,8 @@ arguments: material_id
 
 **不读原文，只读 scene YAML 数据。**
 
+**优先使用固化脚本** `scripts/build_scene_index.py`，仅在脚本不满足需求时动态补充。
+
 ## 前置检查
 
 1. 读取 `data/novels/{material_id}/meta.yaml`，确认 scenes 已完成（或部分完成）
@@ -27,6 +29,16 @@ arguments: material_id
 - `docs/schemas/scenes-manifest.schema.yaml`
 
 ## 执行步骤
+
+### 0. 运行固化脚本（推荐）
+
+```bash
+python scripts/build_scene_index.py {material_id}
+```
+
+脚本会自动完成以下所有步骤（遍历场景 → 构建清单 → 构建索引 → 更新 meta），并输出统计摘要。agent 只需读取脚本输出即可。
+
+如果脚本报错或需要特殊处理，再按以下步骤手动执行。
 
 ### 1. 遍历场景文件
 
@@ -204,6 +216,7 @@ pipeline:
 
 ## References
 
+- [scripts/build_scene_index.py](../../../scripts/build_scene_index.py) — 固化索引脚本
 - [scenes-index.schema.yaml](../../../docs/schemas/scenes-index.schema.yaml)
 - [scenes-manifest.schema.yaml](../../../docs/schemas/scenes-manifest.schema.yaml)
 - [AGENTS.md](../../AGENTS.md)

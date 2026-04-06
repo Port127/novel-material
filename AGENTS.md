@@ -72,8 +72,25 @@
 - MUST 使用 skills 执行操作
 - MUST 素材 ID 遵循命名规范
 - MUST 标签从 `data/tags.yaml` 字典中选取
-- MUST 场景拆分遵循 `docs/schemas/scene.schema.yaml`
+- MUST 场景拆分遵循 `docs/schemas/scene.schema.yaml` 中的扁平输出契约
+- MUST 场景 YAML 写入后执行格式校验（YAML 解析 + 必填字段 + 标签合法 + 章节名匹配）
+- MUST 场景 `chapter` 字段从 `chapter_index.yaml` 逐字拷贝，禁止凭记忆拼写
+- MUST 场景 YAML 中含引号的字符串值用单引号包裹，防止 YAML 解析失败
 - MUST 检索优先查 `scenes_index.yaml`，不遍历全部场景文件
 - MUST refine/stats/build-index 不读原文，只读场景 YAML
 - NEVER 编造质量数据（无信号写 TBD）
 - MUST 场景拆分通过自动循环分批执行，all 模式下无需逐批确认
+- NEVER 用脚本批量生成模板化场景文件（见 Anti-Pattern: 模板糊弄）
+- MUST 场景标签由 LLM 逐批阅读原文后生成，禁止关键词匹配代替理解
+
+## Anti-Pattern: 模板糊弄
+
+以下行为**严格禁止**，违反即视为任务失败：
+
+1. **脚本代替理解**：写 Python/Shell 脚本用关键词匹配批量生成场景文件。场景标签必须由 LLM 阅读原文后判断，不可由脚本代劳。
+2. **千篇一律**：所有场景的 `scene_type` / `emotion` / `conflict` / `setting` 等字段值相同或高度雷同。同一批次内每个场景的标签组合必须反映该场景的独特内容。
+3. **空字段占位**：`conflict: []`、`stakes: []`、`action: ''` 等空值大面积出现。如果确实无冲突，写 `conflict: []` 可以，但不能所有场景都是空的。
+4. **summary 抄首句**：summary 不能只是章节开头几十个字的截断，必须是对场景核心事件的概括。
+5. **title 编号代替**：`title: 场景1` 不合格，必须是有语义的概括短语（如 "庙会买糖葫芦"、"车祸觉醒系统"）。
+
+**合规检查**：完成一批后，抽查该批内任意 2 个场景文件，确认标签组合互不相同。如果相同，必须重做该批。

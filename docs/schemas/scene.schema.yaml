@@ -1,75 +1,146 @@
 # scene.yaml schema
 # 单个场景的完整描述 + 多维标签
 # 路径: data/novels/{material_id}/scenes/{scene_id}.yaml
-# 命名: ch{章号}_s{场景序号}.yaml  例: ch01_s02.yaml
+# 命名: ch{章号}_s{场景序号}.yaml  例: ch0001_s02.yaml
 
-scene_id: ch01_s01
-material_id: nm_xxx
-chapter: "第1章 章名"
-title: "场景标题（概括性短语）"
-text_range: [12, 87]               # source.txt 中的行号范围
+# ====================================================================
+# 扁平输出契约 (Flat Output Contract)
+# novel-scenes skill 输出必须严格遵循此格式，build-index 脚本按此解析
+# ====================================================================
+#
+# 字段清单（R=必填, O=可选）:
+#
+# | 字段             | 类型       | R/O | 说明                                  |
+# |------------------|------------|-----|---------------------------------------|
+# | id               | string     | R   | 场景 ID，格式 ch{NNNN}_s{NN}          |
+# | chapter          | string     | R   | 从 chapter_index.yaml 逐字拷贝        |
+# | title            | string     | R   | 有语义的概括短语，禁止"场景N"          |
+# | summary          | string     | R   | 50-100 字概括核心事件                  |
+# | text_range       | [int,int]  | O   | source.txt 中的行号范围 [start, end]   |
+# | scene_type       | [string]   | R   | 值域: tags.yaml → scene_type           |
+# | conflict         | [string]   | R   | 值域: tags.yaml → conflict（可为空[]） |
+# | stakes           | [string]   | R   | 值域: tags.yaml → stakes（可为空[]）   |
+# | characters       | [string]   | R   | 出场人物名列表                         |
+# | relationship     | [string]   | R   | 值域: tags.yaml → relationship         |
+# | interaction      | [string]   | R   | 值域: tags.yaml → interaction          |
+# | power_dynamic    | string     | R   | 值域: tags.yaml → power_dynamic        |
+# | character_moment | [string]   | R   | 值域: tags.yaml → character_moment     |
+# | moral_spectrum   | string     | R   | 值域: tags.yaml → moral_spectrum       |
+# | emotion          | [string]   | R   | 值域: tags.yaml → emotion              |
+# | tension          | int        | R   | 1-5                                   |
+# | reader_effect    | [string]   | R   | 值域: tags.yaml → reader_effect        |
+# | plot_stage       | string     | R   | 值域: tags.yaml → plot_stage           |
+# | plot_function    | [string]   | R   | 值域: tags.yaml → plot_function        |
+# | pacing           | string     | R   | 值域: tags.yaml → pacing              |
+# | technique        | [string]   | R   | 值域: tags.yaml → technique            |
+# | dialogue_type    | [string]   | R   | 值域: tags.yaml → dialogue_type        |
+# | pov              | string     | R   | 值域: tags.yaml → pov                 |
+# | info_delivery    | [string]   | R   | 值域: tags.yaml → info_delivery        |
+# | setting          | [string]   | R   | 值域: tags.yaml → setting              |
+# | scale            | string     | R   | 值域: tags.yaml → scale               |
+# | time_weather     | [string]   | R   | 值域: tags.yaml → time_weather         |
+# | highlights       | list       | O   | 精彩段落 [{lines: [s,e], note: "..."}] |
+# | plot_threads     | list       | O   | refine 阶段补充                       |
 
-summary: >
-  50-100字概括本场景发生了什么。
+# ====================================================================
+# 黄金样例 (Golden Example)
+# 以下为完整的、可直接通过 yaml.safe_load 解析的场景文件范例
+# ====================================================================
+#
+# id: ch0003_s03
+# chapter: 第3章 你摊上大事了！
+# title: 车祸激活星辰
+# summary: >-
+#   大货车失控撞向吕树，他被撞飞的瞬间回忆一生却看不到父母模样。
+#   胸前吊坠外壳碎裂，露出星辰形态的内核，化作暖流汇入身体，
+#   心脏中白色火焰重燃。
+# text_range: [160, 183]
+# scene_type:
+#   - 觉醒
+# conflict:
+#   - 生死
+# stakes:
+#   - 生死
+# characters:
+#   - 吕树
+# relationship: []
+# interaction: []
+# power_dynamic: 平等
+# character_moment:
+#   - 身份揭示
+# moral_spectrum: 灰色
+# emotion:
+#   - 绝望
+# tension: 5
+# reader_effect:
+#   - 震撼
+# plot_stage: 第一幕-诱因
+# plot_function:
+#   - 转折
+# pacing: 爆发
+# technique:
+#   - 细节放大
+# dialogue_type:
+#   - 独白
+# pov: 第三人称限制
+# info_delivery:
+#   - 行动展示
+# setting:
+#   - 街巷
+# scale: 双人戏
+# time_weather:
+#   - 雪
+# highlights:
+#   - lines: [169, 178]
+#     note: '车祸激活星辰系统，白色火焰重燃的"久别重逢感"是全书核心伏笔'
 
-# ====== 多维标签 ======
+# ====================================================================
+# YAML 书写安全规则
+# ====================================================================
+#
+# 1. 含中文引号（""）或英文引号的字符串值，整行用单引号包裹
+#    good:  note: '吕树喊出"你摊上大事了"'
+#    bad:   note: 吕树喊出"你摊上大事了"
+#
+# 2. 冒号后的值若以 { [ * & ! 开头，用单引号包裹
+#
+# 3. 数值字段（tension, text_range）不加引号
+#
+# 4. summary 若超过一行，使用 >- 折叠标量（不含尾部换行）
+
+# ====================================================================
+# 语义参考（嵌套结构，仅供理解标签分层，不作为输出格式）
+# ====================================================================
 
 # A. 场景内容层 — 发生了什么
-content:
-  scene_type: [争吵]               # 争吵/告白/对决/密谋/逃亡/修炼/探秘/审讯/追逐/宴会/葬礼/祭祀/旅途/独处/回忆/梦境/日常/...
-  conflict: [价值观]               # 价值观/误会/利益/生死/情感/立场/信仰/权力/忠诚/...
-  stakes: [身份秘密]               # 生死/荣辱/情感/信念/自由/世界存亡/身份秘密/...
-
+#   content:
+#     scene_type, conflict, stakes
+#
 # B. 人物层 — 谁和谁、怎么互动
-characters:
-  - name: "角色名"
-    role_in_scene: 视角人物          # 视角人物/对手/新引入/旁观者/...
-    action: "本场景中的行为概括"
-  - name: "角色名"
-    role_in_scene: 对手
-    action: "行为概括"
-
-people:
-  relationship: [恋人]             # 恋人/师徒/对手/父子/挚友/君臣/同门/主仆/陌生人/暗恋/仇人/盟友/...
-  interaction: [对抗]              # 对抗/合作/试探/告别/重逢/背叛/守护/牺牲/教导/求助/利用/和解/...
-  power_dynamic: 平等              # 平等/上对下/下对上/翻转/此消彼长/...
-  character_moment: [性格展示]     # 性格展示/性格转变/内心独白/道德抉择/成长顿悟/堕落滑落/信念崩塌/信念重建/身份揭示/...
-  moral_spectrum: [正义]           # 正义/灰色/黑暗/亦正亦邪/被迫为恶/...
-
+#   characters: [人物名]
+#   people:
+#     relationship, interaction, power_dynamic,
+#     character_moment, moral_spectrum
+#
 # C. 情感层 — 什么感受
-emotion:
-  emotion: [紧张, 不安]            # 紧张/温馨/悲伤/愤怒/诡秘/燃/绝望/释然/孤独/恐惧/狂喜/麻木/挣扎/平静/...
-  tension: 3                       # 1-5  1=平静日常 3=暗流涌动 5=生死一线
-  reader_effect: [揪心]            # 催泪/爽感/窒息/治愈/震撼/细思恐极/心疼/解气/揪心/释然/毛骨悚然/会心一笑/...
-
+#   emotion: [情绪], tension: 1-5, reader_effect: [效果]
+#
 # D. 结构层 — 在故事中的位置和作用
-structure:
-  plot_stage: 第一幕-发展           # 开篇/第一幕-诱因/第一幕-发展/第二幕-对抗/中点/第二幕-低谷/第三幕-高潮/第三幕-收束/尾声/...
-  plot_function: [铺垫]            # 铺垫/转折/升级/高潮/收束/伏笔埋设/伏笔回收/并线/分流/呼应/反转/节奏调节/信息揭示/...
-  pacing: 蓄力                     # 加速/减速/爆发/喘息/蓄力/骤停/...
-
+#   structure:
+#     plot_stage, plot_function, pacing
+#
 # E. 技法层 — 怎么实现的
-craft:
-  technique: [对比]                # 对比/留白/蒙太奇/闪回/视角切换/环境映射/象征隐喻/反讽/平行叙事/意识流/嵌套叙事/不可靠叙述/时间跳跃/倒叙/...
-  dialogue_type: [试探]            # 争吵/说服/审讯/试探/告白/独白/寒暄下的暗斗/教学/谈判/威胁/安慰/多人混战/言不由衷/以退为进/...
-  pov: 第三人称限制                 # 第一人称/第三人称限制/全知/多视角轮转/旁观者/...
-  info_delivery: [自然嵌入]        # 自然嵌入/角色口述/闪回/文献引用/环境暗示/对话带出/内心独白带出/行动展示/...
-
+#   craft:
+#     technique, dialogue_type, pov, info_delivery
+#
 # F. 场景物理层 — 在什么环境中
-setting:
-  location: [室内]                 # 室内/户外/地下/高空/水下/密闭空间/广阔战场/街巷/宫殿/山野/都市/荒漠/船上/...
-  scale: 双人戏                    # 独角戏/双人戏/三角/小团体/群戏/千军万马/...
-  time_weather: [黑夜]             # 白天/黑夜/黎明/黄昏/雨/雪/雷暴/迷雾/烈日/...
+#   setting: [空间], scale, time_weather: [时间天气]
 
-# ====== 情节线索（可选，refine 阶段补充）======
-plot_threads:
-  - thread_id: "线索名称（如：身份秘密）"
-    role: plant                      # plant(埋设) / develop(发展) / payoff(回收)
-    related_scenes: [ch800_s01]      # 关联场景（refine 阶段填充）
-    confidence: high                 # high / medium / low
-
-# ====== 精彩段落标记（可选）======
-highlights:
-  - lines: [23, 31]
-    note: "简述为什么值得参考"
-    technique: [对比]
+# ====================================================================
+# 可选扩展（refine 阶段补充）
+# ====================================================================
+# plot_threads:
+#   - thread_id: "线索名称"
+#     role: plant | develop | payoff
+#     related_scenes: [ch800_s01]
+#     confidence: high | medium | low
