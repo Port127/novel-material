@@ -100,10 +100,11 @@ INIT → ROUTE_IDENTIFIED → PREVIEW_READY → AWAIT_CONFIRM → EXECUTING → 
 
 用户确认后，按序自动调用子 skill，**不再逐阶段请求确认**：
 
-1. 调用对应子 skill（读取其 SKILL.md 并执行）
-2. 等待子 skill 完成
-3. 收集输出结果
-4. 根据结果决定下一步：
+1. **备份检查**：如果目标文件已存在（如 `stage` 模式重跑某阶段），先将已有文件备份为 `.bak`
+2. 调用对应子 skill（读取其 SKILL.md 并执行）
+3. 等待子 skill 完成
+4. 收集输出结果
+5. 根据结果决定下一步：
    - 成功 → **立即进入下一阶段**（不停顿）
    - 有告警（如 source-format 的 suspicious 项）→ 记录到报告中，**继续执行**
    - 失败 → 进入 FAILED，输出失败原因，请求用户决定
@@ -161,17 +162,25 @@ INIT → ROUTE_IDENTIFIED → PREVIEW_READY → AWAIT_CONFIRM → EXECUTING → 
 当用户使用 `/novel-pipeline continue {material_id}`：
 
 1. 读取 `data/novels/{material_id}/meta.yaml`
-2. 检查 `status` 和 `pipeline` 字段：
+2. **运行质量审计**（如已有场景文件）：
+   ```bash
+   python scripts/quality_audit.py {material_id}
+   ```
+   审计结果决定恢复策略：
+   - 有失败批次 → 在预览中标记需重做的批次
+   - 检测到质量漂移 → 在预览中显示警告
+3. 检查 `status` 和 `pipeline` 字段：
    - `raw` + 未格式化 → 从 `source-format` 阶段恢复
    - `raw` + 已格式化 → 从 `outline` 阶段恢复
    - `outlined` + 无 worldbuilding → 从 `worldbuilding` 阶段恢复
    - `outlined` + 有 worldbuilding + 无 characters → 从 `characters` 阶段恢复
    - `outlined` + 有 worldbuilding + 有 characters → 从 `tags` 阶段恢复
-   - `tagged` → 从 `scenes` 阶段恢复（检查已处理章节）
+   - `tagged` → 从 `scenes` 阶段恢复（检查已处理章节 + 失败批次）
    - `complete` + 未构建索引 → 从 `build-index` 阶段恢复
    - `complete` + 未精调 → 从 `refine` 阶段恢复
    - `complete`/`refined` + 未统计 → 从 `novel-stats` 阶段恢复
-3. 显示恢复预览，等待确认后继续
+4. 显示恢复预览（含质量状况），等待确认后继续
+5. **恢复 scenes 阶段时**：先重做失败批次，再补处理未覆盖章节
 
 ## 状态追踪
 

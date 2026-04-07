@@ -6,7 +6,7 @@
 
 核心价值：
 - 素材集中管理，跨项目复用
-- 按场景多维标签检索（6 层 19 维）
+- 按场景多维标签检索（6 层 22 维场景标签 + 7 维小说标签）
 - 人物原型与关系网检索
 - 标签规范化治理
 
@@ -42,10 +42,20 @@ Layer 2：`AGENTS.md` — 稳定路由（≤100行）
 Layer 3：`docs/` — 设计、schema、计划
 Layer 4：`data/` — 索引、素材存储
 
-### 索引优先
+### 脚本优先检索
 
-检索场景时优先查倒排索引（`scenes_index.yaml`），不遍历全部场景文件。
-三级回退：倒排索引 → 场景清单 → 遍历场景文件。
+检索场景时**优先调用 `scripts/search.py` 查 SQLite**，LLM 不直接读大索引文件。
+三级回退：SQLite 查询 → YAML 倒排索引 → 遍历场景文件。
+
+SQLite（`data/material.db`）是 YAML 的派生产物，可随时从场景文件重建。
+
+### 批次质量保障
+
+场景拆分每批完成后由 `scripts/quality_audit.py` 自动审计：
+- 标签多样性、空字段率、摘要去重率、张力分布
+- 指标持久化到 `meta.yaml` 的 `scene_batches` 字段
+- 全书完成后检测**质量漂移**（前期 vs 后期批次的指标对比）
+- 失败批次在 `continue` 恢复时自动重做
 
 ## 数据模型
 
@@ -73,16 +83,64 @@ materials:
 #### 多维标签检索 (`material-search-scene`)
 
 1. 解析自然语言需求为标签组合
-2. **优先查 `scenes_index.yaml` 倒排索引**，命中候选 scene_id
-3. 只读取候选场景的完整 YAML 确认匹配
-4. 按匹配度排序返回候选场景
+2. **优先调用 `scripts/search.py` 查 SQLite**，多维度 AND 交集 + 匹配度排序
+3. LLM 读取脚本输出的精简结果（只含 top-N 关键字段）
+4. 按需读取少量场景 YAML 获取完整上下文
 
-若无倒排索引，退回到遍历 `scenes_manifest.yaml` 或 `scenes/*.yaml`。
+无 SQLite 时退回读 `scenes_index.yaml`；无索引时退回遍历场景文件。
 
 示例：
 - "恋爱中吵架" → `relationship: 恋人` + `scene_type: 争吵`
 - "弱者反杀强者" → `power_dynamic: 翻转` + `scene_type: 对决`
 - "催泪但不煽情" → `reader_effect: 催泪` + `technique: 留白`
+
+## 跨项目集成
+
+### novel 项目对接
+
+本项目（`novel-material`）是 `../novel` 项目的外部素材库。`novel` 通过以下方式访问素材：
+
+**推荐方式（脚本调用）**：
+```bash
+python ../novel-material/scripts/search.py scene --emotion 悲伤 --interaction 告别 --limit 5
+python ../novel-material/scripts/search.py character --archetype 导师
+python ../novel-material/scripts/search.py text --query 告别
+```
+
+**直接读取**（小规模/无 SQLite 时）：
+```
+../novel-material/data/index.yaml            # 素材总索引
+../novel-material/data/character_index.yaml  # 跨小说人物检索
+../novel-material/data/plot_index.yaml       # 跨小说剧情检索
+../novel-material/data/tags.yaml             # 标签字典
+```
+
+### 借鉴维度映射
+
+`novel` 项目的 `inspiration-log` 使用 5 个借鉴维度，与本项目的标签体系对应关系如下：
+
+| novel 借鉴维度 | novel-material 标签维度 | 说明 |
+|---------------|----------------------|------|
+| 设定 | `setting` + `scale` + worldbuilding | 空间环境 + 世界观设定 |
+| 节奏 | `pacing` + `tension` + `plot_stage` | 节奏型 + 张力值 + 剧情阶段 |
+| 冲突 | `conflict` + `stakes` + `power_dynamic` | 冲突类型 + 赌注 + 权力位差 |
+| 结构 | `plot_function` + `technique` + `narrative_structure` | 情节功能 + 叙事技法 + 叙事结构 |
+| 人物 | `archetype` + `character_moment` + `psychology.*` | 原型 + 弧光时刻 + 心理深度 |
+
+`material-search-context` 在解析写作上下文时使用此映射自动展开检索维度。
+
+### 风格桥接
+
+`novel` 项目管理每部作品的写作风格，`novel-material` 的小说级标签中有对应维度：
+
+| novel 风格需求 | novel-material 标签 |
+|---------------|-------------------|
+| 文笔参考 | `prose_style`（华丽/朴素/冷叙述/诗化/...） |
+| 基调参考 | `tone`（沉重/轻快/冷峻/热血/...） |
+| 长板参考 | `writing_strength`（人物塑造/对话/氛围营造/...） |
+| 套路参考 | `tropes`（废柴逆袭/扮猪吃虎/重生复仇/...） |
+
+检索场景时可同时用小说级标签缩小范围（如"找一个冷叙述风格的催泪场景"→ 先筛 `prose_style: 冷叙述` 的小说，再在其中检索 `reader_effect: 催泪`）。
 
 ## 相关文档
 

@@ -23,6 +23,19 @@ arguments: material_id
 
 ## 执行步骤
 
+### 0. 备份待修改文件
+
+精调会覆盖写入多个关键文件，在修改前为每个文件创建 `.bak` 备份：
+
+```bash
+cp outline.yaml outline.yaml.bak
+cp characters.yaml characters.yaml.bak
+cp tags.yaml tags.yaml.bak
+cp worldbuilding.yaml worldbuilding.yaml.bak   # 如存在
+```
+
+备份文件仅保留最近一次（覆盖旧 `.bak`）。如果精调结果有问题，可从 `.bak` 恢复。
+
 ### 1. 采集场景数据
 
 从所有 scene YAML 中提取：
@@ -117,6 +130,19 @@ evolution:
 #### 3c. 出场频率标注
 
 为每个角色补充 `appearance_count` 和 `active_chapters` 范围。
+
+#### 3d. 心理深度补充
+
+基于场景中的 `character_moment`（道德抉择、信念崩塌/重建、堕落滑落等）和具体行为推断，为主要角色补充 `psychology` 维度中缺失的字段：
+
+- `fatal_flaw`: 从道德抉择失误、反复犯错的模式中提取
+- `obsession`: 从角色持续追求的目标中提取
+- `soft_spot`: 从守护/牺牲行为的对象中提取
+- `misbelief`: 从信念崩塌/重建事件的触发信念中提取
+- `contrast_habit`: 从日常场景中与角色身份反差的细节中提取
+- `tragedy_trigger`: 从导致角色错过/误判的结构性事件模式中提取
+
+只补充有场景证据支撑的字段，无信号时留空。标记 `source: refine`。
 
 ### 4. 精调 worldbuilding.yaml（如存在）
 

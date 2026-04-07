@@ -16,6 +16,16 @@ roster:
     traits: [性格特征1, 性格特征2]
     moral_spectrum: 正义             # 正义 / 灰色 / 黑暗 / 亦正亦邪
 
+    # 写作参考维度（可选，对齐 novel 项目的人物卡片深度字段）
+    # 用于跨项目检索时提供更丰富的角色画像
+    psychology:
+      fatal_flaw: "会害到自己或他人的关键缺陷"
+      obsession: "长期追求、放不下的事物"
+      soft_spot: "最在意的人或事"
+      misbelief: "坚信但并不完全正确的信念"
+      contrast_habit: "与身份或表象相反的小习惯"
+      tragedy_trigger: "容易触发错过、误判、等待落空的结构点"
+
     # 人物弧线
     arc:
       - stage: "起点"

@@ -31,8 +31,9 @@
 /novel-stats [material_id]              # 生成统计报告+可视化
 
 # 检索
-/material-search [关键词]         # 关键词检索
-/material-search-scene [需求描述] # 多维标签检索
+/material-search [关键词]              # 关键词检索
+/material-search-scene [需求描述]      # 多维标签检索
+/material-search-context [写作上下文]  # 写作场景上下文检索
 ```
 
 ## Skills
@@ -52,6 +53,7 @@
 || `novel-stats` | 生成统计报告+可视化图表+交互HTML+关系图谱 |
 || `material-search` | 关键词检索 |
 || `material-search-scene` | 按多维标签检索场景 |
+|| `material-search-context` | 写作上下文检索（场景+人物+技法三维） |
 || `tag-add` | 新增标签值 |
 || `tag-merge` | 合并同义标签 |
 
@@ -61,6 +63,8 @@
 ||------|------|
 || [ARCHITECTURE.md](ARCHITECTURE.md) | 拓扑、数据存储、Pipeline、标签体系 |
 || [docs/DESIGN.md](docs/DESIGN.md) | 设计原则、数据模型、检索策略 |
+|| [docs/USAGE-GUIDE.md](docs/USAGE-GUIDE.md) | 按场景的使用指南（不用记命令） |
+|| [docs/TAG_GUIDE.md](docs/TAG_GUIDE.md) | 标签判断依据、易混淆对照表 |
 || [docs/schemas/](docs/schemas/) | 数据 schema 模板 |
 
 ## ID Convention
@@ -76,10 +80,12 @@
 - MUST 场景 YAML 写入后执行格式校验（YAML 解析 + 必填字段 + 标签合法 + 章节名匹配）
 - MUST 场景 `chapter` 字段从 `chapter_index.yaml` 逐字拷贝，禁止凭记忆拼写
 - MUST 场景 YAML 中含引号的字符串值用单引号包裹，防止 YAML 解析失败
-- MUST 检索优先查 `scenes_index.yaml`，不遍历全部场景文件
+- MUST 检索优先调用 `scripts/search.py` 查 SQLite，不直接读大索引文件
 - MUST refine/stats/build-index 不读原文，只读场景 YAML
 - NEVER 编造质量数据（无信号写 TBD）
 - MUST 场景拆分通过自动循环分批执行，all 模式下无需逐批确认
+- MUST 每批场景写入后运行 `scripts/quality_audit.py` 审计，指标写入 meta.yaml
+- MUST build-index 同时生成 YAML 索引和 SQLite（`data/material.db`）
 - NEVER 用脚本批量生成模板化场景文件（见 Anti-Pattern: 模板糊弄）
 - MUST 场景标签由 LLM 逐批阅读原文后生成，禁止关键词匹配代替理解
 

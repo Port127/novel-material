@@ -1,4 +1,15 @@
 {
   "project": "novel-material",
-  "description": "素材库系统"
+  "description": "素材库系统",
+  "defaultMode": "auto",
+  "permissions": {
+    "allow": [
+      "Read", 
+      "Grep", 
+      "LS", 
+      "Glob",
+      "Edit",
+      "Write"
+    ]
+  }
 }

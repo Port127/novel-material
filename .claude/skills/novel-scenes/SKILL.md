@@ -21,7 +21,8 @@ arguments: material_id, chapter_range
 
 1. 读取 `data/index.yaml`，确认 material_id 存在
 2. 读取 `data/tags.yaml` 获取合法标签值
-3. 如存在 `outline.yaml` 和 `characters.yaml`，读取备用
+3. 读取 `docs/TAG_GUIDE.md` 获取标签判断依据（易混淆标签区分、张力校准标准等）
+4. 如存在 `outline.yaml` 和 `characters.yaml`，读取备用
 
 ## Schema
 
@@ -118,14 +119,37 @@ avg_chars_per_chapter: ~3200
 
 #### 3e2. 格式校验（每批必做）
 
-本批所有场景写入后，执行以下校验：
+本批所有场景写入后，运行固化校验脚本：
 
-1. **YAML 可解析**：对每个文件调用 `yaml.safe_load`，失败则修复引号/转义后重写
-2. **必填字段完整**：检查 schema 中标记 R 的字段全部存在
-3. **标签值合法**：所有标签值必须在 `tags.yaml` 对应维度的 values 列表中，越界则替换为最近义的合法值
+```bash
+python scripts/validate_yaml.py scene {material_id} ch{批次起始章号}
+```
+
+脚本自动执行以下检查：
+1. **YAML 可解析**：`yaml.safe_load` 成功
+2. **必填字段完整**：schema 中标记 R 的字段全部存在（兼容扁平和嵌套格式）
+3. **标签值合法**：所有标签值必须在 `tags.yaml` 对应维度的 values 列表中
 4. **章节名匹配**：`chapter` 值必须与 `chapter_index.yaml` 中的 title 完全一致
 
-任一检查失败 → 修复后重写该文件，不放过。
+任一检查失败 → 修复后重写该文件，不放过。越界标签替换为最近义的合法值。
+
+#### 3e3. 质量审计（每批必做）
+
+格式校验通过后，运行质量审计：
+
+```bash
+python scripts/quality_audit.py {material_id} --batch {起始章}-{结束章}
+```
+
+脚本自动计算并写入 `meta.yaml`：
+- `tag_diversity`：标签组合唯一率（< 0.5 判定失败）
+- `empty_field_rate`：空字段占比（> 0.3 判定失败）
+- `summary_diversity`：摘要去重率（< 0.8 判定失败）
+- `tension_distribution`：张力值分布
+- `bad_titles`：无语义标题数
+
+**审计失败 → 重做该批**（删除该批场景文件，重新执行 3a-3e3）。
+**审计通过 → 继续下一批**。
 
 #### 3f. 更新进度
 
@@ -141,13 +165,14 @@ pipeline:
 #### 3g. 输出本批摘要
 
 ```
-[批次 2/214] 第 6-10 章完成，本批 15 个场景
+[批次 2/214] 第 6-10 章完成，本批 15 个场景 ✅ 质量通过 (diversity=0.87)
 ```
 
-#### 3h. 进入下一批
+#### 3h. 会话分段建议
 
 - `all` 模式：**不等待确认**，直接进入下一批
 - 手动模式：结束，提示后续命令
+- **每处理 30 批后**：输出分段提醒，建议用户考虑开新会话 `continue` 恢复（避免上下文膨胀导致质量下降）
 
 ### 4. 全书覆盖检查（all 模式完成后）
 
@@ -168,7 +193,23 @@ pipeline:
 4. 如有缺失，**自动补处理**缺失章节（无需用户干预）
 5. 补处理完成后再次检查，直到覆盖率 100%
 
-### 5. 更新状态
+### 5. 全书质量审计（all 模式完成后）
+
+覆盖检查通过后，运行全书审计：
+
+```bash
+python scripts/quality_audit.py {material_id} --report
+```
+
+输出：
+- 全书级质量指标
+- 质量漂移检测（前 1/3 vs 后 1/3 的标签多样性/空字段率对比）
+- 失败批次列表（需重做）
+- `quality_report.yaml` 写入小说文件夹
+
+如检测到质量漂移或存在失败批次，输出告警并列出需重做的批次。
+
+### 6. 更新状态
 
 全书覆盖检查通过后，将 `meta.yaml` 中 `status` 更新为 `complete`。
 单批模式不改为 `complete`，保持 `tagged`。

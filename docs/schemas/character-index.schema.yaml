@@ -1,0 +1,26 @@
+# character_index.yaml schema
+# 跨小说人物全局索引
+# 路径: data/character_index.yaml
+# 由 build-index 自动聚合，只读
+
+entries:
+  - material_id: nm_xxx
+    novel_name: "《书名》"
+    characters:
+      - name: "角色名"
+        role: protagonist           # protagonist / antagonist / supporting / minor
+        archetype: 英雄             # 从 tags.yaml archetype 选取
+        traits: [性格特征1, 性格特征2]
+        moral_spectrum: 正义         # 正义 / 灰色 / 黑暗 / 亦正亦邪 / 被迫为恶
+        arc_summary: "一句话弧线概括（≤30字）"
+        arc_stages: 3               # 弧线阶段数
+        appearance_count: 100       # 出场场景数
+        first_appearance: "第X章"
+        narrative_function: 推动主线  # 从 tags.yaml narrative_function 选取
+
+        # 写作参考维度（可选，从 characters.yaml 深度字段提取）
+        fatal_flaw: ""              # 致命缺陷
+        obsession: ""               # 执念
+        misbelief: ""               # 误判/错误信念
+        soft_spot: ""               # 软肋
+        contrast_habit: ""          # 反差习惯

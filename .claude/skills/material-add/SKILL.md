@@ -22,9 +22,36 @@ arguments: path
 - 确认文件存在
 - 确认类型
 
-### 2. 生成素材 ID
+### 2. 去重检查
+
+读取 `data/index.yaml`，对现有 materials 逐条检查：
+
+- **书名匹配**：新素材的书名（从文件名提取）与已有 `name` 字段相似
+- **文件名匹配**：新素材文件路径与已入库的任何文件路径相同
+
+如果发现疑似重复：
+
+```
+⚠️ 疑似重复素材
+
+已有记录：
+  ID：nm_novel_20260405_k8m2
+  名称：《三体1》地球往事（实体版拆分）
+  状态：raw
+
+当前素材：
+  文件：/path/to/三体1.txt
+
+是否仍要入库？(yes/no)
+```
+
+用户确认后才继续。如果确认入库，说明是同书不同版本，正常创建新 ID。
+
+### 3. 生成素材 ID
 
 格式：`nm_{type}_{YYYYMMDD}_{random4}`
+
+生成后检查 `data/index.yaml` 确认 ID 不冲突（极小概率的 random4 碰撞）。
 
 ### 3. 创建文件夹结构
 
@@ -83,5 +110,11 @@ status: raw
 ## 注意事项
 
 - 大文件直接存入 source.txt，不做切分
-- ID 跨项目唯一
+- ID 跨项目唯一，生成后需验证不冲突
 - 入库后 status=raw，等待后续 skill 处理
+- 同一部小说的不同版本（如实体版/网络版）可以各自入库，去重检查只做提醒不做阻断
+
+## References
+
+- [meta.schema.yaml](../../../docs/schemas/meta.schema.yaml)
+- [AGENTS.md](../../AGENTS.md)
