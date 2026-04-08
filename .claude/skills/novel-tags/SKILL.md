@@ -208,4 +208,4 @@ good_for:
 
 - [novel-tags.schema.yaml](../../../docs/schemas/novel-tags.schema.yaml)
 - [data/tags.yaml](../../../data/tags.yaml) — G 部分为小说级维度
-- [AGENTS.md](../../AGENTS.md)
+- [AGENTS.md](../../../AGENTS.md)

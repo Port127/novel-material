@@ -114,13 +114,8 @@ built_at: "2026-04-05T12:00:00Z"
 scene_type:
   宴会: [ch01_s01, ch45_s02, ch302_s01]
   争吵: [ch05_s02, ch23_s01, ch156_s03]
-  告白: [ch12_s01, ch445_s02]
-  对决: [ch89_s01, ch302_s01]
-
 conflict:
   利益: [ch01_s01, ch02_s01, ch56_s01]
-  情感: [ch12_s01, ch45_s02]
-
 stakes:
   荣辱: [ch01_s01, ch03_s02]
 
@@ -128,68 +123,32 @@ stakes:
 character:
   陈汉升: [ch01_s01, ch01_s02, ch01_s03, ...]
   萧容鱼: [ch03_s01, ch15_s02, ...]
-  沈幼楚: [ch05_s01, ch12_s01, ...]
-
 relationship:
   恋人: [ch12_s01, ch45_s02, ch156_s03]
-  师徒: [ch89_s01]
-
-interaction:
-  对抗: [ch05_s02, ch89_s01]
-  合作: [ch01_s01, ch45_s02]
-
-power_dynamic:
-  翻转: [ch302_s01, ch445_s03]
-
-character_moment:
-  道德抉择: [ch156_s03, ch445_s01]
-  成长顿悟: [ch302_s01]
+# interaction, power_dynamic, character_moment 同理
 
 # C. 情感层
 emotion:
   紧张: [ch05_s02, ch89_s01, ch302_s01]
-  温馨: [ch45_s02, ch156_s01]
-
 tension:
   5: [ch302_s01, ch445_s03, ch801_s01]
-  4: [ch89_s01, ch156_s03]
-  3: [ch01_s01, ch05_s02]
-
-reader_effect:
-  催泪: [ch445_s03, ch801_s02]
-  爽感: [ch302_s01, ch500_s01]
+# reader_effect 同理
 
 # D. 结构层
-plot_stage:
-  开篇: [ch01_s01, ch01_s02, ch01_s03]
-  "第一幕-发展": [ch05_s01, ch12_s01]
-
 plot_function:
   伏笔埋设: [ch03_s02, ch45_s01, ch100_s01]
   伏笔回收: [ch302_s01, ch800_s01, ch956_s01]
-  转折: [ch89_s01, ch302_s01]
-
-pacing:
-  爆发: [ch89_s01, ch302_s01]
-  蓄力: [ch01_s01, ch05_s01]
+# plot_stage, pacing 同理
 
 # E. 技法层
 technique:
   对比: [ch01_s01, ch156_s03]
-  闪回: [ch45_s01, ch200_s02]
-
-dialogue_type:
-  争吵: [ch05_s02, ch23_s01]
-  告白: [ch12_s01, ch445_s02]
+# dialogue_type 同理
 
 # F. 物理层
 setting:
   室内: [ch01_s01, ch05_s01]
-  户外: [ch03_s01, ch45_s02]
-
-scale:
-  双人戏: [ch12_s01, ch45_s02]
-  群戏: [ch01_s01, ch302_s01]
+# scale, time_weather 同理
 
 # 伏笔线索（如有 plot_threads）
 plot_threads:
@@ -340,4 +299,4 @@ pipeline:
 - [scripts/core/build_scene_index.py](../../../scripts/core/build_scene_index.py) — 固化索引脚本
 - [scenes-index.schema.yaml](../../../docs/schemas/scenes-index.schema.yaml)
 - [scenes-manifest.schema.yaml](../../../docs/schemas/scenes-manifest.schema.yaml)
-- [AGENTS.md](../../AGENTS.md)
+- [AGENTS.md](../../../AGENTS.md)

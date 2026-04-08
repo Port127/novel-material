@@ -83,4 +83,4 @@ pipeline:
 
 - [material-add/SKILL.md](../material-add/SKILL.md)
 - [source-format/SKILL.md](../source-format/SKILL.md)
-- [AGENTS.md](../../AGENTS.md)
+- [AGENTS.md](../../../AGENTS.md)

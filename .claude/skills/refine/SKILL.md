@@ -219,4 +219,4 @@ pipeline:
 - [worldbuilding.schema.yaml](../../../docs/schemas/worldbuilding.schema.yaml)
 - [characters.schema.yaml](../../../docs/schemas/characters.schema.yaml)
 - [novel-tags.schema.yaml](../../../docs/schemas/novel-tags.schema.yaml)
-- [AGENTS.md](../../AGENTS.md)
+- [AGENTS.md](../../../AGENTS.md)

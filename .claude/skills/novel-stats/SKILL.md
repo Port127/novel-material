@@ -39,11 +39,16 @@ arguments: material_id
 | 平均每章场景数 | 总场景/总章节 | 除法 |
 | 场景字数分布 | text_range | 行号差值 |
 
-### 3. 情节统计
+### 3. 标签分布统计
 
-#### 3a. 场景类型分布
+统计各标签维度中每个值的出现次数和占比，按频率排序：
 
-统计 `scene_type` 各值出现次数和占比，按频率排序。
+| 分类 | 维度 |
+|------|------|
+| 情节 | scene_type, conflict, stakes |
+| 技法 | technique, dialogue_type, pov, info_delivery |
+
+输出命名为 `{dimension}_distribution`，格式示例：
 
 ```yaml
 scene_type_distribution:
@@ -55,13 +60,7 @@ scene_type_distribution:
     ratio: 0.096
 ```
 
-#### 3b. 冲突类型分布
-
-统计 `conflict` 各值出现次数和占比。
-
-#### 3c. 赌注/风险分布
-
-统计 `stakes` 各值出现次数和占比。
+各维度照此模式生成。
 
 ### 4. 转折统计
 
@@ -160,11 +159,7 @@ character_stats:
     内心独白: 156
 ```
 
-### 9. 技法统计
-
-统计 `technique`、`dialogue_type`、`pov`、`info_delivery` 的分布。
-
-### 10. 情感统计
+### 9. 情感统计
 
 ```yaml
 emotion_stats:
@@ -176,7 +171,7 @@ emotion_stats:
     爽感: 120
 ```
 
-### 11. 采集人物关系图谱数据
+### 10. 采集人物关系图谱数据
 
 从 `characters.yaml` 提取关系网数据，构建图谱：
 
@@ -198,7 +193,7 @@ relationship_graph:
 - **edges**: 从 `characters.yaml` 的 `relations` 提取，weight 为共同出场场景数
 - 阵营信息从 `factions` 提取，用于图谱节点着色
 
-### 12. 生成可视化报告 stats.md（轻量版）
+### 11. 生成可视化报告 stats.md（轻量版）
 
 使用 Mermaid 图表：
 
@@ -234,7 +229,7 @@ relationship_graph:
 (Mermaid xychart-beta 堆叠图)
 ```
 
-### 13. 生成交互版报告 stats.html
+### 12. 生成交互版报告 stats.html
 
 单文件 HTML，内嵌 ECharts CDN，包含以下交互图表：
 
@@ -259,13 +254,13 @@ relationship_graph:
 - 先检查 `data/novels/{material_id}/` 下是否已有上次生成的 `stats.html`，如果有，读取其 HTML 结构作为模板骨架，只替换数据部分，避免每次从零生成
 - 如果是首次生成，按上述 8 个图表逐个构建
 
-### 14. 写入文件
+### 13. 写入文件
 
 - `stats.yaml` — 所有原始统计数据（含 relationship_graph）
 - `stats.md` — 轻量可视化报告（Mermaid）
 - `stats.html` — 交互版报告（ECharts + 关系图谱）
 
-### 15. 更新 meta.yaml
+### 14. 更新 meta.yaml
 
 ```yaml
 pipeline:
@@ -305,4 +300,4 @@ pipeline:
 ## References
 
 - [scenes-manifest.schema.yaml](../../../docs/schemas/scenes-manifest.schema.yaml)
-- [AGENTS.md](../../AGENTS.md)
+- [AGENTS.md](../../../AGENTS.md)

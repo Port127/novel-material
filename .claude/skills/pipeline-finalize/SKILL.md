@@ -118,4 +118,4 @@ pipeline:
 
 - [refine/SKILL.md](../refine/SKILL.md)
 - [novel-stats/SKILL.md](../novel-stats/SKILL.md)
-- [AGENTS.md](../../AGENTS.md)
+- [AGENTS.md](../../../AGENTS.md)

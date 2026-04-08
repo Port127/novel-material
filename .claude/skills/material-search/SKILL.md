@@ -103,5 +103,5 @@ python scripts/core/search.py scene --scene-type {映射值} --limit 10
 
 ## References
 
-- [AGENTS.md](../../AGENTS.md)
+- [AGENTS.md](../../../AGENTS.md)
 - [ARCHITECTURE.md](../../../ARCHITECTURE.md) — 架构、检索策略、跨项目集成

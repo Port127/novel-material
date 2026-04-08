@@ -91,4 +91,4 @@ python scripts/core/build_db.py
 
 ## References
 
-- [AGENTS.md](../../AGENTS.md)
+- [AGENTS.md](../../../AGENTS.md)

@@ -139,4 +139,4 @@ chapters:
 - [scripts/core/source_format.py](../../../scripts/core/source_format.py) — 固化清洗脚本
 - [scripts/requirements.txt](../../../scripts/requirements.txt) — 脚本依赖
 - [format-report.schema.yaml](../../../docs/schemas/format-report.schema.yaml)
-- [AGENTS.md](../../AGENTS.md)
+- [AGENTS.md](../../../AGENTS.md)

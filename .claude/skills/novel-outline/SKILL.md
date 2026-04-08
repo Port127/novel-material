@@ -133,4 +133,4 @@ arguments: material_id
 ## References
 
 - [outline.schema.yaml](../../../docs/schemas/outline.schema.yaml)
-- [AGENTS.md](../../AGENTS.md)
+- [AGENTS.md](../../../AGENTS.md)

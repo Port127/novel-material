@@ -143,4 +143,4 @@ pipeline:
 
 - [novel-scenes/SKILL.md](../novel-scenes/SKILL.md)
 - [build-index/SKILL.md](../build-index/SKILL.md)
-- [AGENTS.md](../../AGENTS.md)
+- [AGENTS.md](../../../AGENTS.md)

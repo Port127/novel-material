@@ -235,5 +235,5 @@ novel-pipeline:
 - [pipeline-analyze/SKILL.md](../pipeline-analyze/SKILL.md)
 - [pipeline-scenes/SKILL.md](../pipeline-scenes/SKILL.md)
 - [pipeline-finalize/SKILL.md](../pipeline-finalize/SKILL.md)
-- [AGENTS.md](../../AGENTS.md)
-- [ARCHITECTURE.md](../../ARCHITECTURE.md)
+- [AGENTS.md](../../../AGENTS.md)
+- [ARCHITECTURE.md](../../../ARCHITECTURE.md)

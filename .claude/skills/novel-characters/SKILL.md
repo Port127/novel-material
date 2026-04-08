@@ -13,9 +13,10 @@ arguments: material_id
 ## 前置检查
 
 1. 读取 `data/index.yaml`，确认 material_id 存在
-2. 读取 `data/novels/{material_id}/source.txt`
-3. 如存在 `outline.yaml`，优先参考大纲中的结构信息
-4. 如存在 `worldbuilding.yaml`，参考其中势力组织和力量体系信息
+2. 确认 `data/novels/{material_id}/source.txt` 存在
+3. 如存在 `chapter_index.yaml`，读取章节行号范围（用于步骤 2 精确定位原文段落）
+4. 如存在 `outline.yaml`，优先参考大纲中的结构信息
+5. 如存在 `worldbuilding.yaml`，参考其中势力组织和力量体系信息
 
 ## Schema
 
@@ -169,4 +170,4 @@ arguments: material_id
 ## References
 
 - [characters.schema.yaml](../../../docs/schemas/characters.schema.yaml)
-- [AGENTS.md](../../AGENTS.md)
+- [AGENTS.md](../../../AGENTS.md)

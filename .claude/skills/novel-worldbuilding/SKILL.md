@@ -13,8 +13,9 @@ arguments: material_id
 ## 前置检查
 
 1. 读取 `data/index.yaml`，确认 material_id 存在
-2. 读取 `data/novels/{material_id}/source.txt`
-3. 如存在 `outline.yaml`，参考大纲中的结构信息缩小关注范围
+2. 确认 `data/novels/{material_id}/source.txt` 存在
+3. 如存在 `chapter_index.yaml`，读取章节行号范围（用于步骤 2 精确定位原文段落）
+4. 如存在 `outline.yaml`，参考大纲中的结构信息缩小关注范围
 
 ## Schema
 
@@ -49,7 +50,7 @@ arguments: material_id
 
 ### 2. 分段读取 + 提取
 
-按采样清单分批读取原文，每批控制在 context window 安全范围内。
+按采样清单分批读取原文（通过 `chapter_index.yaml` 行号范围定位章节在 `source.txt` 中的位置），每批控制在 context window 安全范围内。
 
 对每批提取以下要素并记录为**段落笔记**：
 
@@ -139,4 +140,4 @@ arguments: material_id
 ## References
 
 - [worldbuilding.schema.yaml](../../../docs/schemas/worldbuilding.schema.yaml)
-- [AGENTS.md](../../AGENTS.md)
+- [AGENTS.md](../../../AGENTS.md)

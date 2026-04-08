@@ -152,4 +152,4 @@ python scripts/core/search.py scene --technique {推断} --reader-effect {推断
 - [material-search-scene SKILL.md](../material-search-scene/SKILL.md)
 - [character-index.schema.yaml](../../../docs/schemas/character-index.schema.yaml)
 - [plot-index.schema.yaml](../../../docs/schemas/plot-index.schema.yaml)
-- [AGENTS.md](../../AGENTS.md)
+- [AGENTS.md](../../../AGENTS.md)

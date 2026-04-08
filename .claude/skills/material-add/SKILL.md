@@ -53,7 +53,7 @@ arguments: path
 
 生成后检查 `data/index.yaml` 确认 ID 不冲突（极小概率的 random4 碰撞）。
 
-### 3. 创建文件夹结构
+### 4. 创建文件夹结构
 
 ```bash
 data/novels/{material_id}/
@@ -62,7 +62,7 @@ data/novels/{material_id}/
 └── scenes/        # 空目录
 ```
 
-### 4. 写入 meta.yaml
+### 5. 写入 meta.yaml
 
 参照 `docs/schemas/meta.schema.yaml`：
 
@@ -76,7 +76,7 @@ added: {today}
 status: raw
 ```
 
-### 5. 更新 index.yaml
+### 6. 更新 index.yaml
 
 在 `data/index.yaml` 的 `materials` 列表追加：
 
@@ -116,4 +116,4 @@ status: raw
 ## References
 
 - [meta.schema.yaml](../../../docs/schemas/meta.schema.yaml)
-- [AGENTS.md](../../AGENTS.md)
+- [AGENTS.md](../../../AGENTS.md)

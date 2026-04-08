@@ -36,9 +36,9 @@ arguments: material_id, chapter_range
 
 ## 执行步骤
 
-### 1. 扫描章节结构
+### 1. 获取章节索引
 
-读取 `source.txt`，**仅扫描章节标题行**（不读正文），建立章节索引：
+优先读取 `chapter_index.yaml`（由 source-format 生成）。若不存在，扫描 `source.txt` 章节标题行（不读正文）自行构建：
 
 ```yaml
 chapters:
@@ -46,10 +46,9 @@ chapters:
   - {num: 2, title: "第2章 xxx", start_line: 281, end_line: 530}
   ...
 total: 1070
-avg_chars_per_chapter: ~3200
 ```
 
-此索引用于：定位每批的读取范围、估算批次大小、最终覆盖检查。
+此索引用于：定位每批的读取范围、估算批次大小、最终覆盖检查。从行号差值估算平均章节字数，供步骤 2 动态批次大小使用。
 
 ### 2. 确定批次计划
 

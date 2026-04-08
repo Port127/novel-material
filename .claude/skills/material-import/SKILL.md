@@ -222,4 +222,4 @@ pipeline:
 - [material-add/SKILL.md](../material-add/SKILL.md)
 - [build-index/SKILL.md](../build-index/SKILL.md)
 - [docs/schemas/](../../../docs/schemas/)
-- [AGENTS.md](../../AGENTS.md)
+- [AGENTS.md](../../../AGENTS.md)

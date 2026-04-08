@@ -110,4 +110,4 @@ pipeline:
 - [novel-worldbuilding/SKILL.md](../novel-worldbuilding/SKILL.md)
 - [novel-characters/SKILL.md](../novel-characters/SKILL.md)
 - [novel-tags/SKILL.md](../novel-tags/SKILL.md)
-- [AGENTS.md](../../AGENTS.md)
+- [AGENTS.md](../../../AGENTS.md)
