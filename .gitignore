@@ -1,5 +1,6 @@
 data/novels/
 data/material.db
+data/.config/llm_config.json
 .DS_Store
 feature.md
 material/

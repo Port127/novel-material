@@ -39,6 +39,15 @@ TAG_SCALAR_FIELDS = [
 ]
 
 
+def _str_or_first(val):
+    """Convert a value to string; if list, join or take first element."""
+    if val is None:
+        return ''
+    if isinstance(val, list):
+        return ', '.join(str(v) for v in val) if val else ''
+    return str(val)
+
+
 def _as_list(val):
     if val is None:
         return []
@@ -236,12 +245,12 @@ def ingest_novel(conn: sqlite3.Connection, material_id: str):
             title = scene.get('title', '')
             summary = scene.get('summary', '')
             tension = scene.get('tension', 0)
-            pacing = scene.get('pacing', '')
-            pov = scene.get('pov', '')
-            power_dynamic = scene.get('power_dynamic', '')
-            moral_spectrum = scene.get('moral_spectrum', '')
-            plot_stage = scene.get('plot_stage', '')
-            scale = scene.get('scale', '')
+            pacing = _str_or_first(scene.get('pacing', ''))
+            pov = _str_or_first(scene.get('pov', ''))
+            power_dynamic = _str_or_first(scene.get('power_dynamic', ''))
+            moral_spectrum = _str_or_first(scene.get('moral_spectrum', ''))
+            plot_stage = _str_or_first(scene.get('plot_stage', ''))
+            scale = _str_or_first(scene.get('scale', ''))
 
             conn.execute(
                 """INSERT OR REPLACE INTO scenes
