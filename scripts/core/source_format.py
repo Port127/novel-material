@@ -6,7 +6,7 @@ source_format.py — 小说原文格式清洗脚本
 覆盖：章节分析、章节名标准化、繁简转换、引号修复、广告清理、格式统一。
 
 用法:
-    python scripts/source_format.py <input_file> <output_file> <report_file>
+    python scripts/core/source_format.py <input_file> <output_file> <report_file>
 
 输出:
     - output_file: 清洗后的文本

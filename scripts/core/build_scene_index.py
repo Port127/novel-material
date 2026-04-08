@@ -6,7 +6,7 @@ build_scene_index.py — 构建场景倒排索引和清单文件
 读取扁平格式的场景 YAML（遵循 scene.schema.yaml 扁平输出契约）。
 
 用法:
-    python scripts/build_scene_index.py <material_id>
+    python scripts/core/build_scene_index.py <material_id>
 
 输出:
     - data/novels/{material_id}/scenes_index.yaml   (倒排索引)

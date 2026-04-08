@@ -12,7 +12,7 @@ arguments: material_id
 
 **不读原文，只读 scene YAML 数据。**
 
-**优先使用固化脚本** `scripts/build_scene_index.py`，仅在脚本不满足需求时动态补充。
+**优先使用固化脚本** `scripts/core/build_scene_index.py`，仅在脚本不满足需求时动态补充。
 
 ## 前置检查
 
@@ -41,10 +41,10 @@ arguments: material_id
 
 ```bash
 # 步骤一：构建 YAML 索引（人可读 + git 友好）
-python scripts/build_scene_index.py {material_id}
+python scripts/core/build_scene_index.py {material_id}
 
 # 步骤二：构建/更新 SQLite 索引（机器查询加速）
-python scripts/build_db.py --material {material_id}
+python scripts/core/build_db.py --material {material_id}
 ```
 
 两个脚本的关系：
@@ -53,13 +53,25 @@ python scripts/build_db.py --material {material_id}
 
 agent 只需读取脚本输出即可。如果脚本报错或需要特殊处理，再按以下步骤手动执行。
 
-### 1. 遍历场景文件
+**职责分工**：
+
+| 产出 | 方式 | 说明 |
+|------|------|------|
+| scenes_index.yaml | `build_scene_index.py` | 脚本完成 |
+| scenes_manifest.yaml | `build_scene_index.py` | 脚本完成 |
+| material.db (SQLite) | `build_db.py` | 脚本完成 |
+| character_index.yaml | agent 手动 | 需读 characters.yaml + 统计出场 |
+| plot_index.yaml | agent 手动 | 需读 outline.yaml + 场景统计 |
+
+步骤 0 完成 per-novel 索引和 SQLite 后，继续步骤 4-5 聚合全局索引。如果步骤 0 脚本报错，则按步骤 1-3 手动处理 per-novel 部分。
+
+### 1. 遍历场景文件（手动 fallback）
 
 分批读取 `scenes/` 目录下所有 YAML 文件，每批 50 个。
 
 从每个场景提取：
 - `scene_id`, `chapter`, `title`, `summary`
-- 全部标签字段（6 层 22 维）
+- 全部标签字段（6 层 20 维）
 - `characters[].name`
 - `tension`
 - `plot_function`
@@ -316,16 +328,16 @@ pipeline:
 - 倒排索引中 scene_id 列表按章节顺序排列
 - manifest 中 summary 截断到 50 字以内
 - 索引文件需与实际场景保持一致，新增场景后需重建或增量更新
-- `material-search-scene` 检索时应优先调用 `scripts/search.py` 查 SQLite，而非直接读 YAML 索引
+- `material-search-scene` 检索时应优先调用 `scripts/core/search.py` 查 SQLite，而非直接读 YAML 索引
 - 全局索引采用 upsert 语义——只替换当前 material_id 的条目，保留其他素材数据
 - `character_index` 中的 `arc_summary` 应浓缩为一句话，不超过 30 字
 - `plot_index` 中的 `turning_points` 只记录主要转折（通常 3-8 个），不穷举
-- **SQLite 是 YAML 的派生产物**：如果 `material.db` 丢失或损坏，运行 `python scripts/build_db.py` 可从 YAML 完全重建
-- **增量更新**：单本小说修改后，用 `python scripts/build_db.py --incremental {material_id}` 更新，不必全量重建
+- **SQLite 是 YAML 的派生产物**：如果 `material.db` 丢失或损坏，运行 `python scripts/core/build_db.py` 可从 YAML 完全重建
+- **增量更新**：单本小说修改后，用 `python scripts/core/build_db.py --incremental {material_id}` 更新，不必全量重建
 
 ## References
 
-- [scripts/build_scene_index.py](../../../scripts/build_scene_index.py) — 固化索引脚本
+- [scripts/core/build_scene_index.py](../../../scripts/core/build_scene_index.py) — 固化索引脚本
 - [scenes-index.schema.yaml](../../../docs/schemas/scenes-index.schema.yaml)
 - [scenes-manifest.schema.yaml](../../../docs/schemas/scenes-manifest.schema.yaml)
 - [AGENTS.md](../../AGENTS.md)

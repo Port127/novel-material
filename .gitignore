@@ -1,5 +1,7 @@
 data/novels/
+data/material.db
 .DS_Store
 feature.md
 material/
 __pycache__/
+scripts/generated/

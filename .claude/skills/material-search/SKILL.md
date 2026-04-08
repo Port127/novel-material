@@ -53,13 +53,13 @@ arguments: query
 
 ```bash
 # 角色名 → 按人物检索
-python scripts/search.py scene --character {角色名} --limit 10
+python scripts/core/search.py scene --character {角色名} --limit 10
 
 # 关键词 → 全文搜索 summary/title
-python scripts/search.py text --query {关键词} --limit 10
+python scripts/core/search.py text --query {关键词} --limit 10
 
 # 可映射到标签值 → 多维检索
-python scripts/search.py scene --scene-type {映射值} --limit 10
+python scripts/core/search.py scene --scene-type {映射值} --limit 10
 ```
 
 **Level 2 — YAML 倒排索引**（SQLite 不可用时）：
@@ -104,4 +104,4 @@ python scripts/search.py scene --scene-type {映射值} --limit 10
 ## References
 
 - [AGENTS.md](../../AGENTS.md)
-- [DESIGN.md](../../../docs/DESIGN.md) — 检索策略
+- [ARCHITECTURE.md](../../../ARCHITECTURE.md) — 架构、检索策略、跨项目集成

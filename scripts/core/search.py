@@ -12,14 +12,14 @@ LLM 不再需要读索引文件，调用此脚本即可完成多维检索。
     stats       数据库统计
 
 用法:
-    python scripts/search.py scene --scene-type 对决 --emotion 燃 --limit 10
-    python scripts/search.py scene --conflict 人与命运 --reader-effect 催泪 --tension-min 4
-    python scripts/search.py scene --character 陈汉升 --scene-type 对决
-    python scripts/search.py scene --material nm_novel_20260405_zhbk --emotion 悲伤
-    python scripts/search.py character --archetype 导师 --material nm_novel_20260405_zhbk
-    python scripts/search.py character --name 陈汉升
-    python scripts/search.py text --query 告别 --limit 10
-    python scripts/search.py stats
+    python scripts/core/search.py scene --scene-type 对决 --emotion 燃 --limit 10
+    python scripts/core/search.py scene --conflict 人与命运 --reader-effect 催泪 --tension-min 4
+    python scripts/core/search.py scene --character 陈汉升 --scene-type 对决
+    python scripts/core/search.py scene --material nm_novel_20260405_zhbk --emotion 悲伤
+    python scripts/core/search.py character --archetype 导师 --material nm_novel_20260405_zhbk
+    python scripts/core/search.py character --name 陈汉升
+    python scripts/core/search.py text --query 告别 --limit 10
+    python scripts/core/search.py stats
 """
 
 import argparse
@@ -44,7 +44,7 @@ TAG_DIMENSIONS = [
 def get_conn():
     if not DB_PATH.exists():
         print(f"ERROR: 数据库不存在: {DB_PATH}", file=sys.stderr)
-        print("请先运行: python scripts/build_db.py", file=sys.stderr)
+        print("请先运行: python scripts/core/build_db.py", file=sys.stderr)
         sys.exit(1)
     return sqlite3.connect(str(DB_PATH))
 

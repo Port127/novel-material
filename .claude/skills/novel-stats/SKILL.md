@@ -251,12 +251,13 @@ relationship_graph:
    - 边 = 关系（标签显示关系类型，粗细按 weight）
    - 支持拖拽、缩放、hover 显示详情
 
-**HTML 模板要求**：
+**HTML 生成策略**：
 - 单文件，所有 CSS/JS 内联（ECharts 通过 CDN 引入）
 - 响应式布局，适配桌面和平板
 - 深色/浅色主题自适应
 - 顶部导航栏快速跳转各图表
-- 参考 `docs/templates/stats-template.html` 模板（如存在）
+- 先检查 `data/novels/{material_id}/` 下是否已有上次生成的 `stats.html`，如果有，读取其 HTML 结构作为模板骨架，只替换数据部分，避免每次从零生成
+- 如果是首次生成，按上述 8 个图表逐个构建
 
 ### 14. 写入文件
 

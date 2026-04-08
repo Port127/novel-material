@@ -122,7 +122,7 @@ avg_chars_per_chapter: ~3200
 本批所有场景写入后，运行固化校验脚本：
 
 ```bash
-python scripts/validate_yaml.py scene {material_id} ch{批次起始章号}
+python scripts/core/validate_yaml.py scene {material_id} ch{批次起始章号}
 ```
 
 脚本自动执行以下检查：
@@ -138,8 +138,11 @@ python scripts/validate_yaml.py scene {material_id} ch{批次起始章号}
 格式校验通过后，运行质量审计：
 
 ```bash
-python scripts/quality_audit.py {material_id} --batch {起始章}-{结束章}
+python scripts/core/quality_audit.py {material_id} --batch {本批起始章}-{本批结束章}
 ```
+
+**⚠️ `--batch` 只传本批新增范围（如 `181-200`），不传累积范围（如 `1-200`）。**
+累积范围会导致 tag_diversity 随场景数增长而虚假下降。
 
 脚本自动计算并写入 `meta.yaml`：
 - `tag_diversity`：标签组合唯一率（< 0.5 判定失败）
@@ -198,7 +201,7 @@ pipeline:
 覆盖检查通过后，运行全书审计：
 
 ```bash
-python scripts/quality_audit.py {material_id} --report
+python scripts/core/quality_audit.py {material_id} --report
 ```
 
 输出：

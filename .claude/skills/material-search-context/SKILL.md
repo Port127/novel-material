@@ -43,12 +43,12 @@ arguments: context
 
 ### 2. 多维度并行检索
 
-**优先使用 `scripts/search.py` 查 SQLite**（如存在 `data/material.db`），同时在三个维度执行检索：
+**优先使用 `scripts/core/search.py` 查 SQLite**（如存在 `data/material.db`），同时在三个维度执行检索：
 
 #### 2a. 场景参考
 
 ```bash
-python scripts/search.py scene --scene-type {推断} --emotion {推断} --relationship {推断} --limit 10
+python scripts/core/search.py scene --scene-type {推断} --emotion {推断} --relationship {推断} --limit 10
 ```
 
 脚本自动完成 AND 交集和匹配度排序。AND 无结果时自动放宽为 OR。
@@ -60,7 +60,7 @@ python scripts/search.py scene --scene-type {推断} --emotion {推断} --relati
 #### 2b. 人物参考
 
 ```bash
-python scripts/search.py character --archetype {推断} --role protagonist --limit 10
+python scripts/core/search.py character --archetype {推断} --role protagonist --limit 10
 ```
 
 支持按原型、角色类型、道德光谱检索。心理深度字段（`fatal_flaw` 等）在结果中自动返回。
@@ -70,7 +70,7 @@ SQLite 不可用时，退回读取 `data/character_index.yaml`。
 #### 2c. 技法参考
 
 ```bash
-python scripts/search.py scene --technique {推断} --reader-effect {推断} --limit 5
+python scripts/core/search.py scene --technique {推断} --reader-effect {推断} --limit 5
 ```
 
 从场景中检索使用了特定技法的案例，结合 `reader_effect` 反推合适技法。
@@ -137,7 +137,7 @@ python scripts/search.py scene --technique {推断} --reader-effect {推断} --l
 | `plot-suggest` | 检索相似结构/转折/套路的案例 |
 | `inspiration-log` | 记录灵感时追溯素材来源 |
 
-调用路径：`novel` skill → `python ../novel-material/scripts/search.py` → 获取精简结果 → 按需读场景 YAML 详情
+调用路径：`novel` skill → `python ../novel-material/scripts/core/search.py` → 获取精简结果 → 按需读场景 YAML 详情
 
 ## 注意事项
 

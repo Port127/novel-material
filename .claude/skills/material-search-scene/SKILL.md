@@ -35,7 +35,7 @@ arguments: query
 **优先调用 search.py 查 SQLite**（如存在 `data/material.db`）：
 
 ```bash
-python scripts/search.py scene --scene-type 对决 --emotion 燃 --relationship 师徒 --limit 10
+python scripts/core/search.py scene --scene-type 对决 --emotion 燃 --relationship 师徒 --limit 10
 ```
 
 脚本自动完成 AND 交集、匹配度排序、结果精简，输出 YAML 格式结果。LLM 只需读脚本输出，不必加载索引文件。

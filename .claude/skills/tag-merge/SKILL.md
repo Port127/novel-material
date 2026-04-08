@@ -50,11 +50,23 @@ arguments: dimension, old_value, new_value
 3. 删除旧值 key
 4. 写回 `scenes_index.yaml`
 
-如果存在固化脚本 `scripts/build_scene_index.py`，也可对受影响的 material_id 重跑索引构建。
+如果存在固化脚本 `scripts/core/build_scene_index.py`，也可对受影响的 material_id 重跑索引构建。
 
 ### 5. 更新场景清单
 
 对受影响的小说，更新 `scenes_manifest.yaml` 中对应场景的标签字段（如果 manifest 包含该维度）。
+
+### 6. 重建 SQLite 索引
+
+YAML 更新后 SQLite 会与 YAML 不一致，必须重建：
+
+```bash
+# 对每个受影响的 material_id 重建
+python scripts/core/build_db.py --material {material_id}
+
+# 或一次性全量重建
+python scripts/core/build_db.py
+```
 
 ## 输出格式
 
@@ -68,12 +80,13 @@ arguments: dimension, old_value, new_value
   小说标签：{novel_count} 个
   倒排索引：{index_count} 个已重建
   场景清单：{manifest_count} 个已更新
+  SQLite：已重建
 ```
 
 ## 注意事项
 
 - 合并前先评估影响范围，等待用户确认
-- 场景文件、倒排索引、场景清单三者必须同步更新，缺一不可
+- 场景文件、倒排索引、场景清单、SQLite 四者必须同步更新，缺一不可
 - 合并不可撤销，谨慎操作
 
 ## References

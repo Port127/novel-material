@@ -6,9 +6,9 @@ YAML 文件仍是 source of truth，SQLite 是派生的查询加速层。
 可随时从 YAML 重建，无数据损失。
 
 用法:
-    python scripts/build_db.py                         # 全量重建（所有小说）
-    python scripts/build_db.py --material <id>         # 仅重建指定小说
-    python scripts/build_db.py --incremental <id>      # 增量更新指定小说
+    python scripts/core/build_db.py                         # 全量重建（所有小说）
+    python scripts/core/build_db.py --material <id>         # 仅重建指定小说
+    python scripts/core/build_db.py --incremental <id>      # 增量更新指定小说
 
 输出:
     data/material.db
@@ -43,8 +43,62 @@ def _as_list(val):
     if val is None:
         return []
     if isinstance(val, list):
-        return [str(v) for v in val]
+        return [str(v) for v in val if not isinstance(v, dict)]
+    if isinstance(val, dict):
+        return []
     return [str(val)]
+
+
+# Nested format (legacy) → flat field mapping
+_NESTED_MAP = {
+    'content': ['scene_type', 'conflict', 'stakes'],
+    'people': ['relationship', 'interaction', 'power_dynamic', 'character_moment', 'moral_spectrum'],
+    'emotion': ['emotion', 'reader_effect'],
+    'structure': ['plot_stage', 'plot_function', 'pacing'],
+    'craft': ['technique', 'dialogue_type', 'pov', 'info_delivery'],
+    'setting': ['scale', 'time_weather'],
+}
+
+_NESTED_REMAP = {
+    'location': 'setting',
+}
+
+
+def _flatten_scene(raw: dict) -> dict:
+    """Normalize nested scene format to flat format for uniform DB ingestion.
+
+    Handles both flat format (scene.schema.yaml Flat Output Contract)
+    and legacy nested format (content/people/emotion/structure/craft/setting groups).
+    """
+    flat = dict(raw)
+
+    if 'scene_id' in flat and 'id' not in flat:
+        flat['id'] = flat.pop('scene_id')
+
+    for group_key, fields in _NESTED_MAP.items():
+        if group_key in flat and isinstance(flat[group_key], dict):
+            group = flat.pop(group_key)
+            for f in fields:
+                if f in group and f not in flat:
+                    flat[f] = group[f]
+            for old_name, new_name in _NESTED_REMAP.items():
+                if old_name in group and new_name not in flat:
+                    flat[new_name] = group[old_name]
+
+    if 'tension' not in flat:
+        emo = raw.get('emotion')
+        if isinstance(emo, dict) and 'tension' in emo:
+            flat['tension'] = emo['tension']
+
+    if 'characters' in flat and isinstance(flat['characters'], list):
+        first = flat['characters'][0] if flat['characters'] else None
+        if isinstance(first, dict) and 'name' in first:
+            flat['characters'] = [c['name'] for c in flat['characters'] if isinstance(c, dict)]
+
+    if 'moral_spectrum' in flat and isinstance(flat['moral_spectrum'], list):
+        flat['moral_spectrum'] = flat['moral_spectrum'][0] if flat['moral_spectrum'] else ''
+
+    return flat
 
 
 def create_schema(conn: sqlite3.Connection):
@@ -174,6 +228,8 @@ def ingest_novel(conn: sqlite3.Connection, material_id: str):
 
             if not scene:
                 continue
+
+            scene = _flatten_scene(scene)
 
             scene_id = scene.get('id', sf.stem)
             chapter = scene.get('chapter', '')

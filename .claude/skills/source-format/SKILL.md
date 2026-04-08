@@ -10,7 +10,7 @@ arguments: material_id
 
 对已入库的小说原文 `source.txt` 进行格式清洗，输出清洗后的文本和格式报告。
 
-**优先使用固化脚本** `scripts/source_format.py`，仅在脚本不满足需求时动态补充。
+**优先使用固化脚本** `scripts/core/source_format.py`，仅在脚本不满足需求时动态补充。
 
 ## 前置检查
 
@@ -26,7 +26,7 @@ arguments: material_id
 ### 2. 运行固化脚本
 
 ```bash
-python scripts/source_format.py \
+python scripts/core/source_format.py \
   data/novels/{material_id}/source.txt \
   data/novels/{material_id}/source.txt \
   data/novels/{material_id}/format_report.yaml
@@ -65,11 +65,39 @@ python scripts/source_format.py \
 | 脚本未识别的广告模式 | 追加广告正则并重跑 |
 | 编码异常（非 UTF-8 源文件） | 动态检测编码并转换 |
 
+动态生成的补充脚本应写入 `scripts/generated/`（如 `scripts/generated/format_{小说简称}.py`），与预制脚本隔离。
+
 **如果脚本输出正常、无异常，跳过此步骤。**
 
-### 5. 更新 meta.yaml
+### 5. 生成章节索引 (chapter_index.yaml)
 
-在 `meta.yaml` 中增加 `formatted: true` 和 `format_date` 字段。
+格式清洗完成后，扫描清洗后的 `source.txt`，生成持久化章节索引文件 `chapter_index.yaml`：
+
+```yaml
+# data/novels/{material_id}/chapter_index.yaml
+total: 1070
+chapters:
+  - num: 1
+    title: "第1章 喝酒不开车"
+    start_line: 1
+    end_line: 280
+  - num: 2
+    title: "第2章 重生回到2002年"
+    start_line: 281
+    end_line: 530
+  # ...
+```
+
+此文件是**下游 skill 的关键依赖**：
+- `novel-scenes` 的 `chapter` 字段必须从此文件逐字拷贝
+- `validate_yaml.py` 用此文件校验章节名匹配
+- `novel-outline` / `novel-scenes` 用此文件定位章节读取范围
+
+如果 `format_report.yaml` 中已包含完整章节列表，可直接提取为 `chapter_index.yaml`。
+
+### 6. 更新 meta.yaml
+
+在 `meta.yaml` 中增加 `formatted: true`、`format_date` 和 `chapters` 字段。
 
 ## 输出格式
 
@@ -95,6 +123,7 @@ python scripts/source_format.py \
     - 第789章：字数仅120字，疑似截断
 
 📄 报告文件：data/novels/{id}/format_report.yaml
+📄 章节索引：data/novels/{id}/chapter_index.yaml
 📄 原始备份：data/novels/{id}/source.raw.txt
 ```
 
@@ -107,7 +136,7 @@ python scripts/source_format.py \
 
 ## References
 
-- [scripts/source_format.py](../../../scripts/source_format.py) — 固化清洗脚本
+- [scripts/core/source_format.py](../../../scripts/core/source_format.py) — 固化清洗脚本
 - [scripts/requirements.txt](../../../scripts/requirements.txt) — 脚本依赖
 - [format-report.schema.yaml](../../../docs/schemas/format-report.schema.yaml)
 - [AGENTS.md](../../AGENTS.md)

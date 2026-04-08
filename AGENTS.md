@@ -9,63 +9,95 @@
 3. `ARCHITECTURE.md`
 4. 目标 skill 的 `SKILL.md`
 
+## 文档导航
+
+| 你想做什么 | 去哪里 |
+|-----------|-------|
+| 看项目全貌 | `README.md` |
+| 按场景找命令 | `docs/USAGE-GUIDE.md` |
+| 了解系统架构 / 标签体系 / ADR | `ARCHITECTURE.md` |
+| 标签标注时查判断依据 | `docs/TAG_GUIDE.md` |
+| 查数据 schema | `docs/schemas/` |
+| 直接查数据库 | `docs/USAGE-GUIDE.md` §七 |
+
 ## Quick Start
 
 ```bash
-# 一键流程（推荐）
-/novel-pipeline full [路径]        # 一键完整处理（10 阶段）
-/novel-pipeline quick [路径]       # 快速骨架（入库→格式化→大纲→世界观→人物）
-/novel-pipeline continue [id]      # 从中断点恢复
-/novel-pipeline stage [id] [阶段]  # 执行指定阶段
+# ── 一键流程（调度器，串联 4 个子流水线）──
+/novel-pipeline full [路径]          # 一键完整处理
+/novel-pipeline quick [路径]         # 快速骨架（入库→分析）
+/novel-pipeline continue [id]        # 从中断点恢复
+/novel-pipeline stage [id] [阶段]    # 执行指定子流水线
 
-# 单独调用
-/material-add [路径]                    # 添加素材入库
-/source-format [material_id]            # 格式清洗
-/novel-outline [material_id]            # 生成故事大纲
-/novel-worldbuilding [material_id]     # 提取世界观设定
-/novel-characters [material_id]         # 生成人物体系
-/novel-tags [material_id]               # 生成小说级标签
-/novel-scenes [material_id] [章节范围]   # 拆分场景+打标签
-/build-index [material_id]              # 构建倒排索引+场景清单
-/refine [material_id]                   # 精调大纲/人物/标签
-/novel-stats [material_id]              # 生成统计报告+可视化
+# ── 子流水线（推荐大书分段处理）──
+/pipeline-ingest [路径]              # ① 入库+格式清洗
+/pipeline-analyze [material_id]      # ② 大纲+世界观+人物+标签
+/pipeline-scenes [material_id]       # ③ 全书场景拆分+索引（可跨对话恢复）
+/pipeline-finalize [material_id]     # ④ 精调+统计报告
 
-# 检索
-/material-search [关键词]              # 关键词检索
-/material-search-scene [需求描述]      # 多维标签检索
-/material-search-context [写作上下文]  # 写作场景上下文检索
+# ── 导入 ──
+/material-import [文件夹路径]         # 导入外部已按 schema 分析好的素材
+
+# ── 原子 skill（调试/特殊需求）──
+/material-add [路径]                 # 仅入库原文
+/source-format [material_id]         # 格式清洗
+/novel-outline [material_id]         # 生成故事大纲
+/novel-worldbuilding [material_id]   # 提取世界观设定
+/novel-characters [material_id]      # 生成人物体系
+/novel-tags [material_id]            # 生成小说级标签
+/novel-scenes [material_id] [范围]   # 拆分场景+打标签
+/build-index [material_id]           # 构建倒排索引+场景清单
+/refine [material_id]                # 精调大纲/人物/标签
+/novel-stats [material_id]           # 生成统计报告+可视化
+
+# ── 检索 ──
+/material-search [关键词]            # 关键词检索
+/material-search-scene [需求描述]    # 多维标签检索
+/material-search-context [写作上下文] # 写作场景上下文检索
 ```
 
 ## Skills
 
-|| Skill | 用途 |
-||-------|------|
-|| `novel-pipeline` | 一键流程编排，支持完整/快速/恢复模式 |
-|| `material-add` | 添加素材入库 |
-|| `source-format` | 格式清洗（繁简/广告/引号/章节名/缺章检测） |
-|| `novel-outline` | 生成故事大纲（结构+节奏+伏笔） |
-|| `novel-worldbuilding` | 提取世界观设定（力量体系+地理+势力+背景） |
-|| `novel-characters` | 生成人物体系（名册+关系+弧线+原型+叙事功能） |
-|| `novel-tags` | 生成小说级多维标签（含套路识别） |
-|| `novel-scenes` | 拆分场景+多维标签（分批执行） |
-|| `build-index` | 构建倒排索引+场景清单（加速检索） |
-|| `refine` | 场景完成后精调大纲/人物/标签 |
-|| `novel-stats` | 生成统计报告+可视化图表+交互HTML+关系图谱 |
-|| `material-search` | 关键词检索 |
-|| `material-search-scene` | 按多维标签检索场景 |
-|| `material-search-context` | 写作上下文检索（场景+人物+技法三维） |
-|| `tag-add` | 新增标签值 |
-|| `tag-merge` | 合并同义标签 |
+### 调度层
 
-## Key Docs
+| Skill | 用途 |
+|-------|------|
+| `novel-pipeline` | 轻量调度器，路由到子流水线 |
 
-|| 文档 | 用途 |
-||------|------|
-|| [ARCHITECTURE.md](ARCHITECTURE.md) | 拓扑、数据存储、Pipeline、标签体系 |
-|| [docs/DESIGN.md](docs/DESIGN.md) | 设计原则、数据模型、检索策略 |
-|| [docs/USAGE-GUIDE.md](docs/USAGE-GUIDE.md) | 按场景的使用指南（不用记命令） |
-|| [docs/TAG_GUIDE.md](docs/TAG_GUIDE.md) | 标签判断依据、易混淆对照表 |
-|| [docs/schemas/](docs/schemas/) | 数据 schema 模板 |
+### 子流水线层（推荐入口）
+
+| Skill | 串联的原子 skill | 用途 |
+|-------|-------------------|------|
+| `pipeline-ingest` | material-add → source-format | 入库+格式清洗 |
+| `pipeline-analyze` | outline → worldbuilding → characters → tags | 生成骨架分析 |
+| `pipeline-scenes` | novel-scenes (all) → build-index | 全书场景拆分+索引（可跨对话） |
+| `pipeline-finalize` | refine → novel-stats | 精调+统计报告 |
+
+### 导入
+
+| Skill | 用途 |
+|-------|------|
+| `material-import` | 导入外部已分析好的素材（按本库 schema），自动注册+建索引 |
+
+### 原子 skill 层
+
+| 分类 | Skill | 用途 |
+|------|-------|------|
+| 入库 | `material-add` | 添加原文入库（status=raw，需后续跑 pipeline） |
+| 清洗 | `source-format` | 格式清洗（繁简/广告/引号/章节名/缺章检测） |
+| 分析 | `novel-outline` | 生成故事大纲（结构+节奏+伏笔） |
+| 分析 | `novel-worldbuilding` | 提取世界观设定（力量体系+地理+势力+背景） |
+| 分析 | `novel-characters` | 生成人物体系（名册+关系+弧线+原型+叙事功能） |
+| 分析 | `novel-tags` | 生成小说级多维标签（含套路识别） |
+| 场景 | `novel-scenes` | 拆分场景+多维标签（分批执行） |
+| 索引 | `build-index` | 构建倒排索引+场景清单（加速检索） |
+| 后处理 | `refine` | 场景完成后精调大纲/人物/标签 |
+| 后处理 | `novel-stats` | 生成统计报告+可视化图表+交互HTML+关系图谱 |
+| 检索 | `material-search` | 关键词检索 |
+| 检索 | `material-search-scene` | 按多维标签检索场景 |
+| 检索 | `material-search-context` | 写作上下文检索（场景+人物+技法三维） |
+| 标签 | `tag-add` | 新增标签值 |
+| 标签 | `tag-merge` | 合并同义标签 |
 
 ## ID Convention
 
@@ -80,23 +112,18 @@
 - MUST 场景 YAML 写入后执行格式校验（YAML 解析 + 必填字段 + 标签合法 + 章节名匹配）
 - MUST 场景 `chapter` 字段从 `chapter_index.yaml` 逐字拷贝，禁止凭记忆拼写
 - MUST 场景 YAML 中含引号的字符串值用单引号包裹，防止 YAML 解析失败
-- MUST 检索优先调用 `scripts/search.py` 查 SQLite，不直接读大索引文件
+- MUST 检索优先调用 `scripts/core/search.py` 查 SQLite，不直接读大索引文件
 - MUST refine/stats/build-index 不读原文，只读场景 YAML
-- NEVER 编造质量数据（无信号写 TBD）
 - MUST 场景拆分通过自动循环分批执行，all 模式下无需逐批确认
-- MUST 每批场景写入后运行 `scripts/quality_audit.py` 审计，指标写入 meta.yaml
+- MUST 每批场景写入后运行 `scripts/core/quality_audit.py --batch {本批范围}` 审计（只传本批范围如 `181-200`，不传累积范围如 `1-200`）
 - MUST build-index 同时生成 YAML 索引和 SQLite（`data/material.db`）
-- NEVER 用脚本批量生成模板化场景文件（见 Anti-Pattern: 模板糊弄）
 - MUST 场景标签由 LLM 逐批阅读原文后生成，禁止关键词匹配代替理解
+- MUST material-import 重新生成 material_id，校验标签合法性后才注册
+- NEVER 编造质量数据（无信号写 TBD）
+- NEVER 用脚本批量生成模板化场景文件（详见 `ARCHITECTURE.md` → Anti-Pattern）
 
-## Anti-Pattern: 模板糊弄
+## 护栏
 
-以下行为**严格禁止**，违反即视为任务失败：
-
-1. **脚本代替理解**：写 Python/Shell 脚本用关键词匹配批量生成场景文件。场景标签必须由 LLM 阅读原文后判断，不可由脚本代劳。
-2. **千篇一律**：所有场景的 `scene_type` / `emotion` / `conflict` / `setting` 等字段值相同或高度雷同。同一批次内每个场景的标签组合必须反映该场景的独特内容。
-3. **空字段占位**：`conflict: []`、`stakes: []`、`action: ''` 等空值大面积出现。如果确实无冲突，写 `conflict: []` 可以，但不能所有场景都是空的。
-4. **summary 抄首句**：summary 不能只是章节开头几十个字的截断，必须是对场景核心事件的概括。
-5. **title 编号代替**：`title: 场景1` 不合格，必须是有语义的概括短语（如 "庙会买糖葫芦"、"车祸觉醒系统"）。
-
-**合规检查**：完成一批后，抽查该批内任意 2 个场景文件，确认标签组合互不相同。如果相同，必须重做该批。
+- 保持本文件为地图，而非百科全书
+- 链接指向细节，而非重复内容
+- 架构决策、设计原则、Anti-Pattern 详情均在 `ARCHITECTURE.md`

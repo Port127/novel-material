@@ -5,10 +5,10 @@ validate_yaml.py — 通用 YAML 校验脚本
 校验场景文件（必填字段 + 标签值合法性 + 章节名匹配）和其他产出文件。
 
 用法:
-    python scripts/validate_yaml.py scene <material_id>          # 校验全部场景
-    python scripts/validate_yaml.py scene <material_id> ch0001   # 校验单个/匹配前缀
-    python scripts/validate_yaml.py meta <material_id>           # 校验 meta.yaml
-    python scripts/validate_yaml.py all <material_id>            # 校验全部产出
+    python scripts/core/validate_yaml.py scene <material_id>          # 校验全部场景
+    python scripts/core/validate_yaml.py scene <material_id> ch0001   # 校验单个/匹配前缀
+    python scripts/core/validate_yaml.py meta <material_id>           # 校验 meta.yaml
+    python scripts/core/validate_yaml.py all <material_id>            # 校验全部产出
 
 输出:
     校验报告（stdout），失败文件列表，exit code 0=全部通过, 1=有失败

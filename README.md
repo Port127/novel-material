@@ -4,26 +4,34 @@
 
 ## 功能
 
-- **10 阶段 Pipeline**：入库 → 格式清洗 → 大纲 → 世界观 → 人物 → 标签 → 场景拆分 → 索引 → 精调 → 统计
-- **多维标签体系**：6 层 29 维、418 个标签值，覆盖场景内容/人物/情感/结构/技法/物理环境
+- **4 段子流水线**：入库清洗 → 骨架分析 → 场景拆分+索引 → 精调+统计
+- **外部导入**：支持导入已按 schema 分析好的素材，自动校验+注册+建索引
+- **多维标签体系**：6 层 20 维场景标签 + 7 维小说标签，共 418 个标签值
 - **SQLite 查询层**：结构化多维检索，支持跨小说搜索场景、人物、全文
 - **批次质量审计**：自动检测标签多样性、质量漂移、失败批次
-- **中断恢复**：长小说分批处理，任意时刻断开，新会话接着来
+- **跨对话恢复**：长小说场景拆分可跨多次对话，每批进度持久化
 
 ## 快速开始
 
 ```bash
-# 入库一本小说（全自动 10 阶段）
+# ── 入库一本小说 ──
+
+# 方式 1：全自动（短篇推荐）
 /novel-pipeline full /path/to/novel.txt
 
-# 找参考场景
+# 方式 2：分段调用（大书推荐，每次开新对话）
+/pipeline-ingest /path/to/novel.txt        # ① 入库+清洗
+/pipeline-analyze nm_novel_20260408_xxxx   # ② 大纲+世界观+人物+标签
+/pipeline-scenes nm_novel_20260408_xxxx    # ③ 全书场景（可跨对话恢复）
+/pipeline-finalize nm_novel_20260408_xxxx  # ④ 精调+统计报告
+
+# 方式 3：导入已分析好的素材
+/material-import /path/to/analyzed_folder
+
+# ── 检索素材 ──
+
 /material-search-scene 恋人在雨中告别
-
-# 精确检索（直接调用脚本）
-python scripts/search.py scene --scene-type 对决 --emotion 燃 --tension-min 4
-
-# 质量审计
-python scripts/quality_audit.py nm_novel_20260405_zhbk --report
+python scripts/core/search.py scene --scene-type 对决 --emotion 燃 --tension-min 4
 ```
 
 详细使用指南见 [docs/USAGE-GUIDE.md](docs/USAGE-GUIDE.md)。
@@ -33,7 +41,7 @@ python scripts/quality_audit.py nm_novel_20260405_zhbk --report
 本库独立存在，`../novel` 项目通过脚本调用检索素材：
 
 ```bash
-python ../novel-material/scripts/search.py scene --emotion 悲伤 --interaction 告别 --limit 5
+python ../novel-material/scripts/core/search.py scene --emotion 悲伤 --interaction 告别 --limit 5
 ```
 
 没有本库时，`novel` 项目照常工作，检索精度下降。
@@ -44,16 +52,16 @@ python ../novel-material/scripts/search.py scene --emotion 悲伤 --interaction 
 |------|------|
 | `data/novels/` | 每部小说独立文件夹（原文+大纲+人物+场景+索引） |
 | `data/index.yaml` | 素材路由表 |
-| `data/tags.yaml` | 标签维度字典（6 层 29 维，418 值） |
+| `data/tags.yaml` | 标签维度字典（20 维场景标签 + 7 维小说标签） |
 | `data/material.db` | SQLite 查询索引（从 YAML 派生，可重建） |
 | `docs/` | 设计文档、schema 模板、标签指南、使用指南 |
-| `scripts/` | 固化脚本（检索/索引/校验/审计） |
+| `scripts/core/` | 预制脚本（检索/索引/校验/审计/清洗） |
+| `scripts/generated/` | 运行时自动生成的脚本（已 gitignore） |
 | `.claude/skills/` | Agent skill 定义 |
 
 ## 关键文档
 
 - [AGENTS.md](AGENTS.md) — Skill 路由表 + 硬规则
-- [ARCHITECTURE.md](ARCHITECTURE.md) — 系统拓扑 + 数据层级
-- [docs/DESIGN.md](docs/DESIGN.md) — 设计原则 + 检索策略
-- [docs/USAGE-GUIDE.md](docs/USAGE-GUIDE.md) — 按场景的使用指南
+- [ARCHITECTURE.md](ARCHITECTURE.md) — 系统拓扑 + 标签体系 + ADR
+- [docs/USAGE-GUIDE.md](docs/USAGE-GUIDE.md) — 按场景的使用指南（含数据库查询）
 - [docs/TAG_GUIDE.md](docs/TAG_GUIDE.md) — 标签判断依据 + 易混淆对照

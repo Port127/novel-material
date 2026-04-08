@@ -101,10 +101,9 @@ status: raw
 📋 状态：raw
 
 后续步骤：
-  /novel-outline {id}       # 生成大纲
-  /novel-characters {id}    # 生成人物体系
-  /novel-tags {id}          # 生成小说级标签
-  /novel-scenes {id} 1-5    # 拆分场景（按章节范围）
+  /source-format {id}          # 格式清洗（推荐先执行）
+  /pipeline-analyze {id}       # 生成大纲/世界观/人物/标签
+  /novel-pipeline continue {id} # 继续完整流程
 ```
 
 ## 注意事项

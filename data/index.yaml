@@ -42,3 +42,11 @@ materials:
     folder: data/novels/nm_novel_20260406_dwrn
     status: raw
     added: 2026-04-06
+
+  - id: nm_novel_20260408_bfg7
+    type: novel
+    name: "《大奉打更人》（校对版全本）"
+    author: 卖报小郎君
+    folder: data/novels/nm_novel_20260408_bfg7
+    status: raw
+    added: 2026-04-08

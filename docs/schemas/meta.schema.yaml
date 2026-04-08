@@ -1,6 +1,13 @@
 # meta.yaml schema
 # 每部小说的元数据文件
 # 路径: data/novels/{material_id}/meta.yaml
+#
+# 此文件随 pipeline 推进逐步扩充，早期阶段只有基础字段，
+# 后续阶段的脚本和 skill 会追加 pipeline、scene_batches 等。
+
+# ====================================================================
+# 基础字段（material-add 创建时即写入）
+# ====================================================================
 
 material_id: nm_{type}_{YYYYMMDD}_{random4}
 type: novel
@@ -8,8 +15,101 @@ name: "《书名》"
 author: 作者名
 source: source.txt
 added: YYYY-MM-DD
-status: raw          # raw → outlined → tagged → complete
-                     # raw:      仅有原文
-                     # outlined: 大纲+人物已完成
-                     # tagged:   场景拆分+标签已完成
-                     # complete: 全部索引已就绪
+
+# 状态流：raw → outlined → tagged → complete → refined
+#
+#   raw       仅有原文入库（source-format 完成后 formatted: true，但 status 仍为 raw）
+#   outlined  pipeline-analyze 进行中或完成（outline + worldbuilding + characters）
+#   tagged    pipeline-analyze 完成（小说级标签已生成）。注意：场景尚未拆分
+#   complete  pipeline-scenes 完成（场景全部拆分 + 索引已构建）
+#   refined   pipeline-finalize 完成（精调 + 统计报告已生成）
+#
+status: raw
+
+# source-format 完成后追加
+formatted: true              # 格式清洗是否完成
+format_date: YYYY-MM-DD      # 清洗日期
+
+# ====================================================================
+# pipeline 进度追踪（各阶段逐步追加字段）
+# ====================================================================
+
+pipeline:
+  # 流程入口模式（由调度器写入）
+  mode: full                 # full | quick | ingest | import
+
+  # 当前正在执行的阶段
+  current_stage: scenes      # ingest | analyze | scenes | finalize | complete
+
+  # 已完成的阶段列表（有序追加）
+  stages_completed:
+    - material-add
+    - source-format
+    - outline
+    - worldbuilding
+    - characters
+    - tags
+    # - scenes, build-index, refine, novel-stats
+
+  # ── ingest 阶段 ──
+  formatted: true            # 格式清洗完成
+  format_date: YYYY-MM-DD
+  chapters: 1070             # 总章节数（从 chapter_index.yaml 获取）
+
+  # ── analyze 阶段 ──
+  outlined_at: YYYY-MM-DD
+  worldbuilding_at: YYYY-MM-DD
+  characters_at: YYYY-MM-DD
+  tags_at: YYYY-MM-DD
+
+  # ── scenes 阶段 ──
+  scenes_processed:          # 已处理的章节批次范围（有序追加）
+    - "1-5"
+    - "6-10"
+  scenes_total_chapters: 1070
+
+  # ── build-index 阶段 ──
+  index_built: false         # 索引是否已构建
+  index_at: "2026-04-05T12:00:00Z"
+  manifest_scenes: 907       # 场景清单中的场景总数
+
+  # ── refine 阶段 ──
+  refined: false
+  refined_at: "2026-04-05T12:00:00Z"
+  refine_summary:
+    outline_changes: 3
+    character_changes: 5
+    tag_changes: 2
+
+  # ── novel-stats 阶段 ──
+  stats_generated: false
+  stats_at: "2026-04-05T12:00:00Z"
+
+# ====================================================================
+# 批次质量数据（quality_audit.py 写入）
+# ====================================================================
+
+scene_batches:
+  - range: "1-5"
+    total: 12                # 本批场景数
+    tag_diversity: 0.85      # 标签组合唯一率（< 0.5 判定失败）
+    empty_field_rate: 0.12   # 空字段占比（> 0.3 判定失败）
+    avg_tension: 2.4
+    summary_dedup: 1.0       # 摘要去重率
+    pass: true               # 本批是否通过
+
+quality_drift:               # 全书审计时生成，对比前后期批次
+  early_avg_diversity: 0.88
+  late_avg_diversity: 0.82
+  drift_detected: false
+
+# ====================================================================
+# 导入素材的额外字段（material-import 写入）
+# ====================================================================
+
+# imported: true
+# import_source: /path/to/original_folder
+# pipeline:
+#   mode: import
+#   stages_completed: [outline, worldbuilding, characters, tags, scenes, build-index]
+#   formatted: true

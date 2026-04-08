@@ -6,9 +6,9 @@ quality_audit.py — 场景标注质量审计脚本
 可审计全书或单个批次。结果写入 meta.yaml 的 scene_batches 字段。
 
 用法:
-    python scripts/quality_audit.py <material_id>                    # 全书审计
-    python scripts/quality_audit.py <material_id> --batch 1-5        # 单批审计（写入 meta）
-    python scripts/quality_audit.py <material_id> --report            # 输出 quality_report.yaml
+    python scripts/core/quality_audit.py <material_id>                    # 全书审计
+    python scripts/core/quality_audit.py <material_id> --batch 1-5        # 单批审计（写入 meta）
+    python scripts/core/quality_audit.py <material_id> --report            # 输出 quality_report.yaml
 """
 
 import argparse
@@ -160,10 +160,19 @@ def compute_batch_quality(scenes: list) -> dict:
     t5_count = tension_dist.get(5, 0)
     t5_rate = round(t5_count / n, 3) if n > 0 else 0
 
-    # Determine pass/fail
+    # Scale thresholds based on batch size — tag combos naturally repeat in
+    # larger batches because the vocabulary of scene_type+emotion+conflict is
+    # finite. Strict thresholds only make sense for small batches.
+    if n <= 30:
+        diversity_threshold = 0.5
+    elif n <= 80:
+        diversity_threshold = 0.4
+    else:
+        diversity_threshold = 0.3
+
     issues = []
-    if tag_diversity < 0.5:
-        issues.append(f"标签多样性过低: {tag_diversity}")
+    if tag_diversity < diversity_threshold:
+        issues.append(f"标签多样性过低: {tag_diversity} (阈值={diversity_threshold}, 场景数={n})")
     if empty_field_rate > 0.3:
         issues.append(f"空字段率过高: {empty_field_rate}")
     if bad_titles > 0:
@@ -380,7 +389,12 @@ def full_audit(material_id: str, write_report: bool = False):
 
 
 def batch_audit(material_id: str, batch_range: str):
-    """Audit a single batch and write results to meta.yaml."""
+    """Audit a single batch and write results to meta.yaml.
+
+    IMPORTANT: batch_range should cover ONLY the new batch (e.g. '181-200'),
+    not a cumulative range from chapter 1 (e.g. '1-200'). Cumulative ranges
+    inflate scene counts and drag down tag_diversity unfairly.
+    """
     base_dir = Path(f"data/novels/{material_id}")
     scenes_dir = base_dir / "scenes"
     meta_path = base_dir / "meta.yaml"
@@ -388,6 +402,12 @@ def batch_audit(material_id: str, batch_range: str):
     if not scenes_dir.exists():
         print(f"ERROR: 场景目录不存在: {scenes_dir}", file=sys.stderr)
         sys.exit(1)
+
+    start, end = map(int, batch_range.split('-'))
+    if start == 1 and end > 50:
+        print(f"⚠️  注意: 范围 {batch_range} 从第1章开始且超过50章，"
+              f"可能是累积范围而非单批范围。建议只传入本批新增章节范围。",
+              file=sys.stderr)
 
     scenes = load_scenes(scenes_dir, batch_range)
     if not scenes:
