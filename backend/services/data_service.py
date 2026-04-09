@@ -173,8 +173,8 @@ def get_scenes(material_id: str, page: int = 1, limit: int = 50) -> dict:
         scene = dict(row)
         tags = {}
         for tr in conn.execute(
-            "SELECT dimension, value FROM scene_tags WHERE scene_id = ?",
-            (row["scene_id"],),
+            "SELECT dimension, value FROM scene_tags WHERE scene_id = ? AND material_id = ?",
+            (row["scene_id"], material_id),
         ):
             tags.setdefault(tr["dimension"], []).append(tr["value"])
         scene["tags"] = tags
@@ -182,8 +182,8 @@ def get_scenes(material_id: str, page: int = 1, limit: int = 50) -> dict:
         scene["characters"] = [
             cr["character_name"]
             for cr in conn.execute(
-                "SELECT character_name FROM scene_characters WHERE scene_id = ?",
-                (row["scene_id"],),
+                "SELECT character_name FROM scene_characters WHERE scene_id = ? AND material_id = ?",
+                (row["scene_id"], material_id),
             )
         ]
         scenes.append(scene)
@@ -217,30 +217,38 @@ def search_scenes(filters: dict) -> dict:
 
     conn = _get_db()
 
-    tag_filters = {d: filters[d] for d in TAG_DIMENSIONS if filters.get(d)}
+    tag_filters: dict[str, list[str]] = {}
+    for d in TAG_DIMENSIONS:
+        raw = filters.get(d)
+        if raw:
+            vals = [v.strip() for v in str(raw).split(",") if v.strip()]
+            if vals:
+                tag_filters[d] = vals
+
     character_filter = filters.get("character")
     material_filter = filters.get("material")
     tension_min = filters.get("tension_min")
     tension_max = filters.get("tension_max")
     limit = filters.get("limit", 20)
 
-    candidate_sets: list[set] = []
+    candidate_sets: list[set[tuple[str, str]]] = []
 
-    for dim, val in tag_filters.items():
+    for dim, vals in tag_filters.items():
+        ph = ",".join("?" * len(vals))
         ids = {
-            r[0]
+            (r[0], r[1])
             for r in conn.execute(
-                "SELECT DISTINCT scene_id FROM scene_tags WHERE dimension=? AND value=?",
-                (dim, val),
+                f"SELECT DISTINCT scene_id, material_id FROM scene_tags WHERE dimension=? AND value IN ({ph})",
+                [dim, *vals],
             )
         }
         candidate_sets.append(ids)
 
     if character_filter:
         ids = {
-            r[0]
+            (r[0], r[1])
             for r in conn.execute(
-                "SELECT DISTINCT scene_id FROM scene_characters WHERE character_name=?",
+                "SELECT DISTINCT scene_id, material_id FROM scene_characters WHERE character_name=?",
                 (character_filter,),
             )
         }
@@ -248,14 +256,14 @@ def search_scenes(filters: dict) -> dict:
 
     if material_filter:
         ids = {
-            r[0]
+            (r[0], r[1])
             for r in conn.execute(
-                "SELECT scene_id FROM scenes WHERE material_id=?", (material_filter,)
+                "SELECT scene_id, material_id FROM scenes WHERE material_id=?", (material_filter,)
             )
         }
         candidate_sets.append(ids)
 
-    result_ids: set[str] = set()
+    result_ids: set[tuple[str, str]] = set()
     relaxed = False
 
     if candidate_sets:
@@ -264,7 +272,7 @@ def search_scenes(filters: dict) -> dict:
             result_ids &= s
 
     if not result_ids and len(candidate_sets) > 1:
-        all_ids: dict[str, int] = {}
+        all_ids: dict[tuple[str, str], int] = {}
         for cs in candidate_sets:
             for sid in cs:
                 all_ids[sid] = all_ids.get(sid, 0) + 1
@@ -272,19 +280,34 @@ def search_scenes(filters: dict) -> dict:
         result_ids = {sid for sid, _ in ranked[: limit * 2]}
         relaxed = True
 
-    if not result_ids:
+    has_tag_or_char_filters = bool(candidate_sets)
+
+    if not result_ids and has_tag_or_char_filters:
         conn.close()
         return {"query": _clean_query(filters), "total": 0, "results": [], "relaxed": False}
 
-    ph = ",".join("?" * len(result_ids))
-    params: list = list(result_ids)
-    sql = f"""
-        SELECT s.scene_id, s.material_id, s.chapter, s.title, s.summary,
-               s.tension, s.pacing, s.plot_stage, s.power_dynamic, s.scale,
-               n.name as novel_name
-        FROM scenes s LEFT JOIN novels n ON s.material_id=n.material_id
-        WHERE s.scene_id IN ({ph})
-    """
+    params: list = []
+    if result_ids:
+        where_clauses = " OR ".join(
+            "(s.scene_id=? AND s.material_id=?)" for _ in result_ids
+        )
+        for sid, mid in result_ids:
+            params.extend([sid, mid])
+        sql = f"""
+            SELECT s.scene_id, s.material_id, s.chapter, s.title, s.summary,
+                   s.tension, s.pacing, s.plot_stage, s.power_dynamic, s.scale,
+                   n.name as novel_name
+            FROM scenes s LEFT JOIN novels n ON s.material_id=n.material_id
+            WHERE ({where_clauses})
+        """
+    else:
+        sql = """
+            SELECT s.scene_id, s.material_id, s.chapter, s.title, s.summary,
+                   s.tension, s.pacing, s.plot_stage, s.power_dynamic, s.scale,
+                   n.name as novel_name
+            FROM scenes s LEFT JOIN novels n ON s.material_id=n.material_id
+            WHERE 1=1
+        """
     if tension_min is not None:
         sql += " AND s.tension >= ?"
         params.append(tension_min)
@@ -297,25 +320,27 @@ def search_scenes(filters: dict) -> dict:
     results = []
     for row in rows:
         sid = row["scene_id"]
+        mid = row["material_id"]
         scene_tags: dict[str, list[str]] = {}
         for tr in conn.execute(
-            "SELECT dimension, value FROM scene_tags WHERE scene_id=?", (sid,)
+            "SELECT dimension, value FROM scene_tags WHERE scene_id=? AND material_id=?", (sid, mid)
         ):
             scene_tags.setdefault(tr["dimension"], []).append(tr["value"])
 
         chars = [
             cr[0]
             for cr in conn.execute(
-                "SELECT character_name FROM scene_characters WHERE scene_id=?", (sid,)
+                "SELECT character_name FROM scene_characters WHERE scene_id=? AND material_id=?", (sid, mid)
             )
         ]
 
         match_count = 0
         matched_dims = []
-        for dim, val in tag_filters.items():
-            if val in scene_tags.get(dim, []):
+        for dim, vals in tag_filters.items():
+            matched_vals = [v for v in vals if v in scene_tags.get(dim, [])]
+            if matched_vals:
                 match_count += 1
-                matched_dims.append(f"{dim}={val}")
+                matched_dims.append(f"{dim}={','.join(matched_vals)}")
         if character_filter and character_filter in chars:
             match_count += 1
             matched_dims.append(f"character={character_filter}")
@@ -566,4 +591,12 @@ def get_tag_usage() -> dict:
 
 
 def _clean_query(filters: dict) -> dict:
-    return {k: v for k, v in filters.items() if v is not None and k != "limit"}
+    out = {}
+    for k, v in filters.items():
+        if v is None or k == "limit":
+            continue
+        if isinstance(v, list):
+            out[k] = ",".join(v) if v else None
+        else:
+            out[k] = v
+    return {k: v for k, v in out.items() if v is not None}

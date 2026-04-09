@@ -10,27 +10,44 @@ interface LlmConfig {
 }
 
 const STORAGE_KEY = 'novel-material-llm-config'
+const EMPTY: LlmConfig = { apiUrl: '', apiKey: '', model: '' }
 
-function loadConfig(): LlmConfig {
+function loadLocal(): LlmConfig {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    return raw ? JSON.parse(raw) : { apiUrl: '', apiKey: '', model: '' }
+    return raw ? JSON.parse(raw) : EMPTY
   } catch {
-    return { apiUrl: '', apiKey: '', model: '' }
+    return EMPTY
   }
 }
 
 export default function Settings() {
-  const [config, setConfig] = useState<LlmConfig>(loadConfig)
+  const [config, setConfig] = useState<LlmConfig>(EMPTY)
   const [showKey, setShowKey] = useState(false)
   const [saved, setSaved] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
   const [testStatus, setTestStatus] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle')
+  const [loaded, setLoaded] = useState(false)
 
-  useEffect(() => { setSaved(false) }, [config])
+  useEffect(() => {
+    api.getLlmSettings().then(remote => {
+      const r = remote as Record<string, string>
+      if (r.base_url || r.model) {
+        setConfig({ apiUrl: r.base_url ?? '', apiKey: r.api_key ?? '', model: r.model ?? '' })
+      } else {
+        setConfig(loadLocal())
+      }
+    }).catch(() => {
+      setConfig(loadLocal())
+    }).finally(() => setLoaded(true))
+  }, [])
+
+  useEffect(() => { setSaved(false); setSaveError('') }, [config])
 
   const handleSave = async () => {
     setSaving(true)
+    setSaveError('')
     localStorage.setItem(STORAGE_KEY, JSON.stringify(config))
     try {
       await api.saveLlmSettings({
@@ -38,29 +55,36 @@ export default function Settings() {
         api_key: config.apiKey,
         model: config.model,
       })
-    } catch { /* backend save is best-effort */ }
-    setSaving(false)
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : '保存到后端失败')
+    } finally {
+      setSaving(false)
+    }
   }
 
   const handleTest = async () => {
     if (!config.apiUrl || !config.apiKey) return
     setTestStatus('loading')
     try {
-      const BASE = import.meta.env.DEV ? 'http://127.0.0.1:8000/api' : '/api'
-      const res = await fetch(`${BASE}/llm/test`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ base_url: config.apiUrl, api_key: config.apiKey, model: config.model }),
+      const res = await api.testLlm({
+        base_url: config.apiUrl,
+        api_key: config.apiKey,
+        model: config.model,
       })
-      const data = await res.json()
-      setTestStatus(data.ok ? 'ok' : 'error')
+      setTestStatus((res as Record<string, boolean>).ok ? 'ok' : 'error')
     } catch {
       setTestStatus('error')
     }
     setTimeout(() => setTestStatus('idle'), 3000)
   }
+
+  if (!loaded) return (
+    <div className="p-6 max-w-2xl mx-auto">
+      <div className="h-64 rounded-xl bg-slate-900/50 animate-pulse" />
+    </div>
+  )
 
   return (
     <div className="p-6 max-w-2xl mx-auto space-y-6">
@@ -134,18 +158,35 @@ export default function Settings() {
             </span>
           )}
         </div>
+
+        {saveError && (
+          <p className="text-xs text-red-400 flex items-center gap-1">
+            <AlertCircle className="w-3.5 h-3.5" /> {saveError}
+          </p>
+        )}
       </div>
 
       <div className="rounded-xl bg-slate-900/80 border border-slate-800/60 p-6 space-y-3">
         <h2 className="text-sm font-medium text-slate-300">后端服务</h2>
-        <div className="flex items-center gap-2 text-xs text-slate-500">
-          <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-          API 服务: http://localhost:8000
-        </div>
+        <BackendStatus />
         <p className="text-xs text-slate-600">
           启动后端: <code className="bg-slate-800 px-1.5 py-0.5 rounded text-slate-400">cd backend && python main.py</code>
         </p>
       </div>
+    </div>
+  )
+}
+
+function BackendStatus() {
+  const [ok, setOk] = useState<boolean | null>(null)
+  useEffect(() => {
+    const BASE = import.meta.env.DEV ? 'http://127.0.0.1:5273/api' : '/api'
+    fetch(`${BASE}/health`).then(r => setOk(r.ok)).catch(() => setOk(false))
+  }, [])
+  return (
+    <div className="flex items-center gap-2 text-xs text-slate-500">
+      <div className={cn('w-2 h-2 rounded-full', ok === null ? 'bg-slate-600 animate-pulse' : ok ? 'bg-emerald-400' : 'bg-red-400')} />
+      {ok === null ? '检测中…' : ok ? 'API 服务运行中' : 'API 服务未连接'}
     </div>
   )
 }

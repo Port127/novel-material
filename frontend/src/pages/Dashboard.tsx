@@ -20,12 +20,12 @@ function StatCard({ icon: Icon, label, value, color }: {
 }
 
 export default function Dashboard() {
-  const { data: stats, isLoading } = useQuery({
+  const { data: stats, isLoading, isError } = useQuery({
     queryKey: ['stats'],
     queryFn: api.getStats,
   })
 
-  if (isLoading || !stats) {
+  if (isLoading) {
     return (
       <div className="p-6 space-y-6">
         <h1 className="text-xl font-semibold">总览</h1>
@@ -33,6 +33,17 @@ export default function Dashboard() {
           {[1, 2, 3, 4].map(i => (
             <div key={i} className="h-28 rounded-xl bg-slate-900/50 animate-pulse" />
           ))}
+        </div>
+      </div>
+    )
+  }
+
+  if (isError || !stats) {
+    return (
+      <div className="p-6 space-y-6">
+        <h1 className="text-xl font-semibold">总览</h1>
+        <div className="rounded-xl bg-slate-900/80 border border-slate-800/60 p-8 text-center">
+          <p className="text-sm text-slate-500">暂无统计数据。请先添加小说素材并运行 Pipeline。</p>
         </div>
       </div>
     )

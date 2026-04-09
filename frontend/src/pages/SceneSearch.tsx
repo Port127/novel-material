@@ -1,8 +1,9 @@
 import { useState, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
 import { api } from '@/api/client'
 import { cn, TAG_COLORS, TAG_LAYERS } from '@/lib/utils'
-import { Search, X, ChevronDown, ChevronUp, Type, Tags, Check } from 'lucide-react'
+import { Search, X, ChevronDown, ChevronUp, Type, Tags, Check, ExternalLink } from 'lucide-react'
 import type { TagDictionary, SceneItem } from '@/types'
 
 type Mode = 'tags' | 'text'
@@ -239,6 +240,7 @@ function TagSearchPanel() {
 /* ── Shared ───────────────────────────────────────────── */
 
 function SceneResultCard({ scene }: { scene: SceneItem }) {
+  const materialId = scene.scene_id?.split('_sc')[0]?.replace('_sc', '') ?? scene.material_id
   return (
     <div className="rounded-xl bg-slate-900/80 border border-slate-800/60 p-4 animate-slide-up">
       <div className="flex items-center gap-2 mb-2">
@@ -249,7 +251,14 @@ function SceneResultCard({ scene }: { scene: SceneItem }) {
           <span className="text-xs text-slate-500">{Math.round(scene.score * 100)}%</span>
         )}
       </div>
-      <p className="text-xs text-slate-500 mb-1">{scene.novel} · {scene.chapter}</p>
+      <div className="flex items-center gap-1 mb-1">
+        <p className="text-xs text-slate-500">{scene.novel} · {scene.chapter}</p>
+        {materialId && (
+          <Link to={`/materials/${materialId}`} className="text-xs text-slate-600 hover:text-amber-400 transition-colors" title="查看素材详情">
+            <ExternalLink className="w-3 h-3" />
+          </Link>
+        )}
+      </div>
       <p className="text-xs text-slate-400 leading-relaxed mb-2">{scene.summary}</p>
 
       {scene.matched && scene.matched.length > 0 && (

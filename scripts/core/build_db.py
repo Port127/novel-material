@@ -123,7 +123,7 @@ def create_schema(conn: sqlite3.Connection):
         );
 
         CREATE TABLE IF NOT EXISTS scenes (
-            scene_id TEXT PRIMARY KEY,
+            scene_id TEXT NOT NULL,
             material_id TEXT NOT NULL,
             chapter TEXT,
             title TEXT,
@@ -135,6 +135,7 @@ def create_schema(conn: sqlite3.Connection):
             moral_spectrum TEXT,
             plot_stage TEXT,
             scale TEXT,
+            PRIMARY KEY (scene_id, material_id),
             FOREIGN KEY (material_id) REFERENCES novels(material_id)
         );
 
@@ -144,7 +145,7 @@ def create_schema(conn: sqlite3.Connection):
             material_id TEXT NOT NULL,
             dimension TEXT NOT NULL,
             value TEXT NOT NULL,
-            FOREIGN KEY (scene_id) REFERENCES scenes(scene_id)
+            FOREIGN KEY (scene_id, material_id) REFERENCES scenes(scene_id, material_id)
         );
 
         CREATE TABLE IF NOT EXISTS characters (
@@ -165,9 +166,10 @@ def create_schema(conn: sqlite3.Connection):
 
         CREATE TABLE IF NOT EXISTS scene_characters (
             scene_id TEXT NOT NULL,
+            material_id TEXT NOT NULL,
             character_name TEXT NOT NULL,
-            PRIMARY KEY (scene_id, character_name),
-            FOREIGN KEY (scene_id) REFERENCES scenes(scene_id)
+            PRIMARY KEY (scene_id, material_id, character_name),
+            FOREIGN KEY (scene_id, material_id) REFERENCES scenes(scene_id, material_id)
         );
 
         CREATE INDEX IF NOT EXISTS idx_scene_tags_dim_val ON scene_tags(dimension, value);
@@ -212,7 +214,7 @@ def ingest_novel(conn: sqlite3.Connection, material_id: str):
 
     # Clear existing data for this novel
     conn.execute("DELETE FROM scene_tags WHERE material_id = ?", (material_id,))
-    conn.execute("DELETE FROM scene_characters WHERE scene_id IN (SELECT scene_id FROM scenes WHERE material_id = ?)", (material_id,))
+    conn.execute("DELETE FROM scene_characters WHERE material_id = ?", (material_id,))
     conn.execute("DELETE FROM scenes WHERE material_id = ?", (material_id,))
     conn.execute("DELETE FROM characters WHERE material_id = ?", (material_id,))
     conn.execute("DELETE FROM novels WHERE material_id = ?", (material_id,))
@@ -281,8 +283,8 @@ def ingest_novel(conn: sqlite3.Connection, material_id: str):
             # Characters
             for char_name in _as_list(scene.get('characters')):
                 conn.execute(
-                    "INSERT OR IGNORE INTO scene_characters (scene_id, character_name) VALUES (?, ?)",
-                    (scene_id, char_name)
+                    "INSERT OR IGNORE INTO scene_characters (scene_id, material_id, character_name) VALUES (?, ?, ?)",
+                    (scene_id, material_id, char_name)
                 )
 
             scene_count += 1

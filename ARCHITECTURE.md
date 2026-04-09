@@ -82,6 +82,13 @@
                | novels/{id}/scenes_manifest.yaml| 场景清单
                | novels/{id}/stats.*            |  统计（yaml/md/html）
                +-------------------------------+
+
+               +-------------------------------+
+               | L6: Web Application            |  可视化管理界面
+               +-------------------------------+
+               | backend/ (FastAPI :5273)       |  REST API + Pipeline 调度
+               | frontend/ (Vite :5173)         |  React SPA + ECharts
+               +-------------------------------+
 ```
 
 ## Layers
@@ -195,6 +202,60 @@ scripts/
 | `stats.yaml` | 全书统计数据 | `novel-stats` |
 | `stats.md` | 可视化报告（Mermaid） | `novel-stats` |
 | `stats.html` | 交互报告（ECharts+关系图谱） | `novel-stats` |
+
+### L6 — Web Application
+
+可视化管理界面，读写 L3-L5 数据层，为非 CLI 用户提供完整操作界面。
+
+#### Backend（FastAPI，端口 5273）
+
+```
+backend/
+├── main.py                   # FastAPI 入口 + 路由注册
+├── routers/
+│   ├── materials.py          # 素材 CRUD + 详情（大纲/世界观/人物/标签/场景/统计）
+│   ├── search.py             # 场景搜索 + 人物搜索 + 全文搜索
+│   ├── tags.py               # 标签字典 + 新增 + 合并 + 使用频次
+│   └── pipeline.py           # Pipeline 状态/触发/重置 + LLM 配置 + 上传
+├── services/
+│   ├── data_service.py       # 数据访问层（YAML + SQLite 读取）
+│   └── pipeline_service.py   # Pipeline 执行层（LLM 调用 + 阶段管理）
+└── tests/                    # 93 个 pytest 测试
+```
+
+**Pipeline 阶段**（通过 API 触发）：
+
+| 阶段 | 说明 | 需要 LLM |
+|------|------|---------|
+| `ingest` | 入库检查 | 否 |
+| `format` | 格式清洗 | 否 |
+| `analyze` | 大纲→世界观→人物→标签 | 是 |
+| `scenes` | 场景拆分（需 Agent） | 是 |
+| `build-index` | 构建 SQLite + YAML 索引 | 否 |
+| `finalize` | 统计报告 | 是 |
+
+#### Frontend（React + Vite + Tailwind，端口 5173）
+
+```
+frontend/src/
+├── App.tsx                   # 路由定义（8 个页面）
+├── components/Layout.tsx     # 侧边栏导航
+├── api/client.ts             # API 客户端（22 个方法）
+├── pages/
+│   ├── Dashboard.tsx         # 总览仪表盘（统计卡片 + ECharts 图表）
+│   ├── MaterialList.tsx      # 素材库列表
+│   ├── MaterialDetail.tsx    # 素材详情（7 个 tab + Pipeline 控制面板）
+│   ├── SceneSearch.tsx       # 场景搜索（标签多选 + 全文搜索双模式）
+│   ├── CharacterSearch.tsx   # 人物搜索
+│   ├── TagDictionary.tsx     # 标签字典管理（新增/合并/使用频次）
+│   ├── Upload.tsx            # 上传小说
+│   └── Settings.tsx          # LLM API 配置 + 后端状态检测
+├── lib/utils.ts              # 工具函数 + 标签颜色映射
+├── types/index.ts            # TypeScript 类型定义
+└── __tests__/                # 33 个 vitest 测试
+```
+
+**前后端通信**：开发时 Vite 代理 `/api` 到 `127.0.0.1:5273`；生产构建后前端静态资源可由后端直接服务。
 
 ### Schema Templates
 
@@ -382,3 +443,13 @@ python ../novel-material/scripts/core/search.py text --query 告别
 **动机**：`source-format` 等 skill 会针对特定小说的格式问题动态生成补充脚本（如 `format_dafeng.py`），这些脚本与预制的通用脚本混在一起，难以区分哪些该提交、哪些是临时产物。
 
 **代价**：所有引用预制脚本的文档和 skill 都需要将路径从 `scripts/xxx.py` 改为 `scripts/core/xxx.py`。一次性迁移成本，长期无额外代价。
+
+### ADR-5：Web 应用作为可选管理界面（2026-04）
+
+**决策**：新增 FastAPI 后端 + React 前端，提供 Web UI 管理素材、搜索、触发 Pipeline。Agent CLI 保持为主要处理入口。
+
+**动机**：CLI/Agent 适合批量处理和自动化，但日常浏览素材、搜索场景、查看统计图表等操作在 Web UI 中更直观。Web UI 读取相同的 YAML + SQLite 数据，不引入额外数据源。
+
+**代价**：新增 `frontend/` 和 `backend/` 两个目录。后端依赖 FastAPI/Uvicorn，前端依赖 React/Vite。Web UI 是可选组件——不启动 Web 服务时，所有 Agent skill 和 CLI 脚本照常工作。
+
+**边界**：场景拆分（`scenes` 阶段）因复杂度过高（需分批 + 质量审计循环），Web UI 仅提示用户通过 Agent 执行，不在浏览器内自动运行。

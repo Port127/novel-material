@@ -175,8 +175,12 @@ def run_stage(material_id: str, stage: str):
             _run_build_index(material_id)
         elif stage == "analyze":
             _run_analyze(material_id)
+        elif stage == "scenes":
+            _run_scenes(material_id)
+        elif stage == "finalize":
+            _run_finalize(material_id)
         else:
-            _set_status(material_id, {"running": False, "last_error": f"Stage '{stage}' not yet implemented in web pipeline"})
+            _set_status(material_id, {"running": False, "last_error": f"Unknown stage: {stage}"})
             return
 
         status = get_status(material_id)
@@ -237,8 +241,85 @@ def _run_build_index(material_id: str):
         raise RuntimeError(f"Build index failed: {result.stderr[:500]}")
 
 
+def _run_scenes(material_id: str):
+    """Scene splitting requires Agent — provide guidance rather than auto-run."""
+    raise RuntimeError(
+        "场景拆分任务过于复杂（需分批处理 + 质量审计循环），"
+        "请通过 Agent 执行：/pipeline-scenes " + material_id
+    )
+
+
+def _run_finalize(material_id: str):
+    """Generate stats report from existing scene data."""
+    cfg = get_llm_config()
+    if not cfg.get("base_url") or not cfg.get("api_key"):
+        raise RuntimeError("LLM 未配置。请先在设置页面配置 LLM API。")
+
+    nd = ds._novel_dir(material_id)
+    meta = ds._read_yaml(nd / "meta.yaml") or {}
+    novel_name = meta.get("name", material_id)
+
+    scenes_dir = nd / "scenes"
+    if not scenes_dir.exists() or not list(scenes_dir.glob("ch*.yaml")):
+        raise RuntimeError("尚无场景数据，请先执行场景拆分。")
+
+    _set_status(material_id, {"running": True, "current_stage": "finalize:stats"})
+
+    scene_summaries = []
+    scene_files = sorted(scenes_dir.glob("ch*.yaml"))[:200]
+    for sf in scene_files:
+        scene = ds._read_yaml(sf)
+        if not scene:
+            continue
+        scene_summaries.append(
+            f"- {scene.get('id','?')}: {scene.get('chapter','')} | {scene.get('title','')} "
+            f"| T{scene.get('tension',0)} | {','.join(scene.get('scene_type',[]))} "
+            f"| {','.join(scene.get('emotion',[]))}"
+        )
+
+    total_scenes = len(list(scenes_dir.glob("ch*.yaml")))
+    digest = "\n".join(scene_summaries)
+
+    system = """你是一位专业的小说数据分析师。根据场景摘要数据生成统计报告。
+输出纯 YAML 格式，结构如下：
+
+material_id: <素材ID>
+basic:
+  total_chapters: <章节数>
+  total_scenes: <场景数>
+  avg_scenes_per_chapter: <平均每章场景数>
+pacing:
+  avg_tension: <平均张力>
+  high_tension_scenes: <张力>=4的场景数>
+  tension_distribution: {1: 数量, 2: 数量, 3: 数量, 4: 数量, 5: 数量}
+scene_type_distribution:
+  - type: <类型>
+    count: <数量>
+    ratio: <占比>
+emotion_distribution:
+  - emotion: <情绪>
+    count: <数量>
+character_stats:
+  - name: <人物名>
+    scene_count: <出场场景数>
+technique_stats:
+  techniques_used: [技法列表]
+
+基于实际数据统计，不要编造。"""
+
+    user = f"小说《{novel_name}》(ID: {material_id}) 共 {total_scenes} 个场景。\n\n场景摘要：\n{digest}"
+    result = _call_llm(system, user, temperature=0.1)
+    parsed = yaml.safe_load(_extract_yaml(result))
+    if parsed and isinstance(parsed, dict):
+        parsed["material_id"] = material_id
+        ds._write_yaml(nd / "stats.yaml", parsed)
+
+    meta["status"] = "complete"
+    ds._write_yaml(nd / "meta.yaml", meta)
+
+
 def _run_analyze(material_id: str):
-    """Run LLM-based analysis: outline → characters → tags."""
+    """Run LLM-based analysis: outline → worldbuilding → characters → tags."""
     cfg = get_llm_config()
     if not cfg.get("base_url") or not cfg.get("api_key"):
         raise RuntimeError("LLM 未配置。请先在设置页面配置 LLM API。")
@@ -251,6 +332,9 @@ def _run_analyze(material_id: str):
     _set_status(material_id, {"running": True, "current_stage": "analyze:outline"})
     _generate_outline(nd, material_id, novel_name, source_text)
 
+    _set_status(material_id, {"running": True, "current_stage": "analyze:worldbuilding"})
+    _generate_worldbuilding(nd, material_id, novel_name, source_text)
+
     _set_status(material_id, {"running": True, "current_stage": "analyze:characters"})
     _generate_characters(nd, material_id, novel_name, source_text)
 
@@ -259,6 +343,39 @@ def _run_analyze(material_id: str):
 
     meta["status"] = "outlined"
     ds._write_yaml(nd / "meta.yaml", meta)
+
+
+def _generate_worldbuilding(nd: Path, material_id: str, name: str, source: str):
+    system = """你是一位专业的小说分析师。请从原文中提取世界观设定。
+输出纯 YAML 格式（不要 ```yaml 包裹），结构如下：
+
+material_id: <素材ID>
+power_system:
+  name: <力量体系名称>
+  levels: [等级列表]
+  rules: <核心规则>
+geography:
+  - name: <地名>
+    description: <描述>
+    significance: <叙事意义>
+factions:
+  - name: <势力名>
+    leader: <领袖>
+    goal: <目标>
+    alignment: <正/中/邪>
+background:
+  era: <时代背景>
+  society: <社会结构>
+  key_rules: [世界核心规则列表]
+
+如果某些维度在原文中不存在（如力量体系），可以省略该字段。只提取原文有明确描写的内容。"""
+
+    user = f"小说《{name}》(ID: {material_id}) 的原文如下：\n\n{source}"
+    result = _call_llm(system, user)
+    parsed = yaml.safe_load(_extract_yaml(result))
+    if parsed and isinstance(parsed, dict):
+        parsed["material_id"] = material_id
+        ds._write_yaml(nd / "worldbuilding.yaml", parsed)
 
 
 def _generate_outline(nd: Path, material_id: str, name: str, source: str):

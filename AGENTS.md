@@ -19,6 +19,9 @@
 | 标签标注时查判断依据 | `docs/TAG_GUIDE.md` |
 | 查数据 schema | `docs/schemas/` |
 | 直接查数据库 | `docs/USAGE-GUIDE.md` §七 |
+| Web UI 使用 | `docs/USAGE-GUIDE.md` §十三 |
+| 后端 API | `backend/routers/*.py` |
+| 前端页面 | `frontend/src/pages/*.tsx` |
 
 ## Quick Start
 
@@ -121,6 +124,25 @@
 - MUST material-import 重新生成 material_id，校验标签合法性后才注册
 - NEVER 编造质量数据（无信号写 TBD）
 - NEVER 用脚本批量生成模板化场景文件（详见 `ARCHITECTURE.md` → Anti-Pattern）
+
+## Web UI
+
+```bash
+# 启动后端 API（端口 5273）
+cd backend && python main.py
+
+# 启动前端（端口 5173，开发模式）
+cd frontend && npm run dev
+
+# 运行测试
+cd backend && python -m pytest tests/   # 93 tests
+cd frontend && npm test                  # 33 tests
+cd scripts && python -m pytest tests/    # 69 tests
+```
+
+Web UI 提供：总览仪表盘、素材详情浏览、场景/人物/全文搜索、标签字典管理、Pipeline 触发、LLM 配置。
+
+场景拆分阶段因复杂度过高，Web UI 仅提示通过 Agent 执行。
 
 ## 护栏
 

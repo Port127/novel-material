@@ -1,8 +1,9 @@
 import { useState, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
 import { api } from '@/api/client'
 import { cn } from '@/lib/utils'
-import { Search, Users, Heart, Swords, User as UserIcon, ChevronDown, ChevronUp } from 'lucide-react'
+import { Search, Users, Heart, Swords, User as UserIcon, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react'
 import type { CharacterItem, TagDictionary } from '@/types'
 
 export default function CharacterSearch() {
@@ -144,7 +145,14 @@ function CharacterCard({ char: ch }: { char: CharacterItem }) {
             {ch.role && <span className="text-xs px-2 py-0.5 rounded bg-blue-500/15 text-blue-400">{roleLabels[ch.role] ?? ch.role}</span>}
             {ch.archetype && <span className="text-xs px-2 py-0.5 rounded bg-violet-500/15 text-violet-400">{ch.archetype}</span>}
           </div>
-          <p className="text-xs text-slate-500 mt-0.5">{ch.novel}</p>
+          <div className="flex items-center gap-1 mt-0.5">
+            <p className="text-xs text-slate-500">{ch.novel}</p>
+            {ch.material_id && (
+              <Link to={`/materials/${ch.material_id}`} className="text-xs text-slate-600 hover:text-amber-400 transition-colors" title="查看素材详情">
+                <ExternalLink className="w-3 h-3" />
+              </Link>
+            )}
+          </div>
 
           <div className="flex flex-wrap gap-3 mt-2 text-xs text-slate-500">
             {ch.moral_spectrum && <span className="flex items-center gap-1">道德: <strong className="text-slate-300">{ch.moral_spectrum}</strong></span>}

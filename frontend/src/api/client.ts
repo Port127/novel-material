@@ -76,11 +76,14 @@ export const api = {
   resetPipeline: (id: string) => post<{ message: string }>(`/pipeline/${id}/reset`),
 
   getLlmSettings: () => get<Record<string, unknown>>('/settings/llm'),
-  saveLlmSettings: (cfg: Record<string, string>) => {
-    return fetch(`${BASE}/settings/llm`, {
+  saveLlmSettings: async (cfg: Record<string, string>) => {
+    const res = await fetch(`${BASE}/settings/llm`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(cfg),
-    }).then(r => r.json())
+    })
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+    return res.json()
   },
+  testLlm: (cfg: Record<string, string>) => post<Record<string, unknown>>('/llm/test', cfg),
 }

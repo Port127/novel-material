@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { api } from '@/api/client'
 import { cn, STATUS_MAP, TAG_COLORS } from '@/lib/utils'
 import {
@@ -25,17 +25,30 @@ export default function MaterialDetail() {
   const { id } = useParams<{ id: string }>()
   const [tab, setTab] = useState('overview')
 
-  const { data: meta, isLoading } = useQuery({
+  const { data: meta, isLoading, isError } = useQuery({
     queryKey: ['material', id],
     queryFn: () => api.getMaterial(id!),
     enabled: !!id,
   })
 
-  if (isLoading || !meta) {
+  if (isLoading) {
     return (
       <div className="p-6">
         <div className="h-8 w-48 bg-slate-900/50 rounded animate-pulse mb-6" />
         <div className="h-96 bg-slate-900/50 rounded-xl animate-pulse" />
+      </div>
+    )
+  }
+
+  if (isError || !meta) {
+    return (
+      <div className="p-6 max-w-7xl mx-auto space-y-4">
+        <Link to="/materials" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-300 transition-colors">
+          <ArrowLeft className="w-3.5 h-3.5" /> 返回素材库
+        </Link>
+        <div className="rounded-xl bg-slate-900/80 border border-slate-800/60 p-8 text-center">
+          <p className="text-sm text-slate-500">素材不存在或加载失败</p>
+        </div>
       </div>
     )
   }
@@ -103,7 +116,6 @@ export default function MaterialDetail() {
 
 function OverviewTab({ meta }: { meta: Record<string, unknown> }) {
   const materialId = String(meta.material_id ?? meta.id ?? '')
-  const qc = useQueryClient()
 
   const { data: pipelineStatus, refetch: refetchStatus } = useQuery({
     queryKey: ['pipeline-status', materialId],
@@ -135,7 +147,11 @@ function OverviewTab({ meta }: { meta: Record<string, unknown> }) {
   }
 
   const resetPipeline = async () => {
-    await api.resetPipeline(materialId)
+    try {
+      await api.resetPipeline(materialId)
+    } catch (e) {
+      alert(e instanceof Error ? e.message : '重置失败')
+    }
     refetchStatus()
   }
 
@@ -145,8 +161,10 @@ function OverviewTab({ meta }: { meta: Record<string, unknown> }) {
 
   const SUB_STAGE_LABELS: Record<string, string> = {
     'analyze:outline': '生成大纲…',
+    'analyze:worldbuilding': '提取世界观…',
     'analyze:characters': '提取人物…',
     'analyze:tags': '生成标签…',
+    'finalize:stats': '生成统计报告…',
   }
   const stageDisplayLabel = currentStage
     ? SUB_STAGE_LABELS[currentStage] ?? currentStage
@@ -155,8 +173,10 @@ function OverviewTab({ meta }: { meta: Record<string, unknown> }) {
   const pipelineStages = [
     { id: 'ingest', label: '入库检查', needsLlm: false },
     { id: 'format', label: '格式清洗', needsLlm: false },
-    { id: 'build-index', label: '构建索引', needsLlm: false },
     { id: 'analyze', label: '分析(LLM)', needsLlm: true },
+    { id: 'scenes', label: '场景拆分', needsLlm: true, hint: '需 Agent' },
+    { id: 'build-index', label: '构建索引', needsLlm: false },
+    { id: 'finalize', label: '统计报告', needsLlm: true },
   ]
 
   return (
@@ -194,11 +214,12 @@ function OverviewTab({ meta }: { meta: Record<string, unknown> }) {
           </div>
         )}
 
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
           {pipelineStages.map(s => {
             const done = completed.includes(s.id)
             const isRunning = currentStage === s.id || currentStage?.startsWith(s.id + ':')
             const isTrigger = triggering === s.id
+            const hint = (s as Record<string, unknown>).hint as string | undefined
             return (
               <button
                 key={s.id}
@@ -220,7 +241,8 @@ function OverviewTab({ meta }: { meta: Record<string, unknown> }) {
                   <Play className="w-4 h-4 text-slate-500" />
                 )}
                 <span className={done ? 'text-emerald-400' : 'text-slate-400'}>{s.label}</span>
-                {s.needsLlm && !done && <span className="text-[10px] text-slate-600">需要 LLM</span>}
+                {hint && !done && <span className="text-[10px] text-orange-400/60">{hint}</span>}
+                {s.needsLlm && !hint && !done && <span className="text-[10px] text-slate-600">需要 LLM</span>}
               </button>
             )
           })}
@@ -323,21 +345,22 @@ function OutlineTab({ id }: { id: string }) {
   if (isError || !data) return <p className="text-sm text-slate-500">暂无大纲数据</p>
 
   const d = data as Record<string, unknown>
-  const structure = (d.structure ?? []) as Record<string, unknown>[]
-  const themes = (d.theme ?? []) as string[]
-  const tones = (d.tone ?? []) as string[]
-  const timelines = (d.timelines ?? []) as Record<string, unknown>[]
-  const foreshadowing = (d.foreshadowing ?? []) as Record<string, unknown>[]
-  const pacingCurve = (d.pacing_curve ?? []) as Record<string, unknown>[]
+  const structure = asObjArr(d.structure ?? d.acts ?? d.plot_structure ?? d.story_structure)
+  const themes = asArr(d.theme ?? d.themes)
+  const tones = asArr(d.tone ?? d.tones)
+  const timelines = asObjArr(d.timelines ?? d.timeline)
+  const foreshadowing = asObjArr(d.foreshadowing ?? d.foreshadowings ?? d.foreshadow)
+  const pacingCurve = asObjArr(d.pacing_curve ?? d.pacing)
+  const premise = d.premise ?? d.synopsis ?? d.summary ?? d.overview
 
   return (
     <div className="space-y-4">
-      {d.premise && (
+      {premise && (
         <div className="rounded-xl bg-slate-900/80 border border-slate-800/60 p-5">
           <h3 className="text-sm font-medium text-slate-400 mb-2 flex items-center gap-2">
             <Sparkles className="w-4 h-4" /> 故事前提
           </h3>
-          <p className="text-sm text-slate-200 leading-relaxed">{String(d.premise)}</p>
+          <p className="text-sm text-slate-200 leading-relaxed">{String(premise)}</p>
           {(themes.length > 0 || tones.length > 0) && (
             <div className="flex flex-wrap gap-1.5 mt-3">
               {themes.map(t => <span key={t} className="text-xs px-2 py-0.5 rounded bg-amber-500/15 text-amber-400">{t}</span>)}
@@ -452,6 +475,8 @@ function OutlineTab({ id }: { id: string }) {
           </div>
         </div>
       )}
+
+      <RemainingFields data={d} consumed={['material_id', 'premise', 'synopsis', 'summary', 'overview', 'structure', 'acts', 'plot_structure', 'story_structure', 'theme', 'themes', 'tone', 'tones', 'timelines', 'timeline', 'foreshadowing', 'foreshadowings', 'foreshadow', 'pacing_curve', 'pacing']} />
     </div>
   )
 }
@@ -467,8 +492,9 @@ function CharactersTab({ id }: { id: string }) {
   if (isLoading) return <Skeleton />
   if (isError || !data) return <p className="text-sm text-slate-500">暂无人物数据</p>
 
-  const roster = (data as Record<string, unknown>).roster as Record<string, unknown>[] | undefined
-  if (!roster) return <FallbackJson data={data} />
+  const d = data as Record<string, unknown>
+  const roster = asObjArr(d.roster ?? d.characters ?? d.cast ?? d.people)
+  if (!roster.length) return <RemainingFields data={d} consumed={['material_id']} />
 
   const roleIcons: Record<string, typeof User> = {
     protagonist: Heart, antagonist: Swords, supporting: User, minor: User,
@@ -482,9 +508,9 @@ function CharactersTab({ id }: { id: string }) {
       {roster.map((ch, i) => {
         const role = String(ch.role ?? '')
         const RoleIcon = roleIcons[role] ?? User
-        const aliases = (ch.aliases ?? []) as string[]
-        const traits = (ch.traits ?? []) as string[]
-        const arcs = (ch.arc ?? []) as Record<string, unknown>[]
+        const aliases = asArr(ch.aliases)
+        const traits = asArr(ch.traits)
+        const arcs = asObjArr(ch.arc ?? ch.arcs ?? ch.arc_summary)
 
         return (
           <div key={i} className="rounded-xl bg-slate-900/80 border border-slate-800/60 p-4">
@@ -527,6 +553,7 @@ function CharactersTab({ id }: { id: string }) {
           </div>
         )
       })}
+      <RemainingFields data={d} consumed={['material_id', 'roster', 'characters', 'cast', 'people', 'relationships', 'relation']} />
     </div>
   )
 }
@@ -597,6 +624,8 @@ function NovelTagsTab({ id }: { id: string }) {
           </div>
         </div>
       )}
+
+      <RemainingFields data={d} consumed={['material_id', 'genre', 'sub_genre', 'theme', 'themes', 'tone', 'tones', 'narrative', 'style', 'tropes', 'good_for', 'highlights']} />
     </div>
   )
 }
@@ -625,6 +654,8 @@ function WorldbuildingTab({ id }: { id: string }) {
 
   const d = data as Record<string, unknown>
   const keys = Object.keys(d).filter(k => k !== 'material_id')
+
+  if (keys.length === 0) return <p className="text-sm text-slate-500">暂无世界观数据（仅有 material_id）</p>
 
   return (
     <div className="space-y-4">
@@ -1029,23 +1060,85 @@ function Skeleton() {
   return <div className="h-48 rounded-xl bg-slate-900/50 animate-pulse" />
 }
 
-function FallbackJson({ data }: { data: unknown }) {
-  return (
-    <pre className="rounded-xl bg-slate-900/80 border border-slate-800/60 p-5 text-xs leading-relaxed text-slate-300 overflow-auto max-h-[600px]">
-      {JSON.stringify(data, null, 2)}
-    </pre>
-  )
-}
-
-function FallbackYamlTab({ fetcher, queryKey, emptyMsg }: { fetcher: () => Promise<unknown>; queryKey: unknown[]; emptyMsg: string }) {
-  const { data, isLoading, isError } = useQuery({ queryKey, queryFn: fetcher })
-  if (isLoading) return <Skeleton />
-  if (isError || !data) return <p className="text-sm text-slate-500">{emptyMsg}</p>
-  return <FallbackJson data={data} />
-}
 
 function asArr(v: unknown): string[] {
   if (Array.isArray(v)) return v.map(String)
   if (typeof v === 'string') return [v]
   return []
+}
+
+function asObjArr(v: unknown): Record<string, unknown>[] {
+  if (Array.isArray(v)) return v.filter(x => x && typeof x === 'object') as Record<string, unknown>[]
+  return []
+}
+
+function RemainingFields({ data, consumed }: { data: Record<string, unknown>; consumed: string[] }) {
+  const remaining = Object.entries(data).filter(([k, v]) => !consumed.includes(k) && v != null && v !== '')
+  if (remaining.length === 0) return null
+
+  return (
+    <>
+      {remaining.map(([key, value]) => {
+        const label = key.replace(/_/g, ' ')
+        if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+          return (
+            <div key={key} className="rounded-xl bg-slate-900/80 border border-slate-800/60 p-4">
+              <h4 className="text-xs font-medium text-slate-500 mb-2">{label}</h4>
+              <p className="text-sm text-slate-300 leading-relaxed whitespace-pre-wrap">{String(value)}</p>
+            </div>
+          )
+        }
+        if (Array.isArray(value)) {
+          const flat = value.every(v => typeof v === 'string' || typeof v === 'number')
+          return (
+            <div key={key} className="rounded-xl bg-slate-900/80 border border-slate-800/60 p-4">
+              <h4 className="text-xs font-medium text-slate-500 mb-2">{label}</h4>
+              {flat ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {value.map((v, i) => <span key={i} className="text-xs px-2 py-1 rounded bg-slate-800 text-slate-300">{String(v)}</span>)}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {value.map((v, i) => {
+                    if (typeof v === 'object' && v !== null) {
+                      const obj = v as Record<string, unknown>
+                      const name = obj.name ?? obj.title ?? obj.label ?? ''
+                      const desc = obj.description ?? obj.desc ?? ''
+                      return (
+                        <div key={i} className="bg-slate-800/40 rounded-lg p-3">
+                          {name && <p className="text-xs font-medium text-slate-200">{String(name)}</p>}
+                          {desc && <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">{String(desc)}</p>}
+                          {Object.entries(obj).filter(([k]) => !['name', 'title', 'label', 'description', 'desc'].includes(k)).map(([k, val]) => (
+                            <p key={k} className="text-xs text-slate-500 mt-0.5"><span className="text-slate-600">{k}:</span> {typeof val === 'object' ? JSON.stringify(val) : String(val)}</p>
+                          ))}
+                        </div>
+                      )
+                    }
+                    return <p key={i} className="text-xs text-slate-400">{String(v)}</p>
+                  })}
+                </div>
+              )}
+            </div>
+          )
+        }
+        if (typeof value === 'object' && value !== null) {
+          const obj = value as Record<string, unknown>
+          return (
+            <div key={key} className="rounded-xl bg-slate-900/80 border border-slate-800/60 p-4">
+              <h4 className="text-xs font-medium text-slate-500 mb-2">{label}</h4>
+              <div className="space-y-1">
+                {Object.entries(obj).map(([k, v]) => (
+                  <div key={k} className="text-xs">
+                    <span className="text-slate-500">{k}:</span>{' '}
+                    <span className="text-slate-300">{typeof v === 'object' ? JSON.stringify(v) : String(v)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )
+        }
+        return null
+      })}
+    </>
+  )
 }

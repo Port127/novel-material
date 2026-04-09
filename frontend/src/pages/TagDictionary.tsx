@@ -7,17 +7,28 @@ import type { TagDictionary as TagDictType, TagUsage } from '@/types'
 
 export default function TagDictionary() {
   const qc = useQueryClient()
-  const { data: tagDict, isLoading } = useQuery({ queryKey: ['tagDict'], queryFn: api.getTagDict })
+  const { data: tagDict, isLoading, isError } = useQuery({ queryKey: ['tagDict'], queryFn: api.getTagDict })
   const { data: usage } = useQuery({ queryKey: ['tagUsage'], queryFn: api.getTagUsage })
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [showAdd, setShowAdd] = useState<string | null>(null)
   const [showMerge, setShowMerge] = useState<string | null>(null)
 
-  if (isLoading || !tagDict) {
+  if (isLoading) {
     return (
       <div className="p-6 max-w-5xl mx-auto space-y-4">
         <h1 className="text-xl font-semibold">标签字典</h1>
         {[1, 2, 3].map(i => <div key={i} className="h-20 rounded-xl bg-slate-900/50 animate-pulse" />)}
+      </div>
+    )
+  }
+
+  if (isError || !tagDict) {
+    return (
+      <div className="p-6 max-w-5xl mx-auto space-y-4">
+        <h1 className="text-xl font-semibold">标签字典</h1>
+        <div className="rounded-xl bg-slate-900/80 border border-slate-800/60 p-8 text-center">
+          <p className="text-sm text-slate-500">加载标签字典失败，请检查后端服务。</p>
+        </div>
       </div>
     )
   }
