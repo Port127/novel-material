@@ -53,7 +53,7 @@ arguments: material_id
 | 维度 | 信息来源 | 判断依据 |
 |------|---------|---------|
 | genre / sub_genre | outline.premise + worldbuilding | 世界观类型、核心设定 |
-| theme | outline.theme + 伏笔网络 | 反复出现的核心议题 |
+| theme | outline.theme + 钩子网络 | 反复出现的核心议题 |
 | tone | 抽样章节 + outline.pacing | 全书主导情绪氛围 |
 | narrative.structure | outline.structure + timelines | 有几条叙事线 |
 | narrative.pov_style | 抽样章节 | 叙事视角 |
@@ -76,7 +76,7 @@ arguments: material_id
 
 #### 2b. theme（主题）
 
-3-5 个核心主题，用短语表达。从 outline 的 premise/theme 字段提取，结合伏笔网络中反复出现的议题。
+3-5 个核心主题，用短语表达。从 outline 的 premise/theme 字段提取，结合钩子网络中反复出现的议题。
 
 #### 2c. tone（基调）
 

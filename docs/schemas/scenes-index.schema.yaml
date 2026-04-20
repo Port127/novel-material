@@ -95,7 +95,7 @@ scale:
 time_weather:
   黑夜: [ch01_s01]
 
-# ---- 伏笔线索 ----
+# ---- 钩子线索 ----
 plot_threads:
   "陈汉升身份秘密":
     plant: [ch03_s02]

@@ -432,7 +432,7 @@ function OutlineTab({ id }: { id: string }) {
 
       {foreshadowing.length > 0 && (
         <div className="rounded-xl bg-slate-900/80 border border-slate-800/60 p-5">
-          <h3 className="text-sm font-medium text-slate-400 mb-3">伏笔网络 ({foreshadowing.length})</h3>
+          <h3 className="text-sm font-medium text-slate-400 mb-3">钩子网络 ({foreshadowing.length})</h3>
           <div className="space-y-2">
             {foreshadowing.map((f, i) => (
               <div key={i} className="bg-slate-800/40 rounded-lg p-3 text-xs">
@@ -896,7 +896,7 @@ function StatsTab({ id }: { id: string }) {
       {/* Foreshadowing */}
       {Object.keys(foreshadow).length > 0 && (
         <div className="rounded-xl bg-slate-900/80 border border-slate-800/60 p-5">
-          <h3 className="text-sm font-medium text-slate-400 mb-2">伏笔统计</h3>
+          <h3 className="text-sm font-medium text-slate-400 mb-2">钩子统计</h3>
           <div className="flex gap-6 text-sm flex-wrap">
             {foreshadow.plant_scenes !== undefined && <span className="text-slate-400">埋设: <strong className="text-amber-400">{String(foreshadow.plant_scenes)}</strong></span>}
             {foreshadow.payoff_scenes !== undefined && <span className="text-slate-400">回收: <strong className="text-emerald-400">{String(foreshadow.payoff_scenes)}</strong></span>}

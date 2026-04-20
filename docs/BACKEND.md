@@ -228,7 +228,7 @@ backend/
 | pacing.avg_tension | number | 平均张力 |
 | pacing.high_tension_scenes | number | 高张力场景数 |
 | character_stats | object | 人物统计 (total_indexed / top_10) |
-| foreshadowing_stats | object | 伏笔统计 (plant_scenes / payoff_scenes) |
+| foreshadowing_stats | object | 钩子统计 (plant_scenes / payoff_scenes) |
 | turning_points | object | 转折点 (total_in_outline / key_turning_points[]) |
 | technique_stats | object | 技法统计 (techniques_used[]) |
 

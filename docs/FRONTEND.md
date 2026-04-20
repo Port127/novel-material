@@ -113,7 +113,7 @@ frontend/
 | 人物 | `GET /api/materials/{id}/characters` | 人物卡片（角色图标 + 别名 + 特质标签 + 弧线时间线 + 出场统计） |
 | 标签 | `GET /api/materials/{id}/tags` | 分组 badge（类型/主题/基调/文笔/套路/叙事结构） |
 | 场景 | `GET /api/materials/{id}/scenes` | 可展开的场景列表，带分页，展开显示摘要/人物/标签 |
-| 统计 | `GET /api/materials/{id}/stats` | 数字卡片 + 张力柱状图 + 场景类型饼图 + 情绪条形图 + 人物 Top 10 + 转折点时间线 + 伏笔统计 + 写作技法标签 |
+| 统计 | `GET /api/materials/{id}/stats` | 数字卡片 + 张力柱状图 + 场景类型饼图 + 情绪条形图 + 人物 Top 10 + 转折点时间线 + 钩子统计 + 写作技法标签 |
 
 **Pipeline 操作面板：**
 - 四个可触发按钮：入库检查 / 格式清洗 / 构建索引 / 分析(LLM)

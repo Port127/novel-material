@@ -1,0 +1,191 @@
+# event-unit.schema.yaml
+# 事件单元 schema
+# 路径: data/novels/{material_id}/events/{event_id}.yaml
+# 命名: ev{线索}_{序号}.yaml  例: ev_main_001.yaml, ev_romance_A_001.yaml
+
+# ====================================================================
+# 字段说明
+# ====================================================================
+#
+# 事件单元 = 一个完整的戏剧动作（有起点、发展、结局）
+# 事件可能跨越 5-60 章，以事件完整性为切分依据。
+#
+# **多事件并行支持**：
+# - 同一章节可被多个事件覆盖（不同线索）
+# - chapters 可为不连续列表，如 [1, 3, 5, 7]
+# - thread 字段区分不同叙事线索
+#
+# R = 必填, O = 可选
+# 值域标记 "tags.yaml → xxx" 表示值必须从 tags.yaml 的对应维度选取
+
+id: ev_main_001                           # R | 事件ID，格式 ev{线索}_{序号}
+thread: main                              # R | 叙事线索（主线/支线/感情线等）
+chapters: [1, 2, 3, 4, 5]                 # R | 章节号列表（可不连续）
+chapter_titles:                           # R | 从 chapter_index.yaml 逐字拷贝对应章节
+  - '第1章 牢狱之灾'
+  - '第2章 妖物作祟'
+  - '第3章 仙侠世界一样能推理'
+  - '第4章 是时候表演真正的技术了'
+  - '第5章 解开谜题'
+title: 税银案破案自救                     # R | 有语义的事件概括
+summary: >-                               # R | 100-200字概括事件全过程
+  许七安穿越入狱，面临流放边陲的命运。
+  通过堂弟许新年获取税银案卷宗，运用推理分析，
+  发现案件疑点，成功破解税银失踪之谜。
+text_range: [18, 445]                     # O | source.txt 行号范围（仅本事件涉及的段落）
+event_type: 推理破案                      # R | tags.yaml → event_type
+event_stage: 开局困境→突破契机→成功破局   # R | tags.yaml → event_stage
+outcome: 成功自救                         # R | tags.yaml → outcome
+event_arc: 绝境→求卷宗→分析推理→破案自救  # O | 事件弧线简述
+characters:                               # R | 出场人物名列表
+  - 许七安
+  - 许新年
+  - 陈汉光
+  - 李玉春
+  - 采薇
+primary_character: 许七安                 # R | 事件主角
+relationship:                             # R | tags.yaml → relationship
+  - 兄弟姐妹
+  - 君臣
+interaction:                              # R | tags.yaml → interaction
+  - 告别
+  - 求助
+  - 讨论
+power_dynamic: 下对上                     # R | tags.yaml → power_dynamic
+character_moment:                         # R | tags.yaml → character_moment
+  - 性格展示
+  - 成长顿悟
+moral_spectrum: 正义                      # R | tags.yaml → moral_spectrum
+emotion_arc:                              # R | 情绪变化轨迹 [起点→中间→结局]
+  - 恐惧
+  - 挐扎
+  - 狂喜
+tension_peak: 5                           # R | 张力峰值 1-5
+tension_curve: [4, 3, 3, 4, 5]            # O | 分段张力值
+reader_effect:                            # R | tags.yaml → reader_effect
+  - 揪心
+  - 爽感
+  - 拍案叫绝
+plot_stage: 开篇                          # R | tags.yaml → plot_stage
+plot_function:                            # R | tags.yaml → plot_function
+  - 铺垫
+  - 转折
+  - 信息揭示
+pacing: 加速                              # R | tags.yaml → pacing
+technique:                                # R | tags.yaml → technique
+  - 闪回
+  - 细节放大
+  - 心理推理
+dialogue_type:                            # R | tags.yaml → dialogue_type
+  - 独白
+  - 讨论
+  - 审讯
+pov: 第三人称限制                         # R | tags.yaml → pov
+info_delivery:                            # R | tags.yaml → info_delivery
+  - 内心独白带出
+  - 对话带出
+  - 行动展示
+setting:                                  # R | tags.yaml → setting
+  - 监牢
+  - 衙门
+scale: 小团体                             # R | tags.yaml → scale
+time_weather:                             # R | tags.yaml → time_weather
+  - 白天
+conflict:                                 # R | tags.yaml → conflict
+  - 生死
+  - 利益
+stakes:                                   # R | tags.yaml → stakes
+  - 生死
+  - 自由
+  - 家族存亡
+highlights:                               # O | 精彩段落
+  - lines: [70, 80]
+    note: '许七安意识到破案自救的可能性，核心转折点'
+  - lines: [236, 270]
+    note: '推理突破时刻'
+sub_events: []                            # O | 子事件ID列表（可选）
+plot_threads: []                          # O | refine阶段补充
+
+# ====================================================================
+# hooks 字段说明（可选，事件拆解时捕捉显性钩子）
+# ====================================================================
+#
+# 钩子是事件与事件的铆合点，使孤立事件形成有机叙事。
+# 分层处理：事件拆解捕捉显性钩子，refine验证隐性钩子。
+#
+# 钩子的四种铆合形式：
+# - 反转铆合：第一次理解为A，揭示后发现是B
+# - 悬念铆合：埋下疑问，驱动读者等待答案
+# - 期待铆合：建立期待，让读者等待某个事件兑现
+# - 因果铆合：前事件的元素成为后事件的关键
+#
+# 置信度规则：
+# - high: 道具钩子/悬念钩子，有明确行号引用
+# - medium: 人物钩子，需refine验证
+# - low: 信息钩子/情感钩子，需refine验证
+
+hooks:
+  # 章末悬念（本事件内的章节结尾钩子）
+  chapter_end:
+    - chapter: 5                          # 章节号
+      type: 悬念人物                      # 悬念人物/动作暂停/信息揭示/即时危险
+      hook_text: '门外传来不可能出现的声音'  # 钩子文本节选（≤30字）
+      lines: [450, 455]                   # 埋设行号范围
+      resolved_in: unknown                # 回收事件ID（已知时填写，未知填unknown）
+      crossing_type: 悬念铆合             # 铆合形式
+      
+  # 跨事件道具钩子（显性可识别）
+  items_crossing:
+    - item: 神秘石头                      # 物品名称
+      planted_chapter: 3                  # 埋设章节
+      planted_lines: [120, 125]           # 埋设行号范围
+      planted_event: ev_main_001          # 埋设事件（本事件ID）
+      role_in_event: 背景道具             # 本事件中的角色（关键道具/背景道具/携带物品）
+      expected_harvest: unknown           # 预计回收事件（已知时填写）
+      crossing_type: 因果铆合             # 因果铆合/反转铆合
+      confidence: high                    # high/medium/low
+      
+  # 跨事件人物关联（显性可识别，置信度默认medium）
+  character_crossing:
+    - character: 热心路人                 # 人物名称
+      first_appearance: 3                 # 首次出场章节
+      first_event: ev_main_001            # 首次出场事件
+      behavior_hint: 出场时眼神有微妙异样  # 行为异常描述（可选）
+      expected_role_change: unknown       # 预计变化类型（已知时填写）
+      confidence: medium                  # 默认medium
+      
+  # 信息钩子标记（低置信度，只标记疑似）
+  info_hint:
+    - detail: '城东的井水最近变苦了'      # 细节文本
+      chapter: 12                         # 出现章节
+      lines: [280, 285]                   # 行号范围
+      context: 闲聊对话                   # 出现场景（闲聊对话/背景描写/人物独白）
+      confidence: low                     # 默认low
+
+# ====================================================================
+# thread 字段说明
+# ====================================================================
+#
+# thread 用于区分并行叙事线索，常见取值：
+#
+# | 线索类型 | 示例 thread 值 | 说明 |
+# |----------|----------------|------|
+# | 主线 | main | 主角核心叙事线 |
+# | 感情线 | romance_A, romance_B | A/B角色的感情发展 |
+# | 支线 | subplot_A, subplot_B | 重要支线剧情 |
+# | 群像线 | cast_A, cast_B | 其他角色的个人故事 |
+# | 世界观线 | world_politics, world_magic | 世界层面的叙事 |
+#
+# 命名规则：{类型}_{区分标识}
+# 例：romance_怀庆, romance_临安, subplot_云鹿书院
+
+# ====================================================================
+# YAML 书写安全规则
+# ====================================================================
+#
+# 1. 含中文引号（""）或英文引号的字符串值，整行用单引号包裹
+#    例: note: '许七安说"活下去"'
+#
+# 2. 数值字段（tension_peak, tension_curve, text_range）不加引号
+#
+# 3. summary 若超过一行，使用 >- 折叠标量

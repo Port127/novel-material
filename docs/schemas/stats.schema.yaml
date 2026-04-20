@@ -62,23 +62,57 @@ pacing_distribution:
   骤停: 15
 pacing_pattern: "蓄力→爆发→喘息循环，约每50章一个大周期"
 
-# 伏笔统计
-foreshadowing:
-  total_plants: 45
-  total_payoffs: 38
-  unresolved: 7
-  avg_span: 234
+# 钩子统计（钩子系统统一采集）
+hooks_stats:
+  # 总体统计
+  total_hooks: 45                    # 钩子总数
+  verified_hooks: 38                 # 已验证回收
+  pending_hooks: 7                   # 待回收
+  verification_rate: 0.84            # 验证回收率
+  
+  # 按类型分布
+  by_type:
+    道具钩子: 15
+    人物钩子: 12
+    悬念钩子: 8
+    信息钩子: 6
+    情感钩子: 4
+    
+  # 按铆合形式分布
+  by_crossing:
+    反转铆合: 15                      # 反转铆合（传统"伏笔"）
+    因果铆合: 20                      # 因果关联
+    悬念铆合: 8                       # 章末悬念
+    期待铆合: 7                       # 期待兑现
+    
+  # 按来源分布
+  by_source:
+    hooks_field: 30                  # 来自事件 hooks 字段
+    plot_function: 15                # 来自 plot_function 反转铆合
+    
+  # 跨度统计
+  avg_span: 234                      # 平均跨度
   longest:
-    plant_scene: ch03_s02
-    payoff_scene: ch956_s01
+    hook_id: hook_007
+    planted_chapter: 3
+    harvested_chapter: 956
     span: 953
+    crossing_type: 反转铆合
   shortest:
-    plant_scene: ch100_s01
-    payoff_scene: ch103_s02
+    hook_id: hook_010
+    planted_chapter: 100
+    harvested_chapter: 103
     span: 3
-  unresolved_list:
-    - scene: ch45_s01
-      description: "未回收的伏笔描述"
+    crossing_type: 悬念铆合
+    
+  # 待回收详情
+  pending_list:
+    - hook_id: hook_003
+      hook_type: 信息钩子
+      crossing_type: 反转铆合
+      planted_chapter: 12
+      detail: "待回收的钩子描述"
+      confidence: low
 
 # 人物统计
 character_stats:

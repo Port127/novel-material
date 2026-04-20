@@ -150,7 +150,7 @@ setting:
   室内: [ch01_s01, ch05_s01]
 # scale, time_weather 同理
 
-# 伏笔线索（如有 plot_threads）
+# 钩子线索（如有 plot_threads）
 plot_threads:
   "陈汉升身份秘密":
     plant: [ch03_s02, ch05_s01]
@@ -228,8 +228,8 @@ entries:
         - chapter: 302
           description: "全面反击"
           plot_function: 高潮
-      foreshadowing_count: 42     # 伏笔总数
-      foreshadowing_resolved: 38  # 已回收伏笔数
+      hooks_count: 42               # 钩子总数
+      hooks_verified: 38            # 已验证回收的钩子数
     dominant_functions:            # 高频情节功能 Top-5
       - {function: 铺垫, count: 320}
       - {function: 升级, count: 210}
@@ -269,11 +269,11 @@ pipeline:
   场景总数：907
   标签维度：19
   人物索引：{n} 个角色
-  伏笔线索：{n} 条
+  钩子线索：{n} 条
 
 📊 全局索引已更新：
   👥 character_index.yaml — {n} 个角色（本素材）
-  📖 plot_index.yaml — {转折点数}/{伏笔数}
+  📖 plot_index.yaml — {转折点数}/{钩子数}
 
 📄 倒排索引：data/novels/{id}/scenes_index.yaml
 📄 场景清单：data/novels/{id}/scenes_manifest.yaml

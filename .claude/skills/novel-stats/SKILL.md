@@ -1,6 +1,6 @@
 ---
 name: novel-stats
-description: 生成全书统计报告（情节/转折/节奏/伏笔/人物等，含图表）
+description: 生成全书统计报告（情节/转折/节奏/钩子/人物等，含图表）
 when_to_use: 场景全部完成后，生成全书统计分析和可视化报告
 argument-hint: "[material_id]"
 arguments: material_id
@@ -122,23 +122,68 @@ pacing_distribution:
 pacing_pattern: "整体呈蓄力→爆发→喘息的循环模式，每50章左右一个大周期"
 ```
 
-### 7. 伏笔统计
+### 7. 钩子统计
+
+从 `outline.yaml` 的 `hooks_network` 字段采集钩子数据：
 
 ```yaml
-foreshadowing_stats:
-  total_plants: 45        # 伏笔埋设总数
-  total_payoffs: 38       # 伏笔回收总数
-  unresolved: 7           # 未回收的伏笔
-  avg_span: 234           # 埋设到回收的平均章节跨度
-  longest_span:
-    plant: ch03_s02
-    payoff: ch956_s01
-    span: 953
-  shortest_span:
-    plant: ch100_s01
-    payoff: ch103_s02
-    span: 3
+hooks_stats:
+  # 总体统计
+  total_hooks: 45                    # 钩子总数
+  verified_hooks: 38                 # 已验证回收
+  pending_hooks: 7                   # 待回收
+  verification_rate: 0.84            # 验证回收率
+  
+  # 按类型分布
+  by_type:
+    道具钩子: 15
+    人物钩子: 12
+    悬念钩子: 8
+    信息钩子: 6
+    情感钩子: 4
+    
+  # 按铆合形式分布
+  by_crossing:
+    反转铆合: 15                      # 反转铆合（传统"伏笔"）
+    因果铆合: 20                      # 因果关联
+    悬念铆合: 8                       # 章末悬念
+    期待铆合: 7                       # 期待兑现
+    
+  # 按来源分布
+  by_source:
+    hooks_field: 30                  # 来自事件 hooks 字段
+    plot_function: 15                # 来自 plot_function 反转铆合
+    
+  # 跨度统计（埋设到回收的章节跨度）
+  span_stats:
+    avg_span: 234                     # 平均跨度
+    longest_span:
+      hook_id: hook_007
+      planted_chapter: 3
+      harvested_chapter: 956
+      span: 953
+      crossing_type: 反转铆合
+    shortest_span:
+      hook_id: hook_010
+      planted_chapter: 100
+      harvested_chapter: 103
+      span: 3
+      crossing_type: 悬念铆合
+      
+  # 待回收钩子详情
+  pending_details:
+    - hook_id: hook_003
+      hook_type: 信息钩子
+      crossing_type: 反转铆合
+      planted_chapter: 12
+      detail: '城东的井水最近变苦了'
+      confidence: low
 ```
+
+**数据来源**：
+- 从 `outline.yaml` 的 `hooks_network.stats` 读取总体统计
+- 从 `hooks_network.chains` 计算跨度分布
+- 从 `hooks_network.pending` 提取待回收详情
 
 ### 8. 人物统计
 
@@ -222,8 +267,9 @@ relationship_graph:
 ## 情感分布
 (Mermaid pie 饼图)
 
-## 伏笔网络
-(表格：埋设章节 → 回收章节 → 跨度)
+## 钩子网络
+(表格：埋设章节 → 回收章节 → 跨度 → 铆合形式)
+(饼图：按铆合形式分布)
 
 ## 节奏模式
 (Mermaid xychart-beta 堆叠图)
@@ -278,7 +324,7 @@ pipeline:
 📊 核心指标：
   场景总数：907
   转折点：45 个（平均每 23.7 章一个）
-  伏笔：45 埋 / 38 收 / 7 未回收
+  钩子网络：45 总 / 38 已验证 / 7 待回收（验证率 84%）
   主导情感：紧张、温馨、平静
   紧张度范围：1.5 - 4.8
 
@@ -296,6 +342,8 @@ pipeline:
 - stats.yaml 保留完整数据，stats.md 做适当精简
 - stats.html 使用 ECharts CDN（https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js）
 - 人物关系图谱数据来源：characters.yaml（roster + relations + factions）+ 场景出场统计
+- 钩子统计统一处理反转铆合：从 outline.yaml 的 hooks_network 字段读取，反转铆合即传统"伏笔"
+- 钩子网络可视化：按铆合形式分布饼图 + 埋设回收跨度表格
 
 ## References
 

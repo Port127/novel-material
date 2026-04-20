@@ -192,7 +192,7 @@ scripts/
 | `source.raw.txt` | 原始备份 | `source-format` |
 | `format_report.yaml` | 格式清洗报告 | `source-format` |
 | `chapter_index.yaml` | 章节索引（章号+标题+行号范围） | `source-format` |
-| `outline.yaml` | 故事大纲（结构+节奏+伏笔） | `novel-outline` + `refine` |
+| `outline.yaml` | 故事大纲（结构+节奏+钩子） | `novel-outline` + `refine` |
 | `worldbuilding.yaml` | 世界观设定（力量体系+地理+势力+背景） | `novel-worldbuilding` + `refine` |
 | `characters.yaml` | 人物名册+关系网+弧线+原型+叙事功能 | `novel-characters` + `refine` |
 | `tags.yaml` | 小说级多维标签 | `novel-tags` + `refine` |

@@ -23,8 +23,8 @@ entries:
         - chapter: 89
           description: "简要描述"
           plot_function: 转折
-      foreshadowing_count: 42        # 伏笔总数
-      foreshadowing_resolved: 38     # 已回收伏笔数
+      hooks_count: 42                # 钩子总数
+      hooks_verified: 38             # 已验证回收的钩子数
     dominant_functions:              # 高频情节功能 Top-5
       - {function: 铺垫, count: 320}
     pacing_profile:

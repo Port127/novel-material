@@ -147,7 +147,7 @@
 | TC-ZH-069 | 人物弧线 arc_summary 不是泛泛的"成长" | 弧线描述具体到事件或变化节点 | 弧线质量 |
 | TC-ZH-070 | novel-worldbuilding 生成世界观设定 | worldbuilding.yaml 包含力量体系/地理/势力/背景 | 世界观生成 |
 | TC-ZH-071 | novel-outline 大纲覆盖全书结构 | outline.yaml 包含 premise/theme/structure | 大纲完整 |
-| TC-ZH-072 | refine 后大纲补充伏笔网络 | 精调后 outline.yaml 出现 plot_threads 等新字段 | 精调增量 |
+| TC-ZH-072 | refine 后大纲补充钩子网络 | 精调后 outline.yaml 出现 hooks_network 等新字段 | 精调增量 |
 | TC-ZH-073 | refine 后人物弧线更精确 | 精调后 arc_summary 包含具体章节引用 | 精调质量 |
 | TC-ZH-074 | character_index.yaml 聚合了所有小说的人物 | 多本小说的人物都出现在全局索引中 | 全局聚合 |
 | TC-ZH-075 | plot_index.yaml 聚合了所有小说的剧情 | 多本小说的剧情线索都出现在全局索引中 | 全局聚合 |
@@ -186,7 +186,7 @@
 
 | ID | 测试案例 | 预期结果 | 来源痛点 |
 |----|---------|---------|---------|
-| TC-ZH-096 | novel-stats 生成 stats.yaml | 包含情节/转折/节奏/伏笔/人物等统计数据 | 统计生成 |
+| TC-ZH-096 | novel-stats 生成 stats.yaml | 包含情节/转折/节奏/钩子/人物等统计数据 | 统计生成 |
 | TC-ZH-097 | novel-stats 生成 stats.md | Mermaid 图表语法正确，可渲染 | Markdown 报告 |
 | TC-ZH-098 | novel-stats 生成 stats.html | HTML 可在浏览器打开，ECharts 图表正常显示 | 交互报告 |
 | TC-ZH-099 | stats 中不含编造的质量数据 | 无信号时写 TBD 而非胡编数字 | 数据真实性 |

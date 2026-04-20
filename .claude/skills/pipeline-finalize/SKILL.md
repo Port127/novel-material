@@ -51,7 +51,7 @@ arguments: material_id
 
 读取 `refine/SKILL.md` 并执行。主要产出：
 
-- 伏笔网络补充
+- 钩子网络建立（统一处理钩子铆合链）
 - 节奏曲线补充
 - 人物弧线细化
 - 关系演变时间线
@@ -86,7 +86,7 @@ pipeline:
 📚 素材：{name}
 
 精调结果：
-  📖 outline.yaml — 伏笔 +{n}，节奏曲线 +{n} 点
+  📖 outline.yaml — 钩子网络 +{n}条，节奏曲线 +{n} 点
   👥 characters.yaml — {n} 角色弧线细化，{n} 关系演变
   🗺️ worldbuilding.yaml — {n} 处补充
   🏷️ tags.yaml — {n} 维度校准
@@ -95,7 +95,7 @@ pipeline:
   📊 stats.yaml / stats.md / stats.html
   🎬 场景总数：{total_scenes}
   📈 转折点：{turning_count}
-  🔮 伏笔：{plant}/{payoff}/{unresolved}
+  🪝 钩子网络：{total}/{verified}/{pending}（验证率 {rate}%）
 
 📁 全部完成！素材状态：refined
 

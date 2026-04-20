@@ -88,7 +88,7 @@
 |------|-------|------|
 | 入库 | `material-add` | 添加原文入库（status=raw，需后续跑 pipeline） |
 | 清洗 | `source-format` | 格式清洗（繁简/广告/引号/章节名/缺章检测） |
-| 分析 | `novel-outline` | 生成故事大纲（结构+节奏+伏笔） |
+| 分析 | `novel-outline` | 生成故事大纲（结构+节奏+钩子） |
 | 分析 | `novel-worldbuilding` | 提取世界观设定（力量体系+地理+势力+背景） |
 | 分析 | `novel-characters` | 生成人物体系（名册+关系+弧线+原型+叙事功能） |
 | 分析 | `novel-tags` | 生成小说级多维标签（含套路识别） |

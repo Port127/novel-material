@@ -39,7 +39,7 @@ arguments: material_id
 状态：{status}
 
 将执行：
-  1. novel-outline       → 生成大纲（结构+节奏+伏笔）
+  1. novel-outline       → 生成大纲（结构+节奏+钩子）
   2. novel-worldbuilding → 提取世界观设定
   3. novel-characters    → 生成人物体系
   4. novel-tags          → 生成小说级标签
@@ -61,7 +61,7 @@ arguments: material_id
 每步完成后输出简要进度：
 
 ```
-[1/4] novel-outline ✅ 大纲已生成（{N}幕，{M}伏笔）
+[1/4] novel-outline ✅ 大纲已生成（{N}幕，{M}钩子）
 [2/4] novel-worldbuilding ✅ 世界观已提取
 [3/4] novel-characters ✅ 人物体系已生成（{N}人）
 [4/4] novel-tags ✅ 标签已生成
