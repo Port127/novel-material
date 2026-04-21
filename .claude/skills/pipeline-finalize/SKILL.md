@@ -17,7 +17,7 @@ arguments: material_id
 1. 读取 `data/novels/{material_id}/meta.yaml`
 2. 确认 `status` 为 `complete` 或更高
 3. 确认 `events_index.yaml` 或 `events_manifest.yaml` 存在
-4. 确认 `outline.yaml`、`characters.yaml`、`tags.yaml` 存在
+4. 确认 `outline/_index.yaml`、`characters/_index.yaml`、`tags.yaml` 存在
 
 ## 恢复逻辑
 
@@ -86,9 +86,9 @@ pipeline:
 📚 素材：{name}
 
 精调结果：
-  📖 outline.yaml — 钩子网络 +{n}条，节奏曲线 +{n} 点
-  👥 characters.yaml — {n} 角色弧线细化，{n} 关系演变
-  🗺️ worldbuilding.yaml — {n} 处补充
+  📖 outline/ — 钩子网络 +{n}条，节奏曲线 +{n} 点
+  👥 characters/ — {n} 角色弧线细化，{n} 关系演变
+  🗺️ worldbuilding/ — {n} 处补充
   🏷️ tags.yaml — {n} 维度校准
 
 统计报告：

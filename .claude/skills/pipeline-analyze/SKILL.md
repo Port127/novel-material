@@ -16,15 +16,15 @@ arguments: material_id
 
 1. 读取 `data/novels/{material_id}/meta.yaml`
 2. 确认 `source.txt` 存在且 `formatted: true`
-3. 检查已有产出物——如部分文件已存在（如 `outline.yaml`），从缺失的阶段开始
+3. 检查已有产出物——如部分文件夹已存在（如 `outline/_index.yaml`），从缺失的阶段开始
 
 ## 恢复逻辑
 
 | 已有文件 | 从哪里开始 |
 |----------|-----------|
-| 无 outline.yaml | outline |
-| 有 outline，无 worldbuilding | worldbuilding |
-| 有 outline + worldbuilding，无 characters | characters |
+| 无 outline/_index.yaml | outline |
+| 有 outline，无 worldbuilding/_index.yaml | worldbuilding |
+| 有 outline + worldbuilding，无 characters/_index.yaml | characters |
 | 有 outline + worldbuilding + characters，无 tags | tags |
 | 全部存在 | 输出"已完成"，不重复执行 |
 
@@ -53,9 +53,9 @@ arguments: material_id
 
 依次读取并执行每个子 skill 的 SKILL.md，**不再逐阶段确认**：
 
-1. **novel-outline** → 产出 `outline.yaml`，status → `outlined`
-2. **novel-worldbuilding** → 产出 `worldbuilding.yaml`
-3. **novel-characters** → 产出 `characters.yaml`
+1. **novel-outline** → 产出 `outline/` 文件夹结构，status → `outlined`
+2. **novel-worldbuilding** → 产出 `worldbuilding/` 文件夹结构
+3. **novel-characters** → 产出 `characters/` 文件夹结构
 4. **novel-tags** → 产出 `tags.yaml`，status → `tagged`
 
 每步完成后输出简要进度：

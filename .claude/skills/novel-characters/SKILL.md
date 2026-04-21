@@ -1,6 +1,6 @@
 ---
 name: novel-characters
-description: 从小说中提取人物名册、关系网和人物弧线
+description: 从小说原文提取人物名册、关系网和人物弧线（文件夹结构：索引 + 人物小传）
 when_to_use: 用户想要为入库小说生成人物体系
 argument-hint: "[material_id]"
 arguments: material_id
@@ -8,19 +8,20 @@ arguments: material_id
 
 # 任务
 
-从小说原文中提取人物体系。
+从小说原文中提取人物体系，生成文件夹结构。
 
 ## 前置检查
 
 1. 读取 `data/index.yaml`，确认 material_id 存在
-2. 确认 `data/novels/{material_id}/source.txt` 存在
-3. 如存在 `chapter_index.yaml`，读取章节行号范围（用于步骤 2 精确定位原文段落）
-4. 如存在 `outline.yaml`，优先参考大纲中的结构信息
-5. 如存在 `worldbuilding.yaml`，参考其中势力组织和力量体系信息
+2. 读取 `data/novels/{material_id}/meta.yaml`
+3. 读取 `data/novels/{material_id}/source.txt`
+4. 如存在 `chapter_index.yaml`，读取章节行号范围
+5. 如存在 `outline/_index.yaml`，参考大纲识别人物密集区域
+6. 如存在 `worldbuilding/_index.yaml`，参考势力组织和力量体系
 
 ## Schema
 
-输出遵循 `docs/schemas/characters.schema.yaml`。
+输出遵循 `docs/schemas/characters.schema.yaml` 的文件夹结构。
 
 ## 上下文控制策略
 
@@ -30,24 +31,24 @@ arguments: material_id
 |----------|------|
 | ≤ 50 章 | 一次性读取全文 |
 | 51-300 章 | 分 3-5 段，每段积累人物信息后传递给下一段 |
-| > 300 章 | 分 5-10 段，每段只传递压缩版人物名册给下一段 |
+| > 300 章 | 分 5-10 段，每段只传递压缩版人物名册 |
 
-**关键区别**：与 outline/worldbuilding 不同，人物提取需要**跨段传递**已发现的角色名单，以便后续段落能识别关系演变和弧线转折。
+**关键区别**：与 outline/worldbuilding 不同，人物提取需要**跨段传递**已发现的角色名单，以便识别关系演变和弧线转折。
 
 ## 执行步骤
 
 ### 1. 制定阅读计划
 
-#### 有 outline.yaml 时（推荐路径）
+#### 1a. 有 outline 时（推荐路径）
 
-从 `outline.yaml` 中识别人物密集区域：
+从 `outline/_index.yaml` 和 `outline/structure.yaml` 识别人物密集区域：
 - 各幕开篇（新角色集中登场）
 - 转折点章节（角色弧线关键节点）
 - 高冲突章节（关系变化、阵营重组）
 
 结合结构信息划定分段范围，段边界优先对齐幕/卷分界。
 
-#### 无 outline.yaml 时
+#### 1b. 无 outline 时
 
 等距分段，策略同 `novel-outline` 的分段方案。
 
@@ -57,17 +58,18 @@ arguments: material_id
 
 #### 2a. 读取本段原文
 
-按章节索引定位，只读当前段的章节文本。同时携带**前序段落传递的人物名册摘要**（仅名字 + 身份 + 最新状态，不携带完整弧线细节）。
+按章节索引定位，同时携带**滚动名册摘要**：
+- 已发现角色的名字 + 身份 + 最新状态
+- 不携带完整弧线细节
 
 #### 2b. 提取本段人物信息
 
 - **新角色**：首次出场的角色，记录名字、别名、身份、首次出场章节
-- **弧线节点**：已知角色在本段发生的状态变化（转变事件 + 章节号）
+- **弧线节点**：已知角色在本段的状态变化（转变事件 + 章节号）
 - **新关系**：本段建立或变化的角色关系
 - **阵营变动**：角色加入/离开势力
 
 产出**段落笔记**：
-
 ```
 段落 {N}（第 {start}-{end} 章）
 新增角色：[{name, role, first_chapter}]
@@ -78,78 +80,133 @@ arguments: material_id
 
 #### 2c. 压缩并传递
 
-将当前段笔记合并到**滚动人物名册**中，用于传递给下一段：
-
+将当前段笔记合并到**滚动名册**（用于传递给下一段）：
 ```
-滚动名册（传递用，仅含关键信息）：
+滚动名册（传递用）：
 - {name}: {role}, 首现第{N}章, 当前状态: {state}
 - {name}: {role}, 首现第{N}章, 当前状态: {state}
 ...
 ```
 
-**滚动名册不含弧线细节和关系描述**，只保留足够识别角色身份的最小信息，控制 context 累积。
+滚动名册不含弧线细节和关系描述，只保留最小信息。
 
 ### 3. 汇总合成
 
-所有段落笔记收集完毕后，综合生成完整人物体系：
+所有段落笔记收集完毕后，综合生成人物体系。
 
-#### 3a. 编制人物名册
+#### 3a. 编制角色名册
 
-为每个重要角色记录：
+按角色类型分类：
+- **protagonist**：主要角色，必须有详细小传
+- **antagonist**：反派角色，必须有详细小传
+- **supporting**：重要配角，有弧线者生成小传
+- **minor**：龙套角色，只在 `_index.yaml` 保留基本信息
+
+为每个角色记录：
 - 名字和别名
-- 角色定位（protagonist/antagonist/supporting/minor）
-- 角色原型（从 `data/tags.yaml` 的 `archetype` 维度选取）
-- 叙事功能（从 `data/tags.yaml` 的 `narrative_function` 维度选取）
+- 角色定位（从 `data/tags.yaml` archetype 选取）
+- 叙事功能（从 `data/tags.yaml` narrative_function 选取）
 - 首次出场章节
-- 核心特征描述（一句话）
+- 核心特征一句话
 - 性格特征标签
 - 道德光谱
-- **心理深度维度**（主要角色必填，配角可选，minor 省略）：
-  - `fatal_flaw`: 会害到自己或他人的关键缺陷
-  - `obsession`: 长期追求、放不下的事物
-  - `soft_spot`: 最在意的人或事
-  - `misbelief`: 坚信但并不完全正确的信念
-  - `contrast_habit`: 与身份或表象相反的小习惯
-  - `tragedy_trigger`: 容易触发错过/误判/等待落空的结构点
 
 #### 3b. 绘制人物弧线
 
-从各段的弧线节点合并，为主要角色生成完整弧线（起点→转变→终点）：
-- 每个阶段的状态描述
+为主要角色（protagonist + antagonist + 有弧线的 supporting）生成完整弧线：
+- 起点 → 转变 → 终点
+- 每阶段状态描述
 - 触发转变的事件
 - 对应章节
 
 #### 3c. 构建关系网
 
-从各段的关系变化合并，记录主要人物关系：
-- 关系类型（从 `data/tags.yaml` 的 `relationship` 维度选取）
+合并各段关系变化：
+- 关系类型（从 `data/tags.yaml` relationship 选取）
 - 关系描述
-- 关系演变轨迹（可选）
+- 关系演变轨迹（如有）
 
-#### 3d. 标注阵营/势力
+#### 3d. 标注阵营
 
-如果有明确的阵营划分，记录：
+如有势力划分，记录：
 - 势力名称和成员
 - 领袖
 - 立场描述
-- 内部层级结构
-- 对立势力
 
-如存在 `worldbuilding.yaml`，参考其中 `factions_world` 的信息保持一致。此处关注「谁属于哪个阵营」，worldbuilding 关注「阵营本身的设定」。
+与 `worldbuilding/factions/` 的势力设定保持一致（此处关注「谁属于」，worldbuilding 关注「势力本身」）。
 
-### 4. 写入 characters.yaml
+### 4. 创建文件夹结构
 
-写入 `data/novels/{material_id}/characters.yaml`。
+创建 `data/novels/{material_id}/characters/`：
+
+```
+characters/
+├── _index.yaml              # 名册索引 + 关系概览 + 统计
+├── relations.yaml           # 关系网详情
+└── profiles/                # 人物小传（主角/重要配角）
+    ├── {name_pinyin}.yaml
+    └── ...
+```
+
+#### 4a. 写入 _index.yaml
+
+- 全部角色名册（按 protagonist/antagonist/supporting/minor 分类）
+- 关系概览（核心关系）
+- 阵营概览
+- 统计数据
+
+#### 4b. 写入 relations.yaml
+
+- 关系列表详情
+- 关系演变轨迹
+- 网络图数据（可选）
+
+#### 4c. 写入人物小传
+
+为 protagonist/antagonist 和有弧线的 supporting 生成 `profiles/{name_pinyin}.yaml`：
+- 基本信息
+- 心理深度维度
+- 人物弧线
+- 关系网络
+- **key_events**（初步，待 refine 补充）
+- 对白样本（可选）
+- 阵营归属
+
+**注意**：minor 角色不生成小传文件，只在 `_index.yaml` 的 `minor` 列表中保留基本信息。
+
+### 5. 建立交叉引用（初步）
+
+在人物小传中标注：
+- `key_events`：关联事件（如已知填入 event_id，否则留空）
+- `worldbuilding_links`：关联势力/地点
+
+**完整交叉引用在 refine 阶段补充**。
+
+### 6. 更新状态
+
+将 `meta.yaml` 中 `status` 更新为 `characterized`（如果当前是 `worldbuilt`）。
 
 ## 输出格式
 
 ```
-✅ 人物体系已生成
+✅ 人物体系已生成（文件夹结构）
 
 📚 素材：{name}
-👥 人物：{N}个（主角{x} 配角{y} 龙套{z}）
-🔗 关系：{M}条
-📁 文件：data/novels/{id}/characters.yaml
+📁 目录：data/novels/{id}/characters/
+
+👥 人物：{N}个
+  - 主角：{x}个 → profiles/{name}.yaml ✓
+  - 反派：{y}个 → profiles/{name}.yaml ✓
+  - 配角：{z}个 → profiles/{m}个 + 索引{n}个
+  - 龙套：{w}个 → 仅索引
+
+🔗 关系：{M}条 → relations.yaml
+📊 阵营：{K}个 → _index.yaml + worldbuilding/factions/
+
+文件列表：
+  - _index.yaml（名册索引）
+  - relations.yaml（关系网）
+  - profiles/{name}.yaml（人物小传）
 
 后续步骤：
   /novel-tags {id}          # 生成小说级标签
@@ -158,14 +215,16 @@ arguments: material_id
 
 ## 注意事项
 
-- 只记录对剧情有影响的角色，不需要穷举所有出场人物
-- 弧线只记录主要角色（protagonist + antagonist + 重要 supporting）
-- 关系类型必须从 `data/tags.yaml` 的 `relationship` 维度选取
-- 角色原型必须从 `data/tags.yaml` 的 `archetype` 维度选取
-- 叙事功能必须从 `data/tags.yaml` 的 `narrative_function` 维度选取
-- minor 角色可以省略弧线、原型和叙事功能
-- 短篇（≤50 章）可一次性读取，无需分段
-- 滚动名册是跨段传递的唯一载体，必须保持精简（每角色一行）
+- 人物采用文件夹结构：主角/重要配角有小传，龙套只索引
+- `_index.yaml` 存全部角色一览，龙套无 file 字段
+- 心理深度维度（fatal_flaw 等）对主角/反派必填，配角可选
+- 弧线只记录主要角色，minor 角色可省略
+- 关系类型必须从 `data/tags.yaml` relationship 维度选取
+- 角色原型必须从 `data/tags.yaml` archetype 维度选取
+- key_events 只记录关键节点（≤10 个），避免膨胀
+- 短篇（≤50 章）可一次性读取
+- 滚动名册是跨段传递的唯一载体，保持精简
+- 交叉引用在 refine 阶段补充完整
 
 ## References
 

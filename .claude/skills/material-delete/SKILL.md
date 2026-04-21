@@ -116,9 +116,9 @@ sqlite3 data/material.db "
 │  文件：{file_count} 个
 │    - meta.yaml（元数据）
 │    - source.txt（原文）
-│    - outline.yaml（大纲）
-│    - worldbuilding.yaml（世界观）
-│    - characters.yaml（人物）
+│    - outline/（大纲文件夹）
+│    - worldbuilding/（世界观文件夹）
+│    - characters/（人物文件夹）
 │    - tags.yaml（标签）
 │    - events/*.yaml（{event_count} 个事件）
 │    - events_index.yaml（倒排索引）

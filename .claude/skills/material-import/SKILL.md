@@ -25,9 +25,17 @@ arguments: folder_path, name, author
 ```
 imported_folder/
 ├── source.txt              # 原文（可选）
-├── outline.yaml            # 大纲
-├── worldbuilding.yaml      # 世界观设定
-├── characters.yaml         # 人物体系
+├── outline/                # 大纲文件夹（新格式）或 outline.yaml（旧格式）
+│   ├── _index.yaml
+│   ├── structure.yaml
+│   └── ...
+├── worldbuilding/          # 世界观文件夹（新格式）或 worldbuilding.yaml（旧格式）
+│   ├── _index.yaml
+│   └── ...
+├── characters/             # 人物文件夹（新格式）或 characters.yaml（旧格式）
+│   ├── _index.yaml
+│   ├── relations.yaml
+│   └── profiles/*.yaml
 ├── tags.yaml               # 小说级标签
 ├── events/                 # 事件文件夹
 │   ├── ch0001_s01.yaml
@@ -39,6 +47,12 @@ imported_folder/
 ├── stats.md                # 可视化报告（可选）
 └── stats.html              # 交互报告（可选）
 ```
+
+**兼容性说明**：导入时支持两种格式：
+- 新格式（文件夹结构）：outline/、worldbuilding/、characters/ 文件夹
+- 旧格式（单文件）：outline.yaml、worldbuilding.yaml、characters.yaml
+
+导入后会统一转换为新的文件夹结构。
 
 如果文件夹中有 `meta.yaml`，读取其中的 `name` 和 `author`，但 `material_id` 一律重新生成。
 
@@ -72,7 +86,7 @@ scan_result:
 
 1. 命令行 `--name` / `--author` 参数
 2. 文件夹中 `meta.yaml` 的 `name` / `author` 字段
-3. `outline.yaml` 中的 `title` / `author` 字段
+3. `outline/_index.yaml` 或 `outline.yaml` 中的 `title` / `author` 字段
 4. 文件夹名称推断
 
 如果最终无法确定，询问用户。
@@ -83,9 +97,9 @@ scan_result:
 
 | 文件 | 校验内容 |
 |------|---------|
-| outline.yaml | YAML 可解析 + `structure` 字段存在 |
-| worldbuilding.yaml | YAML 可解析 |
-| characters.yaml | YAML 可解析 + `roster` 字段存在 |
+| outline/_index.yaml 或 outline.yaml | YAML 可解析 + 结构字段存在 |
+| worldbuilding/_index.yaml 或 worldbuilding.yaml | YAML 可解析 |
+| characters/_index.yaml 或 characters.yaml | YAML 可解析 + `roster` 字段存在 |
 | tags.yaml | YAML 可解析 + 标签值在 `data/tags.yaml` 字典中 |
 | events/*.yaml | YAML 可解析 + 必填字段（id, chapter, title, summary, event_type）+ 标签值合法 |
 
@@ -109,7 +123,7 @@ scan_result:
 | 有 events/ 且通过校验 + 有索引 | `complete` |
 | 有 events/ 且通过校验 | `complete`（后续自动建索引） |
 | 有 tags.yaml | `tagged` |
-| 有 outline.yaml | `outlined` |
+| 有 outline/ 或 outline.yaml | `outlined` |
 | 仅有 source.txt | `raw` |
 
 ### 5. 预览
@@ -123,9 +137,9 @@ scan_result:
 
 检测到的文件：
   ✅ source.txt          (原文)
-  ✅ outline.yaml        (大纲)
-  ✅ worldbuilding.yaml  (世界观)
-  ✅ characters.yaml     (人物体系)
+  ✅ outline/ 或 outline.yaml (大纲)
+  ✅ worldbuilding/ 或 worldbuilding.yaml (世界观)
+  ✅ characters/ 或 characters.yaml (人物体系)
   ✅ tags.yaml           (小说级标签)
   ✅ events/             ({N} 个事件文件)
   ❌ events_index.yaml   (缺失，将自动构建)
@@ -193,9 +207,9 @@ pipeline:
 📋 状态：{status}
 
 导入文件：
-  - outline.yaml        ✅
-  - worldbuilding.yaml  ✅
-  - characters.yaml     ✅
+  - outline/ 或 outline.yaml ✅
+  - worldbuilding/ 或 worldbuilding.yaml ✅
+  - characters/ 或 characters.yaml ✅
   - tags.yaml           ✅
   - events/ ({N}个)     ✅
   - events_index.yaml   ✅ (自动构建)

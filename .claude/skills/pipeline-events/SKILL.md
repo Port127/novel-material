@@ -18,7 +18,7 @@ arguments: material_id
 
 1. 读取 `data/novels/{material_id}/meta.yaml`
 2. 认 `status` 为 `tagged` 或更高
-3. 确认 `outline.yaml`、`characters.yaml` 存在（事件拆分需要参考）
+3. 确认 `outline/_index.yaml`、`characters/_index.yaml` 存在（事件拆分需要参考）
 4. 检查 `events/` 目录已处理的章节，确定恢复起点
 
 ## 恢复逻辑

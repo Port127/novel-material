@@ -93,7 +93,7 @@ novel-pipeline（调度器）
    - 失败 → 停止，报告
 
 2. 读取并执行 `pipeline-analyze/SKILL.md`
-   - 产出：outline.yaml, worldbuilding.yaml, characters.yaml, tags.yaml
+   - 产出：outline/、worldbuilding/、characters/ 文件夹结构, tags.yaml
    - 失败 → 停止，报告
 
 3. 读取并执行 `pipeline-events/SKILL.md`
@@ -128,9 +128,9 @@ novel-pipeline（调度器）
   - source.txt             (清洗后原文)
   - source.raw.txt         (原始备份)
   - format_report.yaml     (格式清洗报告)
-  - outline.yaml           (故事大纲，已精调)
-  - worldbuilding.yaml     (世界观设定，已精调)
-  - characters.yaml        (人物体系，已精调)
+  - outline/              (故事大纲文件夹，已精调)
+  - worldbuilding/        (世界观文件夹，已精调)
+  - characters/           (人物文件夹，已精调)
   - tags.yaml              (小说标签，已精调)
   - events/*.yaml          ({N} 个事件)
   - events_index.yaml      (倒排索引)

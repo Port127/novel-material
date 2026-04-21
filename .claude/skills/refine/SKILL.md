@@ -1,6 +1,6 @@
 ---
 name: refine
-description: 事件完成后精调 outline / characters / tags，建立钩子网络和精确弧线
+description: 事件完成后精调 outline/、worldbuilding/、characters/ 文件夹，建立交叉引用和精确弧线
 when_to_use: 所有事件拆分完成后，用事件数据反哺精调早期产出物
 argument-hint: "[material_id]"
 arguments: material_id
@@ -8,7 +8,9 @@ arguments: material_id
 
 # 任务
 
-在所有 events 完成后，利用事件级标签数据精调 `outline.yaml`、`worldbuilding.yaml`、`characters.yaml`、`tags.yaml`。
+在所有 events 完成后，利用事件级数据精调 `outline/`、`worldbuilding/`、`characters/`、`tags.yaml`。
+
+**精调原则：不是增量，而是调整。可以删除、合并、重构，不无限膨胀。**
 
 **不读原文，只读 event YAML 数据。**
 
@@ -16,36 +18,75 @@ arguments: material_id
 
 1. 读取 `data/novels/{material_id}/meta.yaml`，确认 status 为 `complete` 或 `tagged`
 2. 确认 `events/` 目录下有事件文件
-3. 确认 `outline.yaml`、`characters.yaml`、`tags.yaml` 均已存在
-4. 如存在 `worldbuilding.yaml`，一并纳入精调
+3. 确认文件夹结构已存在：
+   - `outline/_index.yaml` + 各模块
+   - `characters/_index.yaml` + `relations.yaml` + `profiles/`
+   - `worldbuilding/_index.yaml` + 各模块
+4. 确认 `tags.yaml` 已存在
 
-如果存在 `events_manifest.yaml`，优先读取 manifest 而非逐个读 event 文件。
+如存在 `events_manifest.yaml`，优先读取 manifest 而非逐个读 event 文件。
+
+## 精调操作类型
+
+refine 支持多种操作类型，核心是"调整而非增量"：
+
+| 操作类型 | 说明 | 适用场景 |
+|----------|------|----------|
+| `enrich` | 补充细节 | 有事件证据，填补空白字段 |
+| `adjust` | 调整已有内容 | 发现不一致或描述不准确 |
+| `merge` | 合并冗余 | 发现同义势力/人物/术语 |
+| `split` | 拆分过粗内容 | 单文件内容过于复杂 |
+| `delete` | 删除错误/冗余 | 无证据支撑或明确错误 |
+| `restructure` | 重构结构 | 龙套升格配角、结构调整 |
+
+**所有操作必须基于事件证据，不能凭空添加或删除。**
 
 ## 执行步骤
 
-### 0. 备份待修改文件
+### 0. 检测变化 + 备份
 
-精调会覆盖写入多个关键文件，在修改前为每个文件创建 `.bak` 备份：
+#### 0a. 计算上次 refine 的 hash
 
-```bash
-cp outline.yaml outline.yaml.bak
-cp characters.yaml characters.yaml.bak
-cp tags.yaml tags.yaml.bak
-cp worldbuilding.yaml worldbuilding.yaml.bak   # 如存在
+读取 `meta.yaml` 中 `pipeline.refine_hash`（上次 refine 时事件数据的 hash）。
+
+计算当前事件数据的 hash：
+```python
+# 遍历 events/ 下所有 yaml 文件，计算内容 hash
+current_hash = hash_events_directory()
 ```
 
-备份文件仅保留最近一次（覆盖旧 `.bak`）。如果精调结果有问题，可从 `.bak` 恢复。
+比对：
+- hash 相同 → 无变化，跳过精调，报告"无需更新"
+- hash 不同 → 有变化，执行精调
+
+#### 0b. 备份待修改文件
+
+精调会修改多个关键文件，修改前为文件夹创建备份：
+
+```bash
+# 备份文件夹结构
+cp -r outline/ outline.bak/
+cp -r characters/ characters.bak/
+cp -r worldbuilding/ worldbuilding.bak/
+cp tags.yaml tags.yaml.bak
+```
+
+备份仅保留最近一次（覆盖旧 `.bak`）。
 
 ### 1. 采集事件数据
 
 从所有 event YAML 中提取：
+
+#### 1a. 基础数据采集
+
 - 每个事件的 `tension_peak` 值 → 按章聚合
 - 所有 `plot_threads`（如有）→ 按 thread_id 聚类
 - 每个事件的 `characters` → 人物出场统计
 - 每个事件的 `character_moment` → 人物转变节点
 - 每个事件的 `relationship` + `interaction` → 关系演变数据
+- 每个事件的 `setting` → 地点出场统计
 
-**钩子数据采集（钩子系统统一采集）**：
+#### 1b. 钩子数据采集
 
 | 来源 | 字段 | 说明 |
 |------|------|------|
@@ -56,313 +97,262 @@ cp worldbuilding.yaml worldbuilding.yaml.bak   # 如存在
 | 事件 plot_function | `伏笔埋设` | 反转铆合埋设点 |
 | 事件 plot_function | `伏笔回收` | 反转铆合回收点 |
 
-**融合策略**：
-- `plot_function: 伏笔埋设` → 自动标注 `crossing_type: 反转铆合`，提取埋设信息
-- `plot_function: 伏笔回收` → 自动标注 `crossing_type: 反转铆合`，提取回收信息
-- 两种来源的钩子统一验证，统一写入 `hooks_network`
-
-**注意：事件数量可能很大（数百甚至上千），优先读取 `events_manifest.yaml` 或 `events_index.yaml`。如需读取原始 event 文件，分批进行。**
+**注意**：事件数量可能很大，优先依赖 `events_manifest.yaml`，必要时分批读取原始事件文件。
 
 ### 2. 钩子验证与铆合链建立
 
-精调阶段建立完整的钩子铆合链（含反转铆合、因果铆合、悬念铆合等）。
+更新 `outline/hooks_network.yaml`。
 
 #### 2a. 钩子数据合并
 
-将两个来源的钩子数据合并：
-
-**来源一：事件 hooks 字段**
-- 已有行号引用、置信度标注
-- 已标注钩子类型（道具/人物/信息/悬念）
-
-**来源二：plot_function 反转铆合**
-- 提取事件中 `plot_function: [伏笔埋设]` 的埋设点（反转铆合）
-- 提取事件中 `plot_function: [伏笔回收]` 的回收点（反转铆合）
-- 自动标注 `crossing_type: 反转铆合`
-- 根据事件内容推断 `hook_type`（道具/人物/信息/情感）
-
-**合并规则**：
-- 同一钩子在两个来源都有记录 → 优先使用 hooks 字段（有行号）
-- plot_function 反转铆合补充铆合形式 → 自动标注"反转铆合"
-- plot_function 反转铆合推断钩子类型 → 根据埋设内容推断
+合并两个来源的钩子数据（事件 hooks 字段 + plot_function 反转铆合）。
 
 #### 2b. 埋设-回收匹配
 
-对合并后的钩子执行埋设-回收匹配：
+执行埋设点与回收点匹配，建立铆合链。
 
-**匹配流程**：
-
-```
-Step 1: 识别所有埋设点
-  - hooks 字段的 planted 位置
-  - plot_function: 伏笔埋设 的事件
-  
-Step 2: 识别所有回收点
-  - hooks 字段的 harvested 位置（已知时）
-  - plot_function: 伏笔回收 的事件
-  
-Step 3: 匹配埋设和回收
-  - 同一 hook_type + 同一元素（道具名/人物名/信息关键词）
-  - 建立铆合链（埋设 → 回收）
-  
-Step 4: 标注铆合形式
-  - plot_function 反转铆合 → crossing_type: 反转铆合
-  - hooks 字段道具 → crossing_type: 因果铆合 或 反转铆合（根据内容）
-  - hooks 字段悬念 → crossing_type: 悬念铆合
-```
-
-**匹配示例**：
-
-```yaml
-# plot_function 反转铆合匹配
-埋设点（plot_function: 伏笔埋设）:
-  - event: ev_main_001
-  - content: "师傅用左手喝茶"
-  
-回收点（plot_function: 伏笔回收）:
-  - event: ev_main_005
-  - content: "师傅的右手是义肢"
-  
-匹配结果:
-  - hook_type: 情感钩子
-  - crossing_type: 反转铆合           # 自动标注
-  - planted: {event: ev_main_001, chapter: 3}
-  - harvested: {event: ev_main_005, chapter: 50}
-```
+**匹配规则**：
+- 同一 hook_type + 同一元素（道具名/人物名/信息关键词）
+- 建立 chain：planted → harvested
 
 #### 2c. 置信度验证与调整
 
-对已匹配的钩子验证置信度：
+| 原置信度 | 验证结果 | 操作 |
+|----------|----------|------|
+| high | 已验证回收 | 保持 high |
+| high | 未找到回收 | 降为 medium + 标记 pending |
+| medium | 已验证回收 | 升为 high |
+| medium | 未找到回收 | 降为 low + 标记 pending |
+| low | 已验证回收 | 升为 medium |
+| low | 未找到回收 | **delete**（无证据） |
 
-**置信度调整规则**：
+#### 2d. 更新 hooks_network.yaml
 
-| 原置信度 | 验证结果 | 新置信度 |
-|----------|----------|----------|
-| high | 已验证回收 | high（保持） |
-| high | 未找到回收 | medium（降级） + 标记"待回收" |
-| medium | 已验证回收 | high（升级） |
-| medium | 未找到回收 | low（降级） + 标记"待回收" |
-| low | 已验证回收 | medium（升级） |
-| low | 未找到回收 | 删除（无证据支撑） |
-
-**plot_function 反转铆合置信度**：
-- 有明确埋设-回收匹配 → confidence: high
-- 只有埋设无回收 → confidence: medium + 标记"待回收"
-- 埋设内容模糊难推断 → confidence: low
-
-#### 2d. 隐性钩子识别
-
-精调阶段补充事件拆解时遗漏的隐性钩子：
-
-**人物钩子识别**：
-- 扫描同一人物在不同事件的身份/立场变化
-- 检查人物出场时的微妙描写是否在后续事件揭示原因
-- 自动标注 `crossing_type: 反转铆合`
-
-**信息钩子识别**：
-- 扫描对话和背景描写中的细节
-- 检查是否在后续事件成为关键推理依据
-- 置信度默认 low，需明确文本证据才能升级
-
-**情感钩子识别**：
-- 扫描角色的微妙反应（表情复杂、沉默、异样眼神）
-- 检查是否在后续事件揭示原因
-- 需要明确文本证据，否则删除
-
-#### 2e. 钩子铆合链汇总
-
-建立全局钩子铆合链，写入 `outline.yaml` 的 `hooks_network` 字段：
-
+写入铆合链：
 ```yaml
-hooks_network:
-  # 铆合链列表（埋设→回收）
-  chains:
-    - hook_id: hook_001
-      hook_type: 道具钩子
-      crossing_type: 因果铆合           # 因果关联
-      planted:
-        event: ev_main_001
-        chapter: 3
-        item: 神秘石头
-        description: 主角在市集买的石头
-        source: hooks                    # 来源：hooks 字段
-      harvested:
-        event: ev_main_005
-        chapter: 50
-        description: 石头是封印神兽的钥匙
-      confidence: high
-      
-    - hook_id: hook_002
-      hook_type: 人物钩子
-      crossing_type: 反转铆合           # 认知反转
-      planted:
-        event: ev_main_001
-        chapter: 5
-        character: 热心路人
-        description: 出场时眼神有微妙异样
-        source: plot_function            # 来源：plot_function 反转铆合
-      harvested:
-        event: ev_main_005
-        chapter: 80
-        description: 热心路人其实是反派卧底
-      confidence: high
-      
-  # 待回收钩子（未找到回收事件的钩子）
-  pending:
-    - hook_id: hook_003
-      hook_type: 信息钩子
-      crossing_type: 反转铆合
-      planted_event: ev_main_002
-      planted_chapter: 12
-      detail: '城东的井水最近变苦了'
-      confidence: low
-      note: 需后续章节验证
-      
-  # 统计数据
-  stats:
-    total_hooks: 45
-    verified_hooks: 38
-    pending_hooks: 7
-    by_type:
-      道具钩子: 15
-      人物钩子: 12
-      悬念钩子: 8
-      信息钩子: 6
-      情感钩子: 4
-    by_crossing:
-      反转铆合: 15                      # 认知反转钩子
-      因果铆合: 20
-      悬念铆合: 8
-      期待铆合: 7
-    by_source:
-      hooks_field: 30                   # 来自事件 hooks 字段
-      plot_function: 15                 # 来自 plot_function 反转铆合
+chains:
+  - hook_id: hook_001
+    hook_type: 道具钩子
+    crossing_type: 因果铆合
+    planted:
+      event: ev_001
+      chapter: 3
+      description: ...
+    harvested:
+      event: ev_005
+      chapter: 50
+    confidence: high
+
+pending:
+  - hook_id: hook_002
+    ...
+    confidence: medium
+
+stats:
+  total_hooks: 45
+  verified_hooks: 38
+  pending_hooks: 7
 ```
 
-**迁移原有 foreshadowing 字段**：
-- 如果 `outline.yaml` 已有 `foreshadowing` 字段
-- 迁移到 `hooks_network.chains`，标注 `crossing_type: 反转铆合`
-- 删除原有 `foreshadowing` 字段
+#### 2e. 更新 _index.yaml 的钩子统计
 
-#### 2f. 更新事件文件的 hooks 字段
+更新 `outline/_index.yaml` 中的 `hooks_stats`。
 
-对验证后的钩子，更新对应事件文件的 `hooks` 字段：
-- 填充 `resolved_in` 或 `expected_harvest`
-- 更新 `confidence`
-- 添加 `crossing_type`（铆合形式）
-- 添加 `source` 标记
+### 3. 精调 outline/ 文件夹
 
-### 3. 精调 outline.yaml
+#### 3a. 更新 structure.yaml
 
-#### 3a. 钩子网络写入
+- 用事件 tension 均值校准 `structure.yaml` 中各幕/序列的节奏特征
+- 从 `plot_function: 转折/反转` 事件校准 `turning_point`
 
-将钩子验证阶段建立的铆合链写入 `outline.yaml` 的 `hooks_network` 字段（见第 2e 节）。
+#### 3b. 更新 pacing_curve.yaml（如启用）
 
-#### 3b. 节奏曲线补充
-
-用事件 tension 均值填充 `pacing_curve`，生成逐章（或每10章）粒度的节奏数据：
-
+用事件 tension 数据生成/更新节奏曲线：
 ```yaml
-pacing_curve:
+tension_curve:
   - chapter: 1
     tension: 2.0
-    note: "日常切入"
-  - chapter: 2
-    tension: 2.5
-  # ...每章一个数据点
+    beat_type: setup
+  - chapter: 10
+    tension: 3.5
+    beat_type: inciting_incident
+  # ...
 ```
 
-#### 3c. 转折点校准
+#### 3c. 更新 plotlines.yaml（如启用）
 
-从 `plot_function: [转折/反转]` 的事件提取实际转折点，与 outline 的 `turning_point` 对比校准。
+用事件的 `plot_threads` 数据校准情节线索：
+- 各线索的起点/转折/高潮/收束章节
+- 与事件的交叉引用
 
-### 4. 精调 characters.yaml
+#### 3d. 更新 _index.yaml
 
-#### 4a. 人物弧线细化
+更新概览和统计：
+- `structure_summary` 的章节数、转折点数
+- `plotlines_summary`（如启用）
+- `hooks_stats`
 
-用 `character_moment` 标签丰富每个角色的 `arc`：
+### 4. 精调 characters/ 文件夹
 
+#### 4a. 更新 _index.yaml
+
+- 用事件人物出场统计校准 `roster` 中各角色的 `first_appearance`
+- 补充 `appearance_count`（出场次数）
+- 补充 `active_chapters`（活跃章节范围）
+- 更新 `relations_summary` 的核心关系
+- 更新 `stats`（人物总数、关系总数）
+
+**操作类型判断**：
+- 发现新角色（事件中出现但 `_index.yaml` 缺失）→ `enrich`：补充到 roster
+- 发现角色定位不一致 → `adjust`：校准 role/archetype
+- 发现同义角色名 → `merge`：合并，删除冗余
+- 发现角色从未出场（无事件关联）→ `delete`：从 roster 移除
+
+#### 4b. 更新 relations.yaml
+
+用事件关系数据更新关系网：
+- 补充 `evolution` 轨迹（如有变化）
+- 补充 `trigger_event`（关系变化触发事件）
+- 校准关系类型
+
+**操作类型判断**：
+- 发现新关系 → `enrich`：补充到 relations
+- 发现关系描述不准确 → `adjust`：修正描述
+- 发现关系从未演变且不重要 → 评估是否 `delete`
+
+#### 4c. 更新人物小传（profiles/）
+
+对每个有 `file` 字段的角色（主角/重要配角）：
+
+**key_events 交叉引用补充**：
+```yaml
+key_events:
+  - event_id: nm_xxx_ch01_ev001
+    chapter: 1
+    description: "首次出场，回忆红岸基地"
+    significance: "人物起点"
+    role_in_event: 主角
+  - event_id: nm_xxx_ch08_ev003
+    chapter: 8
+    significance: "核心转变"
+  # ... 只记录关键节点，≤ 10 个
+```
+
+**弧线细化**：
+用事件的 `character_moment` 补充弧线节点：
 ```yaml
 arc:
-  - stage: "起点"
-    state: "重生归来的成功商人"
-    chapter: 1
-    event: ev_main_001
-    moment_type: 性格展示
-  - stage: "转变"
-    state: "第一次面对情感两难"
-    trigger: "萧容鱼告白"
-    chapter: 156
-    event: ev_main_015
-    moment_type: 道德抉择
+  stages:
+    - stage: 起点
+      chapter: 1
+      event: ev_001
+      moment_type: 性格展示
+    - stage: 转折
+      chapter: 15
+      event: ev_008
+      trigger: "发现真相"
+      moment_type: 信念崩塌
 ```
 
-#### 4b. 关系演变时间线
-
-从 `relationship` + `interaction` 随章节变化的数据，为 `relations[].evolution` 补充更细粒度的阶段：
-
+**心理维度补充**（基于事件证据）：
 ```yaml
-evolution:
-  - stage: "初遇"
-    state: "陌生人"
-    chapter: 3
-    event: ev_main_002
-    interaction: 试探
-  - stage: "暧昧"
-    state: "互有好感"
-    chapter: 45
-    event: ev_romance_001
-    interaction: 合作
+psychology:
+  fatal_flaw: "对人类的绝望导致背叛"  # 从道德抉择失误推断
+  obsession: "寻找更高等文明来拯救"   # 从持续追求推断
+  # 只补充有证据的字段，标记 source: refine
 ```
 
-#### 4c. 出场频率标注
+**操作类型判断**：
+- 缺少 key_events → `enrich`：补充
+- key_events 指向不存在的事件 → `adjust`：修正或 `delete` 该引用
+- 弧线节点不准确 → `adjust`：校准
+- 发现龙套角色有文件但无事件关联 → `restructure`：删除文件，降为 minor
 
-为每个角色补充 `appearance_count` 和 `active_chapters` 范围。
+#### 4d. 处理角色升降格
 
-#### 4d. 心理深度补充
+根据事件出场频率和重要性：
+- minor 角色出场 > 10 次且有弧线 → `restructure`：升格为 supporting，生成 profiles 文件
+- supporting 角色出场 < 3 次且无弧线 → `restructure`：降格为 minor，删除 profiles 文件
 
-基于事件中的 `character_moment`（道德抉择、信念崩塌/重建、堕落滑落等）和具体行为推断，为主要角色补充 `psychology` 维度中缺失的字段：
+### 5. 精调 worldbuilding/ 文件夹
 
-- `fatal_flaw`: 从道德抉择失误、反复犯错的模式中提取
-- `obsession`: 从角色持续追求的目标中提取
-- `soft_spot`: 从守护/牺牲行为的对象中提取
-- `misbelief`: 从信念崩塌/重建事件的触发信念中提取
-- `contrast_habit`: 从日常事件中与角色身份反差的细节中提取
-- `tragedy_trigger`: 从导致角色错过/误判的结构性事件模式中提取
+#### 5a. 更新 _index.yaml
 
-只补充有事件证据支撑的字段，无信号时留空。标记 `source: refine`。
+- 用事件地点统计校准 `regions_count`、`factions_count`
+- 更新 `stats`
 
-### 5. 精调 worldbuilding.yaml（如存在）
+#### 5b. 更新 geography（单文件或文件夹）
 
-基于事件数据补充世界观信息：
-- 从事件的 `setting` 标签统计高频地点 → 补充 `geography.regions`
-- 从事件中出现的势力/组织信息 → 校准 `factions_world` 的关系和实力
-- 从角色能力描写 → 补充 `power_system` 的等级和能力细节
-- 新增的信息标记 `source: refine`
+用事件 `setting` 统计：
+- 补充地点的 `key_events` 交叉引用
+- 补充地点的 `first_appearance`
+- 校准地点的 `significance`
 
-### 6. 精调 tags.yaml（小说级）
+**粒度判断**：
+- 地点数 > 3 且为单文件 → `split`：拆为文件夹
+- 地点数 ≤ 3 且为文件夹 → `merge`：合并为单文件
 
-基于事件标签的统计分布，补充或校准小说级标签：
-- 主导 event_type 分布 → 校准小说的 `dominant_event_types`
+#### 5c. 更新 factions（单文件或文件夹）
+
+用事件势力信息：
+- 补充势力的 `key_events` 交叉引用
+- 校准势力的 `relationships`
+- 补充势力的成员变化（如事件中有阵营变动）
+
+**操作类型判断**：
+- 发现新势力 → `enrich`：补充
+- 发现同义势力 → `merge`：合并
+- 发现势力无事件关联 → `delete`：移除
+
+#### 5d. 更新 lore/
+
+- 补充 `history.yaml` 的历史事件与 `first_referenced`
+- 补充 `artifacts.yaml` 的物品与 `key_events`
+- 补充 `terminology.yaml` 的术语与 `first_appearance`
+
+### 6. 精调 tags.yaml
+
+基于事件标签统计校准小说级标签：
+- 主导 event_type 分布 → 校准 `dominant_event_types`
 - 主导 emotion 分布 → 校准 `emotional_profile`
 - technique 分布 → 校准 `craft_profile`
 
-### 7. 标记精调完成
+### 7. 清理已删除事件的引用
 
-在 `meta.yaml` 中记录精调状态：
+检查所有文件，删除指向不存在事件的引用：
+- 人物小传的 `key_events` 中无效 event_id → 删除
+- 势力/地点的 `key_events` 中无效 event_id → 删除
+- 钩子的 `planted.event` / `harvested.event` 无效 → 删除或标记 pending
 
+### 8. 更新 SQLite 索引
+
+调用 `build-index` 更新 SQLite 表：
+- 更新 `characters` 表的 `appearance_count`、`file_path`
+- 更新 `factions` 表
+- 更新 `regions` 表
+- 新增 `character_events`、`faction_events` 交叉引用表
+
+### 9. 标记精调完成
+
+更新 `meta.yaml`：
 ```yaml
 pipeline:
   refined: true
-  refined_at: "2026-04-05T12:00:00Z"
+  refined_at: "2026-04-21T12:00:00Z"
+  refine_hash: "{当前事件数据hash}"
   refine_summary:
-    hooks_verified: 38
-    hooks_pending: 7
-    hooks_from_plot_function: 15       # 来自 plot_function 反转铆合
-    pacing_points_added: 1070
-    character_arcs_enriched: 8
-    relations_enriched: 12
-    worldbuilding_enriched: true
+    operations:
+      enrich: {n}
+      adjust: {n}
+      merge: {n}
+      split: {n}
+      delete: {n}
+      restructure: {n}
+    hooks_verified: {n}
+    hooks_pending: {n}
+    key_events_added: {n}
+    characters_enriched: {n}
+    worldbuilding_enriched: {n}
 ```
 
 ## 输出格式
@@ -370,48 +360,53 @@ pipeline:
 ```
 ✅ 精调完成
 
-📚 索材：{name}
+📚 素材：{name}
 
-精调结果：
-  🪝 钩子网络建立
-    - 验证钩子：{n} 个（已回收）
-    - 待回收钩子：{n} 个（未找到回收事件）
-    - 铆合链建立：{n} 条
-    - 来源分布：hooks字段 {n}个，plot_function反转铆合 {n}个
-    - 钩子网络：已写入 outline.yaml
+精调操作统计：
+  enrich：{n} 次   # 补充细节
+  adjust：{n} 次   # 调整内容
+  merge：{n} 次    # 合并冗余
+  split：{n} 次    # 拆分过粗
+  delete：{n} 次   # 删除无效
+  restructure：{n} 次 # 重构结构
 
-  📖 outline.yaml
-    - 节奏曲线：补充 {n} 个数据点
-    - 转折点：校准 {n} 处
-
-  👥 characters.yaml
-    - 弧线细化：{n} 个角色
-    - 关系演变：{n} 条关系链
-    - 出场统计：已标注
-
-  🗺️ worldbuilding.yaml
-    - 地理补充：{n} 个地点
-    - 势力校准：{n} 处
-
+文件夹更新：
+  📂 outline/
+    - hooks_network.yaml：验证 {n} 条钩子，{n} 条待回收
+    - structure.yaml：校准转折点
+    - pacing_curve.yaml：补充 {n} 个数据点
+    - _index.yaml：统计更新
+  
+  📂 characters/
+    - _index.yaml：{n} 角色更新，{n} 升格，{n} 降格
+    - relations.yaml：{n} 条关系更新
+    - profiles/*.yaml：{n} 个小传补充 key_events
+  
+  📂 worldbuilding/
+    - _index.yaml：统计更新
+    - geography/：{n} 地点补充 key_events
+    - factions/：{n} 势力校准
+    - lore/：术语/物品补充
+  
   🏷️ tags.yaml
     - 标签校准：{n} 个维度
 
 后续操作：
-  /novel-stats {id}       # 生成统计报告
-  /build-index {id}       # 构建检索索引
+  /novel-stats {id}    # 生成统计报告
 ```
 
 ## 注意事项
 
-- 精调是增量操作，不删除已有内容，只追加/修正
-- 新增的字段标记 `source: refine` 区分来源
-- 不读原文，只依赖 event YAML 数据
-- 事件文件过多时，优先依赖 manifest/index，必要时分批读取
-- 钩子系统统一处理：`plot_function: 伏笔埋设/回收` 自动标注 `crossing_type: 反转铆合`
-- 原有 `foreshadowing` 字段迁移到 `hooks_network.chains`，标注来源
-- 钩子验证采用保守策略：不确定时标 `confidence: low`，标记为"待回收"
-- 钩子验证时优先确认跨事件关系，同一事件内的钩子不算跨事件钩子
-- 待回收钩子需标注并记录，方便后续验证或人工审核
+- **精调是调整而非增量**：可以删除、合并、重构，不无限膨胀
+- **所有操作基于事件证据**：无证据不添加，有矛盾则调整
+- **key_events 只记录关键节点**：≤ 10 个，避免膨胀
+- **删除无效引用**：指向不存在事件的引用必须清理
+- **粒度自适应**：≤ 3 用单文件，> 3 用文件夹，可动态调整
+- **不读原文**：只依赖 event YAML 数据
+- **备份先行**：修改前备份文件夹结构
+- **hash 检测变化**：无变化时跳过，避免重复工作
+- 事件文件过多时，优先依赖 manifest，必要时分批读取
+- 钩子验证采用保守策略：不确定时标 pending，无证据则删除
 
 ## References
 

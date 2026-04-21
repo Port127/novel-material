@@ -20,9 +20,9 @@ arguments: material_id
 4. 读取 `docs/schemas/novel-tags.schema.yaml` — 获取输出格式
 
 优先读取已有分析产出物（避免重读原文）：
-- `outline.yaml` — 结构、节奏、时间线信息 → 用于 narrative / tone
-- `worldbuilding.yaml` — 世界观复杂度 → 用于 genre / tropes
-- `characters.yaml` — 人物体系 → 用于 tropes / writing_strength
+- `outline/_index.yaml` + `structure.yaml` — 结构、节奏、时间线信息 → 用于 narrative / tone
+- `worldbuilding/_index.yaml` — 世界观复杂度 → 用于 genre / tropes
+- `characters/_index.yaml` — 人物体系 → 用于 tropes / writing_strength
 
 ## Schema
 

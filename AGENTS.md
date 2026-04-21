@@ -90,13 +90,13 @@
 | 入库 | `material-add` | 添加原文入库（status=raw，需后续跑 pipeline） |
 | 删除 | `material-delete` | 删除素材及其所有关联资源（文件夹+索引+数据库） |
 | 清洗 | `source-format` | 格式清洗（繁简/广告/引号/章节名/缺章检测） |
-| 分析 | `novel-outline` | 生成故事大纲（结构+节奏+钩子） |
-| 分析 | `novel-worldbuilding` | 提取世界观设定（力量体系+地理+势力+背景） |
-| 分析 | `novel-characters` | 生成人物体系（名册+关系+弧线+原型+叙事功能） |
+| 分析 | `novel-outline` | 生成故事大纲（**文件夹结构**：结构+节奏+钩子+可选模块） |
+| 分析 | `novel-worldbuilding` | 提取世界观设定（**文件夹结构**：力量体系+地理+势力+背景知识） |
+| 分析 | `novel-characters` | 生成人物体系（**文件夹结构**：索引+人物小传+关系网） |
 | 分析 | `novel-tags` | 生成小说级多维标签（含套路识别） |
 | 事件 | `novel-events` | 拆分事件+多维标签（分批执行） |
-| 索引 | `build-index` | 构建倒排索引+事件清单（加速检索） |
-| 后处理 | `refine` | 事件完成后精调大纲/人物/标签 |
+| 索引 | `build-index` | 构建倒排索引+事件清单（支持文件夹结构） |
+| 后处理 | `refine` | 事件完成后精调大纲/人物/世界观（**调整而非增量**） |
 | 后处理 | `novel-stats` | 生成统计报告+可视化图表+交互HTML+关系图谱 |
 | 检索 | `material-search` | 关键词检索 |
 | 检索 | `material-search-event` | 按多维标签检索事件 |
@@ -124,8 +124,14 @@
 - MUST build-index 同时生成 YAML 索引和 SQLite（`data/material.db`）
 - MUST 事件标签由 LLM 逐批阅读原文后生成，禁止关键词匹配代替理解
 - MUST material-import 重新生成 material_id，校验标签合法性后才注册
+- MUST outline/、worldbuilding/、characters/ 使用文件夹结构（`_index.yaml` + 各模块）
+- MUST `_index.yaml` 存概览和统计，SQLite 存完整索引，各司其职
+- MUST 人物小传 key_events 只记录关键节点（≤10个），避免膨胀
+- MUST refine 是调整而非增量，可删除、合并、重构，不无限膨胀
+- MUST 粒度自适应：地理/势力 ≤3 用单文件，>3 用文件夹
 - NEVER 编造质量数据（无信号写 TBD）
 - NEVER 用脚本批量生成模板化事件文件（详见 `ARCHITECTURE.md` → Anti-Pattern）
+- NEVER 跨素材共享世界观/人物（每个素材独立）
 
 ## Web UI
 

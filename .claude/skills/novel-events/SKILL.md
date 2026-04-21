@@ -352,7 +352,7 @@ info_hint:
 
 #### 1a. 读取 outline 获取线索信息
 
-读取 `outline.yaml`，提取：
+读取 `outline/_index.yaml` + `structure.yaml`，提取：
 - `timelines` 列表（如有）获取多线叙事结构
 - 主要角色列表，推断感情线/群像线
 - 势力/组织信息，推断世界观线
