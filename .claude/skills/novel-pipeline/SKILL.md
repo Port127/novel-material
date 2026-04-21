@@ -26,12 +26,12 @@ novel-pipeline（调度器）
 
 ## 流程路由
 
-|| 模式 | 触发词 | 执行流水线 | 参数 |
-||------|--------|-----------|------|
-|| `full` | 一键处理、完整流程、全自动 | ingest → analyze → events → finalize | `[路径]` |
-|| `quick` | 快速处理、仅骨架 | ingest → analyze | `[路径]` |
-|| `continue` | 继续、恢复、接着处理 | 从中断子流水线恢复 | `[material_id]` |
-|| `stage` | 指定阶段名 | 仅执行指定子流水线 | `[material_id] [阶段名]` |
+| 模式 | 触发词 | 执行流水线 | 参数 |
+|------|--------|-----------|------|
+| `full` | 一键处理、完整流程、全自动 | ingest → analyze → events → finalize | `[路径]` |
+| `quick` | 快速处理、仅骨架 | ingest → analyze | `[路径]` |
+| `continue` | 继续、恢复、接着处理 | 从中断子流水线恢复 | `[material_id]` |
+| `stage` | 指定阶段名 | 仅执行指定子流水线 | `[material_id] [阶段名]` |
 
 ## 执行步骤
 
@@ -69,16 +69,16 @@ novel-pipeline（调度器）
 
 读取 `meta.yaml` 中的 `pipeline` 字段，判断当前进度：
 
-|| 条件 | 路由到 | 说明 |
-||------|--------|------|
-|| status=raw，formatted 缺失或 false | pipeline-ingest（补格式化） | 原文未清洗 |
-|| status=raw，formatted=true | pipeline-analyze | 清洗完成，开始分析 |
-|| status=outlined | pipeline-analyze（从缺失步骤恢复） | 分析进行中 |
-|| status=tagged | pipeline-events | 小说标签已完成，开始事件拆分 |
-|| status=tagged + events/ 已有部分文件 | pipeline-events（从断点恢复） | 事件拆分被中断 |
-|| status=complete，refined 缺失或 false | pipeline-finalize | 索引已建，开始精调 |
-|| status=complete，refined=true，stats_generated 缺失 | pipeline-finalize（跳 refine） | 精调完成，补统计 |
-|| status=refined | 输出"全部完成" | 所有阶段均已完成 |
+| 条件 | 路由到 | 说明 |
+|------|--------|------|
+| status=raw，formatted 缺失或 false | pipeline-ingest（补格式化） | 原文未清洗 |
+| status=raw，formatted=true | pipeline-analyze | 清洗完成，开始分析 |
+| status=outlined | pipeline-analyze（从缺失步骤恢复） | 分析进行中 |
+| status=tagged | pipeline-events | 小说标签已完成，开始事件拆分 |
+| status=tagged + events/ 已有部分文件 | pipeline-events（从断点恢复） | 事件拆分被中断 |
+| status=complete，refined 缺失或 false | pipeline-finalize | 索引已建，开始精调 |
+| status=complete，refined=true，stats_generated 缺失 | pipeline-finalize（跳 refine） | 精调完成，补统计 |
+| status=refined | 输出"全部完成" | 所有阶段均已完成 |
 
 预览恢复计划后等待确认。
 

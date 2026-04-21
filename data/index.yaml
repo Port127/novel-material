@@ -1,18 +1,4 @@
 materials:
-- id: nm_novel_20260405_zhbk
-  type: novel
-  name: 《我真没想重生啊》
-  author: 柳岸花又明
-  folder: data/novels/nm_novel_20260405_zhbk
-  status: refined
-  added: 2026-04-05
-- id: nm_novel_20260406_dwrn
-  type: novel
-  name: 《大王饶命》（校对版全本）
-  author: 会说话的肘子
-  folder: data/novels/nm_novel_20260406_dwrn
-  status: raw
-  added: 2026-04-06
 - id: nm_novel_20260408_bfg7
   type: novel
   name: 《大奉打更人》（校对版全本）

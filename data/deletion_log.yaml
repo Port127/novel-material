@@ -33,3 +33,25 @@ deletions:
     file_count: 7
     tag_count: 0
     character_count: 14
+- material_id: nm_novel_20260405_zhbk
+  name: 《我真没想重生啊》
+  author: 柳岸花又明
+  status: refined
+  deleted_at: '2026-04-21T16:40:00Z'
+  deleted_by: material-delete skill
+  stats:
+    event_count: 907
+    file_count: 918
+    tag_count: 13303
+    character_count: 15
+- material_id: nm_novel_20260406_dwrn
+  name: 《大王饶命》（校对版全本）
+  author: 会说话的肘子
+  status: tagged
+  deleted_at: '2026-04-21T17:22:00Z'
+  deleted_by: material-delete skill
+  stats:
+    event_count: 308
+    file_count: 321
+    tag_count: 5476
+    character_count: 14

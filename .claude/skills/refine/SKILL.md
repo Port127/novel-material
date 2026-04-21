@@ -47,14 +47,14 @@ cp worldbuilding.yaml worldbuilding.yaml.bak   # 如存在
 
 **钩子数据采集（钩子系统统一采集）**：
 
-|| 来源 | 字段 | 说明 |
-||------|------|------|
-|| 事件 hooks 字段 | `hooks.chapter_end` | 章末悬念（悬念铆合） |
-|| 事件 hooks 字段 | `hooks.items_crossing` | 跨事件道具（因果铆合） |
-|| 事件 hooks 字段 | `hooks.character_crossing` | 人物关联（反转铆合） |
-|| 事件 hooks 字段 | `hooks.info_hint` | 信息钩子疑似 |
-|| 事件 plot_function | `伏笔埋设` | 反转铆合埋设点 |
-|| 事件 plot_function | `伏笔回收` | 反转铆合回收点 |
+| 来源 | 字段 | 说明 |
+|------|------|------|
+| 事件 hooks 字段 | `hooks.chapter_end` | 章末悬念（悬念铆合） |
+| 事件 hooks 字段 | `hooks.items_crossing` | 跨事件道具（因果铆合） |
+| 事件 hooks 字段 | `hooks.character_crossing` | 人物关联（反转铆合） |
+| 事件 hooks 字段 | `hooks.info_hint` | 信息钩子疑似 |
+| 事件 plot_function | `伏笔埋设` | 反转铆合埋设点 |
+| 事件 plot_function | `伏笔回收` | 反转铆合回收点 |
 
 **融合策略**：
 - `plot_function: 伏笔埋设` → 自动标注 `crossing_type: 反转铆合`，提取埋设信息
@@ -136,14 +136,14 @@ Step 4: 标注铆合形式
 
 **置信度调整规则**：
 
-||| 原置信度 | 验证结果 | 新置信度 |
-|||----------|----------|----------|
-||| high | 已验证回收 | high（保持） |
-||| high | 未找到回收 | medium（降级） + 标记"待回收" |
-||| medium | 已验证回收 | high（升级） |
-||| medium | 未找到回收 | low（降级） + 标记"待回收" |
-||| low | 已验证回收 | medium（升级） |
-||| low | 未找到回收 | 删除（无证据支撑） |
+| 原置信度 | 验证结果 | 新置信度 |
+|----------|----------|----------|
+| high | 已验证回收 | high（保持） |
+| high | 未找到回收 | medium（降级） + 标记"待回收" |
+| medium | 已验证回收 | high（升级） |
+| medium | 未找到回收 | low（降级） + 标记"待回收" |
+| low | 已验证回收 | medium（升级） |
+| low | 未找到回收 | 删除（无证据支撑） |
 
 **plot_function 反转铆合置信度**：
 - 有明确埋设-回收匹配 → confidence: high
