@@ -21,7 +21,7 @@ added: YYYY-MM-DD
 #   raw       仅有原文入库（source-format 完成后 pipeline.formatted: true，但 status 仍为 raw）
 #   outlined  pipeline-analyze 进行中或完成（outline + worldbuilding + characters）
 #   tagged    pipeline-analyze 完成（小说级标签已生成）。注意：事件尚未拆分
-#   complete  pipeline-scenes 完成（事件全部拆分 + 索引已构建）
+#   complete  pipeline-events 完成（事件全部拆分 + 索引已构建）
 #   refined   pipeline-finalize 完成（精调 + 统计报告已生成）
 #
 status: raw

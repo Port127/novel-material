@@ -20,7 +20,7 @@
                +---------------------------+
                | pipeline-ingest           |  material-add + source-format
                | pipeline-analyze          |  outline + worldbuilding + characters + tags
-               | pipeline-scenes           |  novel-scenes(all) + build-index（可跨对话）
+               | pipeline-events           |  novel-events(all) + build-index（可跨对话）
                | pipeline-finalize         |  refine + novel-stats
                +---------------------------+
                               |
@@ -35,12 +35,12 @@
                | novel-worldbuilding       |  世界观设定
                | novel-characters          |  生成人物体系
                | novel-tags                |  小说级标签
-               | novel-scenes              |  事件拆分+多维标签
+               | novel-events              |  事件拆分+多维标签
                | build-index               |  构建索引
                | refine                    |  精调
                | novel-stats               |  统计报告+交互图表
                | material-search           |  关键词检索
-               | material-search-scene     |  多维标签检索
+               | material-search-event     |  多维标签检索
                | material-search-context   |  写作上下文检索
                | tag-add / tag-merge       |  标签管理
                +---------------------------+
@@ -78,8 +78,8 @@
                | novels/{id}/characters.yaml    |  人物（+精调）
                | novels/{id}/tags.yaml          |  标签（+精调）
                | novels/{id}/events/*.yaml      |  事件
-               | novels/{id}/scenes_index.yaml  |  倒排索引
-               | novels/{id}/scenes_manifest.yaml| 事件清单
+               | novels/{id}/events_index.yaml  |  倒排索引
+               | novels/{id}/events_manifest.yaml| 事件清单
                | novels/{id}/stats.*            |  统计（yaml/md/html）
                +-------------------------------+
 
@@ -102,7 +102,7 @@
 | `novel-pipeline` | 模式路由 + 恢复判断 | 模式 + 参数 | 路由到子流水线 |
 
 支持的流程模式：
-- `full`: ingest → analyze → scenes → finalize
+- `full`: ingest → analyze → events → finalize
 - `quick`: ingest → analyze
 - `continue`: 从中断子流水线恢复
 - `stage`: 执行指定子流水线
@@ -115,10 +115,10 @@
 |--------------|-----------|------|------|
 | `pipeline-ingest` | material-add → source-format | meta.yaml + source.txt | ~1分钟 |
 | `pipeline-analyze` | outline → worldbuilding → characters → tags | 4个分析文件 | ~5-10分钟 |
-| `pipeline-scenes` | novel-scenes(all) → build-index | events/*.yaml + 索引 | **可跨对话** |
+| `pipeline-events` | novel-events(all) → build-index | events/*.yaml + 索引 | **可跨对话** |
 | `pipeline-finalize` | refine → novel-stats | 精调文件 + stats.* | ~5分钟 |
 
-**设计要点**：`pipeline-scenes` 是最耗时阶段（大书需要几十到上百批次），专门设计为可跨对话恢复。每 30 批建议开新对话。
+**设计要点**：`pipeline-events` 是最耗时阶段（大书需要几十到上百批次），专门设计为可跨对话恢复。每 30 批建议开新对话。
 
 ### L2 — Atomic Skills
 
@@ -133,12 +133,12 @@
 | `novel-worldbuilding` | 世界观设定 | material_id | worldbuilding.yaml |
 | `novel-characters` | 生成人物体系 | material_id | characters.yaml |
 | `novel-tags` | 小说级标签 | material_id | tags.yaml |
-| `novel-scenes` | 事件拆分+标签 | material_id + 章节范围 | events/*.yaml |
-| `build-index` | 构建索引 + 聚合全局索引 | material_id | scenes_index/manifest + character_index + plot_index |
+| `novel-events` | 事件拆分+标签 | material_id + 章节范围 | events/*.yaml |
+| `build-index` | 构建索引 + 聚合全局索引 | material_id | events_index/manifest + character_index + plot_index |
 | `refine` | 精调大纲/人物/标签/世界观 | material_id | 精调后的 outline/worldbuilding/characters/tags |
 | `novel-stats` | 统计报告+交互图表 | material_id | stats.yaml + stats.md + stats.html |
 | `material-search` | 关键词检索 | 关键词 | 匹配素材列表 |
-| `material-search-scene` | 多维标签检索 | 标签条件 | 匹配事件列表 |
+| `material-search-event` | 多维标签检索 | 标签条件 | 匹配事件列表 |
 | `material-search-context` | 写作上下文检索 | 写作上下文 | 事件+人物+技法参考 |
 | `tag-add` | 新增标签值 | 维度 + 值 | tags.yaml 更新 |
 | `tag-merge` | 合并标签 | 旧值 + 新值 | 全局替换 |
@@ -196,7 +196,7 @@ scripts/
 | `worldbuilding.yaml` | 世界观设定（力量体系+地理+势力+背景） | `novel-worldbuilding` + `refine` |
 | `characters.yaml` | 人物名册+关系网+弧线+原型+叙事功能 | `novel-characters` + `refine` |
 | `tags.yaml` | 小说级多维标签 | `novel-tags` + `refine` |
-| `events/*.yaml` | 事件（含6层20维标签+情节线索） | `novel-scenes` |
+| `events/*.yaml` | 事件（含6层20维标签+情节线索） | `novel-events` |
 | `events_index.yaml` | 倒排索引（标签→事件ID） | `build-index` |
 | `events_manifest.yaml` | 事件清单（压缩视图） | `build-index` |
 | `stats.yaml` | 全书统计数据 | `novel-stats` |
@@ -230,7 +230,7 @@ backend/
 | `ingest` | 入库检查 | 否 |
 | `format` | 格式清洗 | 否 |
 | `analyze` | 大纲→世界观→人物→标签 | 是 |
-| `scenes` | 事件拆分（需 Agent） | 是 |
+| `events` | 事件拆分（需 Agent） | 是 |
 | `build-index` | 构建 SQLite + YAML 索引 | 否 |
 | `finalize` | 统计报告 | 是 |
 
@@ -278,7 +278,7 @@ frontend/src/
 
 ## Tag System — 6 层 20 维（事件级）+ 7 维（小说级）
 
-事件级标签体系（每个 scene.yaml 内）：
+事件级标签体系（每个 event.yaml 内）：
 
 | 层 | 维度 | 用途 |
 |----|------|------|
@@ -314,8 +314,8 @@ frontend/src/
 │  novel-tags            tagged: 生成小说级标签              │
 └────────────────────────────────────────────────────────────┘
          ↓
-┌─ pipeline-scenes（可跨对话）──────────────────────────────┐
-│  novel-scenes          complete: 逐章拆分事件+打标签      │
+┌─ pipeline-events（可跨对话）──────────────────────────────┐
+│  novel-events          complete: 逐章拆分事件+打标签      │
 │         ↓              （自动循环分批，每30批建议分段）     │
 │  build-index           complete: 构建倒排索引+事件清单    │
 └────────────────────────────────────────────────────────────┘
@@ -345,7 +345,7 @@ frontend/src/
 8. **脚本优先检索** — 检索事件时优先调用 `scripts/core/search.py` 查 SQLite，LLM 不直接读大索引文件
 9. **后处理不读原文** — `build-index`、`refine`、`novel-stats` 只读事件 YAML 数据
 10. **批次质量审计** — 每批事件写入后由 `scripts/core/quality_audit.py --batch {本批范围}` 检查（只传本批范围，不传累积范围）
-11. **跨对话恢复** — `pipeline-scenes` 每批持久化进度到 meta.yaml，每 30 批建议分段，下次 continue 自动定位恢复点
+11. **跨对话恢复** — `pipeline-events` 每批持久化进度到 meta.yaml，每 30 批建议分段，下次 continue 自动定位恢复点
 12. **导入校验** — `material-import` 必须重新生成 ID、校验标签合法性、检查去重后才注册
 
 ## Anti-Pattern: 模板糊弄
@@ -422,11 +422,11 @@ python ../novel-material/scripts/core/search.py text --query 告别
 
 ### ADR-2：嵌套 → 扁平 schema 迁移（2026-04）
 
-**决策**：事件 YAML 从嵌套结构（content/people/emotion/structure/craft/setting 分组）迁移为扁平结构（所有标签维度平铺在顶层）。`scene.schema.yaml` 的 Flat Output Contract 定义了扁平格式。
+**决策**：事件 YAML 从嵌套结构（content/people/emotion/structure/craft/setting 分组）迁移为扁平结构（所有标签维度平铺在顶层）。`event-unit.schema.yaml` 的 Flat Output Contract 定义了扁平格式。
 
 **动机**：嵌套结构导致 `build_db.py` 和 `validate_yaml.py` 需要知道每个字段在哪个分组下，新增维度时要同步修改多处。扁平结构简化了脚本逻辑和 LLM 输出格式。
 
-**代价**：存量数据可能存在嵌套格式。`build_db.py` 内置 `_flatten_scene()` 函数兼容两种格式，确保旧数据仍可入库。未来重跑 pipeline 时会自然迁移为扁平格式。
+**代价**：存量数据可能存在嵌套格式。`build_db.py` 内置 `_flatten_event()` 函数兼容两种格式，确保旧数据仍可入库。未来重跑 pipeline 时会自然迁移为扁平格式。
 
 ### ADR-3：事件标签必须 LLM 生成，禁止脚本批量生成（Anti-Pattern 根因）
 
@@ -434,7 +434,7 @@ python ../novel-material/scripts/core/search.py text --query 告别
 
 **动机**：早期尝试中，脚本批量生成的标签千篇一律（所有事件 `emotion: [平静]`、`conflict: []`），完全丧失检索区分度。关键词匹配无法判断事件的深层语义（如"表面平静实则暗流涌动"应标 `tension: 3` 而非 `tension: 1`）。
 
-**代价**：事件拆分是最耗时的阶段，1000 章的小说需要 100+ 批次、可能跨多次对话。通过 `pipeline-scenes` 的跨对话恢复机制缓解。
+**代价**：事件拆分是最耗时的阶段，1000 章的小说需要 100+ 批次、可能跨多次对话。通过 `pipeline-events` 的跨对话恢复机制缓解。
 
 ### ADR-4：scripts/ 拆分 core vs generated（2026-04）
 
@@ -452,4 +452,4 @@ python ../novel-material/scripts/core/search.py text --query 告别
 
 **代价**：新增 `frontend/` 和 `backend/` 两个目录。后端依赖 FastAPI/Uvicorn，前端依赖 React/Vite。Web UI 是可选组件——不启动 Web 服务时，所有 Agent skill 和 CLI 脚本照常工作。
 
-**边界**：事件拆分（`scenes` 阶段）因复杂度过高（需分批 + 质量审计循环），Web UI 仅提示用户通过 Agent 执行，不在浏览器内自动运行。
+**边界**：事件拆分（`events` 阶段）因复杂度过高（需分批 + 质量审计循环），Web UI 仅提示用户通过 Agent 执行，不在浏览器内自动运行。

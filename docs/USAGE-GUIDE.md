@@ -42,7 +42,7 @@
 /pipeline-analyze nm_novel_20260408_xxxx
 
 # 对话 3、4、5...（事件拆分，每 30 批会提醒你开新对话）
-/pipeline-scenes nm_novel_20260408_xxxx
+/pipeline-events nm_novel_20260408_xxxx
 
 # 最后一次对话：精调+统计报告
 /pipeline-finalize nm_novel_20260408_xxxx
@@ -116,7 +116,7 @@ analyzed_folder/
 ### 事件拆分中断（最常见）
 
 ```bash
-/pipeline-scenes nm_novel_20260405_zhbk
+/pipeline-events nm_novel_20260405_zhbk
 ```
 
 直接恢复事件拆分，自动从未处理的章节继续。
@@ -128,9 +128,9 @@ analyzed_folder/
 ### 有明确的事件需求
 
 ```bash
-/material-search-scene 恋人在雨中告别
-/material-search-scene 弱者反杀强者的高潮事件
-/material-search-scene 催泪但不煽情的技法
+/material-search-event 恋人在雨中告别
+/material-search-event 弱者反杀强者的高潮事件
+/material-search-event 催泪但不煽情的技法
 ```
 
 自动解析为标签组合，查 SQLite 索引返回匹配事件。
@@ -141,7 +141,7 @@ analyzed_folder/
 /material-search-context 我在写一个师徒告别的章节，师父身患重病，想要催泪但克制
 ```
 
-与 `material-search-scene` 的区别：同时返回**事件参考、人物参考、技法参考**三个维度，并解释每个结果的参考价值。
+与 `material-search-event` 的区别：同时返回**事件参考、人物参考、技法参考**三个维度，并解释每个结果的参考价值。
 
 ### 想找某本书或某个角色
 
@@ -463,14 +463,14 @@ external_refs:
 |------|------|------|
 | ① 入库+清洗 | `/pipeline-ingest [路径]` | ~1分钟 |
 | ② 骨架分析 | `/pipeline-analyze [id]` | ~5-10分钟 |
-| ③ 事件+索引 | `/pipeline-scenes [id]` | 可跨对话 |
+| ③ 事件+索引 | `/pipeline-events [id]` | 可跨对话 |
 | ④ 精调+统计 | `/pipeline-finalize [id]` | ~5分钟 |
 
 ### 检索
 
 | 事件 | 命令 |
 |------|------|
-| 事件检索 | `/material-search-scene [需求描述]` |
+| 事件检索 | `/material-search-event [需求描述]` |
 | 写作找灵感 | `/material-search-context [上下文]` |
 | 找书/人/风格 | `/material-search [关键词]` |
 
@@ -508,11 +508,11 @@ external_refs:
 - `/material-import [文件夹]` — 别人分析好的直接导入
 
 **恢复**：
-- `/pipeline-scenes [id]` — 事件拆分断了接着来（最常用）
+- `/pipeline-events [id]` — 事件拆分断了接着来（最常用）
 - `/novel-pipeline continue [id]` — 不确定断在哪时用这个
 
 **找东西**：
-- `/material-search-scene [描述]` — 最常用，自然语言描述需求
+- `/material-search-event [描述]` — 最常用，自然语言描述需求
 - `python scripts/core/search.py event --emotion X --technique Y` — 精确控制
 
 **出问题了**：

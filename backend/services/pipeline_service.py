@@ -249,7 +249,7 @@ def _run_events(material_id: str):
     """Event splitting requires Agent — provide guidance rather than auto-run."""
     raise RuntimeError(
         "事件拆分任务过于复杂（需分批处理 + 质量审计循环），"
-        "请通过 Agent 执行：/pipeline-scenes " + material_id
+        "请通过 Agent 执行：/pipeline-events " + material_id
     )
 
 

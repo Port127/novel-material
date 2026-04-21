@@ -6,13 +6,6 @@ materials:
   folder: data/novels/nm_novel_20260405_zhbk
   status: refined
   added: 2026-04-05
-- id: nm_novel_20260405_s4t1
-  type: novel
-  name: 《三体1》地球往事
-  author: 刘慈欣
-  folder: data/novels/nm_novel_20260405_s4t1
-  status: raw
-  added: 2026-04-05
 - id: nm_novel_20260406_dwrn
   type: novel
   name: 《大王饶命》（校对版全本）
@@ -27,17 +20,3 @@ materials:
   folder: data/novels/nm_novel_20260408_bfg7
   status: raw
   added: 2026-04-08
-- id: nm_novel_20260409_1a3e
-  type: novel
-  name: 《三体2》黑暗森林（实体版拆分）作者：刘慈欣
-  author: 未知
-  folder: data/novels/nm_novel_20260409_1a3e
-  status: raw
-  added: '2026-04-09'
-- id: nm_novel_20260409_63bc
-  type: novel
-  name: 联调测试小说
-  author: Test
-  folder: novels/nm_novel_20260409_63bc
-  status: raw
-  added: '2026-04-09'

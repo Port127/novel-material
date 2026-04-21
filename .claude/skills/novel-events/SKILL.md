@@ -1,5 +1,5 @@
 ---
-name: novel-scenes
+name: novel-events
 description: 将小说按事件单元拆分，为每个事件生成多维标签（支持多线索并行、分批执行）
 when_to_use: 用户想要拆分小说事件并打标签
 argument-hint: "[material_id] [章节范围 | all | scan]"
@@ -12,10 +12,10 @@ arguments: material_id, chapter_range
 
 | 调用方式 | 行为 |
 |----------|------|
-| `/novel-scenes {id} 1-30` | 手动指定章节范围，处理该范围内所有线索的事件 |
-| `/novel-scenes {id}` | 默认处理前 30 章 |
-| `/novel-scenes {id} all` | **三阶段处理**：扫描线索 → 识别事件 → 分批处理 |
-| `/novel-scenes {id} scan` | 仅执行扫描：输出线索清单和事件边界（不生成文件） |
+| `/novel-events {id} 1-30` | 手动指定章节范围，处理该范围内所有线索的事件 |
+| `/novel-events {id}` | 默认处理前 30 章 |
+| `/novel-events {id} all` | **三阶段处理**：扫描线索 → 识别事件 → 分批处理 |
+| `/novel-events {id} scan` | 仅执行扫描：输出线索清单和事件边界（不生成文件） |
 
 ## 事件单元切分规则
 
@@ -152,7 +152,7 @@ arguments: material_id, chapter_range
 
 | 阶段 | 负责内容 | 原因 |
 |------|----------|------|
-| **事件拆解（novel-scenes）** | 章末悬念 + 道具钩子 | 最显性，可从单个事件识别 |
+| **事件拆解（novel-events）** | 章末悬念 + 道具钩子 | 最显性，可从单个事件识别 |
 | **精调验证（refine）** | 人物钩子 + 信息钩子 + 情感钩子 | 需要跨事件视角，隐性难识别 |
 
 事件拆解时：
@@ -463,7 +463,7 @@ events:
 
 预估事件数：主线 {N}个，感情线 {M}个，总计 {N+M}个
 
-建议使用 /novel-scenes {id} all 开始处理
+建议使用 /novel-events {id} all 开始处理
 ```
 
 ---
@@ -602,7 +602,7 @@ python scripts/core/quality_audit.py {material_id} --event {event_id}
   ev_romance_怀庆_001: 初遇 [第50章] → 关系确立
   ...
 
-建议使用 /novel-scenes {id} all 开始处理
+建议使用 /novel-events {id} all 开始处理
 ```
 
 ### 处理模式

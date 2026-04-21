@@ -1,6 +1,6 @@
 ---
-name: pipeline-scenes
-description: 事件拆分 + 索引构建流水线（novel-scenes all → build-index）
+name: pipeline-events
+description: 事件拆分 + 索引构建流水线（novel-events all → build-index）
 when_to_use: 素材分析完成（status=tagged），需要拆分全书事件并建索引
 argument-hint: "[material_id]"
 arguments: material_id
@@ -10,7 +10,7 @@ arguments: material_id
 
 对已分析的素材执行全书事件拆分和索引构建。
 
-**串联 2 个子 skill：`novel-scenes`（all 模式） → `build-index`。**
+**串联 2 个子 skill：`novel-events`（all 模式） → `build-index`。**
 
 这是整个流程中**最耗时**的阶段（几十到上百批次），专门设计为可跨对话恢复。
 
@@ -51,7 +51,7 @@ arguments: material_id
   预计批次：{batch_count} 批
 
 将执行：
-  1. novel-scenes (all)  → 拆分剩余章节事件
+  1. novel-events (all)  → 拆分剩余章节事件
   2. build-index         → 构建倒排索引 + 事件清单
 
 ⚠️ 事件拆分将自动循环分批执行
@@ -60,9 +60,9 @@ arguments: material_id
 确认开始？(yes/no)
 ```
 
-### 2. 执行 novel-scenes（all 模式）
+### 2. 执行 novel-events（all 模式）
 
-读取 `novel-scenes/SKILL.md` 并按其指令执行，关键参数：
+读取 `novel-events/SKILL.md` 并按其指令执行，关键参数：
 
 - 模式：`all`（自动循环分批）
 - 起始章节：从未覆盖的第一章开始
@@ -83,7 +83,7 @@ arguments: material_id
 - **每处理 30 批**：输出分段提醒
   ```
   ⏸️ 已完成 30 批，建议开新对话恢复：
-     /pipeline-scenes {material_id}
+     /pipeline-events {material_id}
   ```
 - **批间不累积上下文**：每批只读当前批的原文，上一批的输出不带入下一批
 - **进度持久化**：每批完成后立即更新 `meta.yaml`，即使对话中断也不丢失进度
@@ -141,6 +141,6 @@ pipeline:
 
 ## References
 
-- [novel-scenes/SKILL.md](../novel-scenes/SKILL.md)
+- [novel-events/SKILL.md](../novel-events/SKILL.md)
 - [build-index/SKILL.md](../build-index/SKILL.md)
 - [AGENTS.md](../../../AGENTS.md)

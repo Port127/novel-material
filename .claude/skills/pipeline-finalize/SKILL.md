@@ -101,7 +101,7 @@ pipeline:
 
 后续操作：
   /material-search [关键词]             # 关键词检索
-  /material-search-scene [需求描述]     # 多维标签检索
+  /material-search-event [需求描述]     # 多维标签检索
   /material-search-context [写作上下文] # 写作事件检索
 ```
 

@@ -251,7 +251,7 @@ pipeline:
 - 倒排索引中 event_id 列表按事件顺序排列
 - manifest 中 summary 截断到 50 字以内
 - 索引文件需与实际事件保持一致，新增事件后需重建或增量更新
-- `material-search-scene` 检索时应优先调用 `scripts/core/search.py` 查 SQLite，而非直接读 YAML 索引
+- `material-search-event` 检索时应优先调用 `scripts/core/search.py` 查 SQLite，而非直接读 YAML 索引
 - 全局索引采用 upsert 语义——只替换当前 material_id 的条目，保留其他素材数据
 - `character_index` 中的 `arc_summary` 应浓缩为一句话，不超过 30 字
 - `plot_index` 中的 `turning_points` 只记录主要转折（通常 3-8 个），不穷举

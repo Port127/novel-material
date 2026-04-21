@@ -40,7 +40,7 @@ cd frontend && npm install && npm run dev
 # 方式 2：分段调用（大书推荐，每次开新对话）
 /pipeline-ingest /path/to/novel.txt        # ① 入库+清洗
 /pipeline-analyze nm_novel_20260408_xxxx   # ② 大纲+世界观+人物+标签
-/pipeline-scenes nm_novel_20260408_xxxx    # ③ 全书事件（可跨对话恢复）
+/pipeline-events nm_novel_20260408_xxxx    # ③ 全书事件（可跨对话恢复）
 /pipeline-finalize nm_novel_20260408_xxxx  # ④ 精调+统计报告
 
 # 方式 3：导入已分析好的素材
@@ -48,7 +48,7 @@ cd frontend && npm install && npm run dev
 
 # ── 检索素材 ──
 
-/material-search-scene 恋人在雨中告别
+/material-search-event 恋人在雨中告别
 python scripts/core/search.py event --event-type 对决 --emotion 燃 --tension-min 4
 ```
 

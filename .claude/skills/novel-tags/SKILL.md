@@ -193,7 +193,7 @@ good_for:
 📁 文件：data/novels/{id}/tags.yaml
 
 后续步骤：
-  /pipeline-scenes {id}    # 拆分全书事件
+  /pipeline-events {id}    # 拆分全书事件
 ```
 
 ## 注意事项

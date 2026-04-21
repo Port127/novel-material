@@ -10,8 +10,8 @@ arguments: context
 
 根据写作上下文（当前章节概要、角色状态、情节需求），从素材库中检索**最相关的参考素材**，返回可直接用于创作参考的结构化结果。
 
-与 `material-search-scene` 的区别：
-- `material-search-scene`: 用户主动检索，按标签精确匹配
+与 `material-search-event` 的区别：
+- `material-search-event`: 用户主动检索，按标签精确匹配
 - `material-search-context`: 面向创作流程，自动从写作上下文推断检索维度，**同时检索事件、人物、技法**三个维度
 
 ## 输入
@@ -149,7 +149,7 @@ python scripts/core/search.py event --technique {推断} --reader-effect {推断
 
 ## References
 
-- [material-search-scene SKILL.md](../material-search-scene/SKILL.md)
+- [material-search-event SKILL.md](../material-search-event/SKILL.md)
 - [character-index.schema.yaml](../../../docs/schemas/character-index.schema.yaml)
 - [plot-index.schema.yaml](../../../docs/schemas/plot-index.schema.yaml)
 - [AGENTS.md](../../../AGENTS.md)

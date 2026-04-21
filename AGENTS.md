@@ -35,7 +35,7 @@
 # ── 子流水线（推荐大书分段处理）──
 /pipeline-ingest [路径]              # ① 入库+格式清洗
 /pipeline-analyze [material_id]      # ② 大纲+世界观+人物+标签
-/pipeline-scenes [material_id]       # ③ 全书事件拆分+索引（可跨对话恢复）
+/pipeline-events [material_id]       # ③ 全书事件拆分+索引（可跨对话恢复）
 /pipeline-finalize [material_id]     # ④ 精调+统计报告
 
 # ── 导入 ──
@@ -43,19 +43,20 @@
 
 # ── 原子 skill（调试/特殊需求）──
 /material-add [路径]                 # 仅入库原文
+/material-delete [material_id]       # 删除素材+清理所有关联
 /source-format [material_id]         # 格式清洗
 /novel-outline [material_id]         # 生成故事大纲
 /novel-worldbuilding [material_id]   # 提取世界观设定
 /novel-characters [material_id]      # 生成人物体系
 /novel-tags [material_id]            # 生成小说级标签
-/novel-scenes [material_id] [范围]   # 拆分事件+打标签
+/novel-events [material_id] [范围]   # 拆分事件+打标签
 /build-index [material_id]           # 构建倒排索引+事件清单
 /refine [material_id]                # 精调大纲/人物/标签
 /novel-stats [material_id]           # 生成统计报告+可视化
 
 # ── 检索 ──
 /material-search [关键词]            # 关键词检索
-/material-search-scene [需求描述]    # 多维标签检索
+/material-search-event [需求描述]    # 多维标签检索
 /material-search-context [写作上下文] # 写作事件上下文检索
 ```
 
@@ -73,7 +74,7 @@
 |-------|-------------------|------|
 | `pipeline-ingest` | material-add → source-format | 入库+格式清洗 |
 | `pipeline-analyze` | outline → worldbuilding → characters → tags | 生成骨架分析 |
-| `pipeline-scenes` | novel-scenes (all) → build-index | 全书事件拆分+索引（可跨对话） |
+| `pipeline-events` | novel-events (all) → build-index | 全书事件拆分+索引（可跨对话） |
 | `pipeline-finalize` | refine → novel-stats | 精调+统计报告 |
 
 ### 导入
@@ -87,17 +88,18 @@
 | 分类 | Skill | 用途 |
 |------|-------|------|
 | 入库 | `material-add` | 添加原文入库（status=raw，需后续跑 pipeline） |
+| 删除 | `material-delete` | 删除素材及其所有关联资源（文件夹+索引+数据库） |
 | 清洗 | `source-format` | 格式清洗（繁简/广告/引号/章节名/缺章检测） |
 | 分析 | `novel-outline` | 生成故事大纲（结构+节奏+钩子） |
 | 分析 | `novel-worldbuilding` | 提取世界观设定（力量体系+地理+势力+背景） |
 | 分析 | `novel-characters` | 生成人物体系（名册+关系+弧线+原型+叙事功能） |
 | 分析 | `novel-tags` | 生成小说级多维标签（含套路识别） |
-| 事件 | `novel-scenes` | 拆分事件+多维标签（分批执行） |
+| 事件 | `novel-events` | 拆分事件+多维标签（分批执行） |
 | 索引 | `build-index` | 构建倒排索引+事件清单（加速检索） |
 | 后处理 | `refine` | 事件完成后精调大纲/人物/标签 |
 | 后处理 | `novel-stats` | 生成统计报告+可视化图表+交互HTML+关系图谱 |
 | 检索 | `material-search` | 关键词检索 |
-| 检索 | `material-search-scene` | 按多维标签检索事件 |
+| 检索 | `material-search-event` | 按多维标签检索事件 |
 | 检索 | `material-search-context` | 写作上下文检索（事件+人物+技法三维） |
 | 标签 | `tag-add` | 新增标签值 |
 | 标签 | `tag-merge` | 合并同义标签 |

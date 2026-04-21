@@ -153,7 +153,7 @@ arguments: material_id
 
 后续步骤：
   /novel-tags {id}          # 生成小说级标签
-  /novel-scenes {id} 1-5    # 拆分事件
+  /novel-events {id} 1-5    # 拆分事件
 ```
 
 ## 注意事项

@@ -18,7 +18,7 @@ arguments: mode, params
 novel-pipeline（调度器）
   ├── pipeline-ingest     → material-add + source-format
   ├── pipeline-analyze    → outline + worldbuilding + characters + tags
-  ├── pipeline-scenes     → novel-scenes (all) + build-index
+  ├── pipeline-events     → novel-events (all) + build-index
   └── pipeline-finalize   → refine + novel-stats
 ```
 
@@ -55,7 +55,7 @@ novel-pipeline（调度器）
 将分 4 个阶段执行：
   ① pipeline-ingest    → 入库 + 格式清洗
   ② pipeline-analyze   → 大纲 + 世界观 + 人物 + 标签
-  ③ pipeline-scenes    → 全书事件拆分 + 索引构建
+  ③ pipeline-events    → 全书事件拆分 + 索引构建
   ④ pipeline-finalize  → 精调 + 统计报告
 
 ⚠️ 阶段 ①②④ 在当前对话内完成
@@ -74,8 +74,8 @@ novel-pipeline（调度器）
 || status=raw，formatted 缺失或 false | pipeline-ingest（补格式化） | 原文未清洗 |
 || status=raw，formatted=true | pipeline-analyze | 清洗完成，开始分析 |
 || status=outlined | pipeline-analyze（从缺失步骤恢复） | 分析进行中 |
-|| status=tagged | pipeline-scenes | 小说标签已完成，开始事件拆分 |
-|| status=tagged + events/ 已有部分文件 | pipeline-scenes（从断点恢复） | 事件拆分被中断 |
+|| status=tagged | pipeline-events | 小说标签已完成，开始事件拆分 |
+|| status=tagged + events/ 已有部分文件 | pipeline-events（从断点恢复） | 事件拆分被中断 |
 || status=complete，refined 缺失或 false | pipeline-finalize | 索引已建，开始精调 |
 || status=complete，refined=true，stats_generated 缺失 | pipeline-finalize（跳 refine） | 精调完成，补统计 |
 || status=refined | 输出"全部完成" | 所有阶段均已完成 |
@@ -96,10 +96,10 @@ novel-pipeline（调度器）
    - 产出：outline.yaml, worldbuilding.yaml, characters.yaml, tags.yaml
    - 失败 → 停止，报告
 
-3. 读取并执行 `pipeline-scenes/SKILL.md`
+3. 读取并执行 `pipeline-events/SKILL.md`
    - 产出：events/*.yaml, events_index.yaml, events_manifest.yaml
-   - **此阶段可能跨对话**——pipeline-scenes 会在适当时机提醒开新对话
-   - 如果在此阶段中断，下次 `continue` 会路由到 pipeline-scenes 恢复
+   - **此阶段可能跨对话**——pipeline-events 会在适当时机提醒开新对话
+   - 如果在此阶段中断，下次 `continue` 会路由到 pipeline-events 恢复
 
 4. 读取并执行 `pipeline-finalize/SKILL.md`
    - 产出：精调后的 outline/characters/tags/worldbuilding + stats.*
@@ -110,7 +110,7 @@ novel-pipeline（调度器）
 #### continue 模式执行
 
 只调用需要恢复的子流水线及其后续子流水线。例如：
-- 从 pipeline-scenes 恢复 → 执行 events → finalize
+- 从 pipeline-events 恢复 → 执行 events → finalize
 - 从 pipeline-finalize 恢复 → 仅执行 finalize
 
 ### 4. 最终报告
@@ -143,7 +143,7 @@ novel-pipeline（调度器）
 
 后续操作：
   /material-search [关键词]             # 关键词检索
-  /material-search-scene [需求描述]     # 多维标签检索
+  /material-search-event [需求描述]     # 多维标签检索
   /material-search-context [写作上下文] # 写作事件上下文检索
 ```
 
@@ -197,7 +197,7 @@ novel-pipeline:
   [3/4] novel-characters ✅ 85人
   [4/4] novel-tags ✅ 都市/重生
 
-  ━━━ ③ pipeline-scenes ━━━
+  ━━━ ③ pipeline-events ━━━
   [批次 1/214] 第 1-5 章 ✅ 15 事件 (diversity=0.87)
   [批次 2/214] 第 6-10 章 ✅ 12 事件
   ...
@@ -217,7 +217,7 @@ novel-pipeline:
   当前进度：events 阶段，已处理 150/1070 章
 
   将恢复执行：
-    ③ pipeline-scenes → 从第 151 章继续
+    ③ pipeline-events → 从第 151 章继续
     ④ pipeline-finalize → 精调 + 统计
 
   确认继续？
@@ -225,7 +225,7 @@ novel-pipeline:
 用户: yes
 
 novel-pipeline:
-  ━━━ ③ pipeline-scenes（恢复） ━━━
+  ━━━ ③ pipeline-events（恢复） ━━━
   [批次 31/214] 第 151-155 章 ✅ ...
 ```
 
@@ -233,7 +233,7 @@ novel-pipeline:
 
 - [pipeline-ingest/SKILL.md](../pipeline-ingest/SKILL.md)
 - [pipeline-analyze/SKILL.md](../pipeline-analyze/SKILL.md)
-- [pipeline-scenes/SKILL.md](../pipeline-scenes/SKILL.md)
+- [pipeline-events/SKILL.md](../pipeline-events/SKILL.md)
 - [pipeline-finalize/SKILL.md](../pipeline-finalize/SKILL.md)
 - [AGENTS.md](../../../AGENTS.md)
 - [ARCHITECTURE.md](../../../ARCHITECTURE.md)

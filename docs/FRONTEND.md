@@ -112,7 +112,7 @@ frontend/
 | 世界观 | `GET /api/materials/{id}/worldbuilding` | 按分类（力量体系/地理/势力等）卡片展示 |
 | 人物 | `GET /api/materials/{id}/characters` | 人物卡片（角色图标 + 别名 + 特质标签 + 弧线时间线 + 出场统计） |
 | 标签 | `GET /api/materials/{id}/tags` | 分组 badge（类型/主题/基调/文笔/套路/叙事结构） |
-| 事件 | `GET /api/materials/{id}/scenes` | 可展开的事件列表，带分页，展开显示摘要/人物/标签 |
+| 事件 | `GET /api/materials/{id}/events` | 可展开的事件列表，带分页，展开显示摘要/人物/标签 |
 | 统计 | `GET /api/materials/{id}/stats` | 数字卡片 + 张力柱状图 + 事件类型饼图 + 情绪条形图 + 人物 Top 10 + 转折点时间线 + 钩子统计 + 写作技法标签 |
 
 **Pipeline 操作面板：**

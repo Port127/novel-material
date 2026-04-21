@@ -89,9 +89,9 @@ chapters:
 ```
 
 此文件是**下游 skill 的关键依赖**：
-- `novel-scenes` 的 `chapter` 字段必须从此文件逐字拷贝
+- `novel-events` 的 `chapter` 字段必须从此文件逐字拷贝
 - `validate_yaml.py` 用此文件校验章节名匹配
-- `novel-outline` / `novel-scenes` 用此文件定位章节读取范围
+- `novel-outline` / `novel-events` 用此文件定位章节读取范围
 
 如果 `format_report.yaml` 中已包含完整章节列表，可直接提取为 `chapter_index.yaml`。
 

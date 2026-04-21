@@ -203,7 +203,7 @@ pipeline:
 
 {如果 status 不是 refined}
 后续操作：
-  /pipeline-scenes {id}     # 补充事件拆分（如部分缺失）
+  /pipeline-events {id}     # 补充事件拆分（如部分缺失）
   /pipeline-finalize {id}   # 精调+统计报告
 ```
 

@@ -1,5 +1,5 @@
 ---
-name: material-search-scene
+name: material-search-event
 description: 按多维标签条件检索事件素材
 when_to_use: 用户描述写作需求，需要找参考事件
 argument-hint: "[自然语言需求描述]"

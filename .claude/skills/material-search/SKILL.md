@@ -24,7 +24,7 @@ arguments: query
 |----------|------|------|
 | 书名/作者名 | 素材级匹配 | "三体""刘慈欣" |
 | 角色名 | 人物索引 + 事件索引 | "叶文洁""吕树" |
-| 事件需求描述 | 直接路由到 `/material-search-scene` | "恋人吵架""弱者反杀" |
+| 事件需求描述 | 直接路由到 `/material-search-event` | "恋人吵架""弱者反杀" |
 | 写作上下文描述 | 直接路由到 `/material-search-context` | "我在写一个师徒告别的章节" |
 | 类型/标签词 | 小说级标签匹配 | "修真""都市重生" |
 | 风格/基调词 | 小说级标签匹配（`prose_style`/`tone`/`writing_strength`） | "冷叙述风格""热血基调""对话写得好的" |
@@ -91,12 +91,12 @@ python scripts/core/search.py event --event-type {映射值} --limit 10
 
 📁 共找到 {count} 个相关结果
 
-💡 更精确的检索：/material-search-scene {需求描述}
+💡 更精确的检索：/material-search-event {需求描述}
 ```
 
 ## 注意事项
 
-- 如果明显是事件需求，直接路由到 `/material-search-scene`，不做关键词匹配
+- 如果明显是事件需求，直接路由到 `/material-search-event`，不做关键词匹配
 - 返回原文定位信息（`text_range`），方便用户追溯
 - 事件级检索必须遵循索引优先原则，避免无谓遍历全部事件文件
 - 跨小说检索时，对每部小说独立走三级回退，合并结果后排序
