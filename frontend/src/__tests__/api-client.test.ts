@@ -22,7 +22,7 @@ beforeEach(() => {
 
 describe('api.getStats', () => {
   it('calls /stats', async () => {
-    const data = { novels: 3, scenes: 100, characters: 20, tag_records: 500 }
+    const data = { novels: 3, events: 100, characters: 20, tag_records: 500 }
     mockFetch.mockReturnValueOnce(jsonResponse(data))
     const result = await api.getStats()
     expect(result.novels).toBe(3)
@@ -48,18 +48,18 @@ describe('api.getMaterial', () => {
   })
 })
 
-describe('api.searchScenes', () => {
+describe('api.searchEvents', () => {
   it('passes filters as query params', async () => {
     mockFetch.mockReturnValueOnce(jsonResponse({ total: 5, results: [], relaxed: false }))
-    await api.searchScenes({ scene_type: '对决', emotion: '燃' })
+    await api.searchEvents({ event_type: '对决', emotion: '燃' })
     const url = mockFetch.mock.calls[0][0]
-    expect(url).toContain('scene_type=')
+    expect(url).toContain('event_type=')
     expect(url).toContain('emotion=')
   })
 
   it('omits undefined filters', async () => {
     mockFetch.mockReturnValueOnce(jsonResponse({ total: 0, results: [], relaxed: false }))
-    await api.searchScenes({ scene_type: '对决', conflict: undefined })
+    await api.searchEvents({ event_type: '对决', conflict: undefined })
     const url: string = mockFetch.mock.calls[0][0]
     expect(url).not.toContain('conflict')
   })
@@ -84,17 +84,17 @@ describe('api.searchText', () => {
 
 describe('api.getTagDict', () => {
   it('fetches tags', async () => {
-    const data = { scene_type: { values: ['对决', '日常'] } }
+    const data = { event_type: { values: ['对决', '日常'] } }
     mockFetch.mockReturnValueOnce(jsonResponse(data))
     const result = await api.getTagDict()
-    expect(result.scene_type.values).toContain('对决')
+    expect(result.event_type.values).toContain('对决')
   })
 })
 
 describe('api.addTag', () => {
   it('posts tag add request', async () => {
-    mockFetch.mockReturnValueOnce(jsonResponse({ ok: true, dimension: 'scene_type', value: '新标签' }))
-    const result = await api.addTag('scene_type', '新标签')
+    mockFetch.mockReturnValueOnce(jsonResponse({ ok: true, dimension: 'event_type', value: '新标签' }))
+    const result = await api.addTag('event_type', '新标签')
     expect(result.ok).toBe(true)
     const [, opts] = mockFetch.mock.calls[0]
     expect(opts.method).toBe('POST')

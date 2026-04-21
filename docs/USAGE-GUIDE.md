@@ -1,6 +1,6 @@
 # 使用指南
 
-> 不用记命令。找到你当前的场景，照着做。
+> 不用记命令。找到你当前的事件，照着做。
 
 ## 目录
 
@@ -28,11 +28,11 @@
 /novel-pipeline full /path/to/novel.txt
 ```
 
-一键走完 4 个子流水线：入库清洗 → 骨架分析 → 场景拆分+索引 → 精调+统计。确认后自动跑完。
+一键走完 4 个子流水线：入库清洗 → 骨架分析 → 事件拆分+索引 → 精调+统计。确认后自动跑完。
 
 ### 长篇（300+ 章）：分段手动调用
 
-场景拆分是最耗时的阶段，大书推荐逐个子流水线执行，每次开新对话：
+事件拆分是最耗时的阶段，大书推荐逐个子流水线执行，每次开新对话：
 
 ```bash
 # 对话 1：入库+清洗
@@ -41,14 +41,14 @@
 # 对话 2：生成大纲、世界观、人物、标签
 /pipeline-analyze nm_novel_20260408_xxxx
 
-# 对话 3、4、5...（场景拆分，每 30 批会提醒你开新对话）
+# 对话 3、4、5...（事件拆分，每 30 批会提醒你开新对话）
 /pipeline-scenes nm_novel_20260408_xxxx
 
 # 最后一次对话：精调+统计报告
 /pipeline-finalize nm_novel_20260408_xxxx
 ```
 
-### 只想看个骨架，不拆场景
+### 只想看个骨架，不拆事件
 
 ```bash
 /novel-pipeline quick /path/to/novel.txt
@@ -59,7 +59,7 @@
 ### 只想重跑某个阶段
 
 ```bash
-/novel-pipeline stage nm_novel_20260405_zhbk scenes
+/novel-pipeline stage nm_novel_20260405_zhbk events
 /novel-pipeline stage nm_novel_20260405_zhbk refine
 ```
 
@@ -69,7 +69,7 @@
 
 ## 二、导入已分析好的素材
 
-别人（或别的工具）已经把大纲、人物、场景等分析好了，文件按本库 schema 格式组织：
+别人（或别的工具）已经把大纲、人物、事件等分析好了，文件按本库 schema 格式组织：
 
 ```bash
 /material-import /path/to/analyzed_folder
@@ -84,17 +84,17 @@ analyzed_folder/
 ├── worldbuilding.yaml      # 世界观
 ├── characters.yaml         # 人物体系
 ├── tags.yaml               # 小说级标签
-└── scenes/                 # 场景文件
-    ├── ch0001_s01.yaml
+└── events/                # 事件文件
+    ├── ev_main_001.yaml
     └── ...
 ```
 
 执行过程：
 1. 扫描文件夹，检测有哪些文件
 2. 校验 YAML 格式 + 标签合法性
-3. 根据文件推断 status（有 scenes → `complete`，有 outline → `outlined`）
+3. 根据文件推断 status（有 events → `complete`，有 outline → `outlined`）
 4. 预览确认后注册到 `index.yaml`
-5. 如有 scenes 自动建索引
+5. 如有 events 自动建索引
 
 不需要带原文 source.txt，但有的话会一起导入。
 
@@ -113,27 +113,27 @@ analyzed_folder/
 - 补处理未覆盖章节
 - 从中断点接着来
 
-### 场景拆分中断（最常见）
+### 事件拆分中断（最常见）
 
 ```bash
 /pipeline-scenes nm_novel_20260405_zhbk
 ```
 
-直接恢复场景拆分，自动从未处理的章节继续。
+直接恢复事件拆分，自动从未处理的章节继续。
 
 ---
 
 ## 四、检索素材
 
-### 有明确的场景需求
+### 有明确的事件需求
 
 ```bash
 /material-search-scene 恋人在雨中告别
-/material-search-scene 弱者反杀强者的高潮场景
+/material-search-scene 弱者反杀强者的高潮事件
 /material-search-scene 催泪但不煽情的技法
 ```
 
-自动解析为标签组合，查 SQLite 索引返回匹配场景。
+自动解析为标签组合，查 SQLite 索引返回匹配事件。
 
 ### 正在写作，想找灵感
 
@@ -141,7 +141,7 @@ analyzed_folder/
 /material-search-context 我在写一个师徒告别的章节，师父身患重病，想要催泪但克制
 ```
 
-与 `material-search-scene` 的区别：同时返回**场景参考、人物参考、技法参考**三个维度，并解释每个结果的参考价值。
+与 `material-search-scene` 的区别：同时返回**事件参考、人物参考、技法参考**三个维度，并解释每个结果的参考价值。
 
 ### 想找某本书或某个角色
 
@@ -159,13 +159,13 @@ analyzed_folder/
 
 ```bash
 # 多维标签组合
-python scripts/core/search.py scene --scene-type 对决 --emotion 燃 --relationship 师徒 --limit 10
+python scripts/core/search.py event --event-type 对决 --emotion 燃 --relationship 师徒 --limit 10
 
 # 按张力过滤
-python scripts/core/search.py scene --conflict 人与命运 --reader-effect 催泪 --tension-min 4
+python scripts/core/search.py event --conflict 人与命运 --reader-effect 催泪 --tension-min 4
 
 # 限定在某本书内搜索
-python scripts/core/search.py scene --material nm_novel_20260405_zhbk --emotion 悲伤
+python scripts/core/search.py event --material nm_novel_20260405_zhbk --emotion 悲伤
 
 # 找人物
 python scripts/core/search.py character --archetype 导师 --moral-spectrum 灰色
@@ -181,14 +181,14 @@ python scripts/core/search.py stats
 
 ## 五、管理标签
 
-### 场景中出现了标签字典里没有的值
+### 事件中出现了标签字典里没有的值
 
 ```bash
-/tag-add scene_type 绑架
+/tag-add event_type 绑架
 /tag-add emotion 矛盾
 ```
 
-添加到 `data/tags.yaml`，后续场景标注即可使用。
+添加到 `data/tags.yaml`，后续事件标注即可使用。
 
 ### 两个标签是同一个意思
 
@@ -196,7 +196,7 @@ python scripts/core/search.py stats
 /tag-merge 恋人 情侣
 ```
 
-将所有 `情侣` 替换为 `恋人`，同时更新所有场景文件和索引。
+将所有 `情侣` 替换为 `恋人`，同时更新所有事件文件和索引。
 
 ### 想看当前标签字典的全貌
 
@@ -204,7 +204,7 @@ python scripts/core/search.py stats
 python -c "import yaml; d=yaml.safe_load(open('data/tags.yaml')); [print(f'{k}: {len(v[\"values\"])}') for k,v in d.items()]"
 ```
 
-### 标注场景时不确定该打什么标签
+### 标注事件时不确定该打什么标签
 
 打开 `docs/TAG_GUIDE.md`——里面有每个维度的判断依据、易混淆标签对照表、张力校准标准。
 
@@ -212,7 +212,7 @@ python -c "import yaml; d=yaml.safe_load(open('data/tags.yaml')); [print(f'{k}: 
 
 ## 六、检查质量
 
-### 全书场景质量审计
+### 全书事件质量审计
 
 ```bash
 python scripts/core/quality_audit.py nm_novel_20260405_zhbk --report
@@ -232,10 +232,10 @@ python scripts/core/quality_audit.py nm_novel_20260405_zhbk --batch 181-200
 
 **注意**：`--batch` 只传本批范围（如 `181-200`），不传累积范围（如 `1-200`）。结果自动写入 `meta.yaml`。
 
-### 场景 YAML 格式校验
+### 事件 YAML 格式校验
 
 ```bash
-python scripts/core/validate_yaml.py scene nm_novel_20260405_zhbk
+python scripts/core/validate_yaml.py event nm_novel_20260405_zhbk
 ```
 
 检查：YAML 可解析、必填字段完整、标签值合法、章节名匹配。
@@ -246,17 +246,17 @@ python scripts/core/validate_yaml.py scene nm_novel_20260405_zhbk
 
 ### 数据库是什么
 
-`data/material.db` 是一个 SQLite 文件，是场景 YAML 的**派生查询加速层**。所有数据的权威来源是 YAML 文件，SQLite 只是为了让检索更快。丢了可以随时用 `python scripts/core/build_db.py` 从 YAML 重建。
+`data/material.db` 是一个 SQLite 文件，是事件 YAML 的**派生查询加速层**。所有数据的权威来源是 YAML 文件，SQLite 只是为了让检索更快。丢了可以随时用 `python scripts/core/build_db.py` 从 YAML 重建。
 
 ### 5 张表
 
 | 表名 | 存什么 | 行数量级 |
 |------|--------|---------|
 | `novels` | 每本小说一行（ID、书名、作者、状态） | 个位数 |
-| `scenes` | 每个场景一行（章节、标题、摘要、张力值等标量字段） | 数百~数千 |
-| `scene_tags` | 场景标签的展开表（一个场景的一个标签维度一行） | 数千~数万 |
+| `events` | 每个事件一行（章节、标题、摘要、张力值等标量字段） | 数百~数千 |
+| `event_tags` | 事件标签的展开表（一个事件的一个标签维度一行） | 数千~数万 |
 | `characters` | 人物名册（姓名、角色类型、原型、心理维度） | 数十~数百 |
-| `scene_characters` | 场景-人物关联（哪个场景出现了谁） | 数千~数万 |
+| `event_characters` | 事件-人物关联（哪个事件出现了谁） | 数千~数万 |
 
 ### 直接用 sqlite3 查询
 
@@ -269,46 +269,46 @@ sqlite3 data/material.db
 常用查询：
 
 ```sql
--- 看有哪些小说、各多少场景
-SELECT n.material_id, n.name, n.total_scenes FROM novels n;
+-- 看有哪些小说、各多少事件
+SELECT n.material_id, n.name, n.total_events FROM novels n;
 
--- 某本书里张力 >= 4 的高潮场景
-SELECT scene_id, chapter, title, tension
-FROM scenes
+-- 某本书里张力 >= 4 的高潮事件
+SELECT event_id, chapter, title, tension
+FROM events
 WHERE material_id = 'nm_novel_20260405_zhbk' AND tension >= 4
 ORDER BY tension DESC;
 
--- 哪些场景是「对决」类型
-SELECT s.scene_id, s.chapter, s.title, s.tension
-FROM scenes s
-JOIN scene_tags t ON s.scene_id = t.scene_id
-WHERE t.dimension = 'scene_type' AND t.value = '对决';
+-- 哪些事件是「对决」类型
+SELECT e.event_id, e.chapter, e.title, e.tension
+FROM events e
+JOIN event_tags t ON e.event_id = t.event_id
+WHERE t.dimension = 'event_type' AND t.value = '对决';
 
 -- 两个标签的 AND 交集（对决 + 燃）
-SELECT s.scene_id, s.chapter, s.title
-FROM scenes s
-WHERE s.scene_id IN (SELECT scene_id FROM scene_tags WHERE dimension='scene_type' AND value='对决')
-  AND s.scene_id IN (SELECT scene_id FROM scene_tags WHERE dimension='emotion' AND value='燃');
+SELECT e.event_id, e.chapter, e.title
+FROM events e
+WHERE e.event_id IN (SELECT event_id FROM event_tags WHERE dimension='event_type' AND value='对决')
+  AND e.event_id IN (SELECT event_id FROM event_tags WHERE dimension='emotion' AND value='燃');
 
--- 某角色出场的所有场景
-SELECT s.scene_id, s.chapter, s.title
-FROM scenes s
-JOIN scene_characters sc ON s.scene_id = sc.scene_id
-WHERE sc.character_name = '陈汉升'
+-- 某角色出场的所有事件
+SELECT e.event_id, e.chapter, e.title
+FROM events e
+JOIN event_characters ec ON e.event_id = ec.event_id
+WHERE ec.character_name = '陈汉升'
 LIMIT 20;
 
 -- 各标签维度的值分布（看哪些标签最常用）
 SELECT dimension, value, COUNT(*) as cnt
-FROM scene_tags
+FROM event_tags
 GROUP BY dimension, value
 ORDER BY dimension, cnt DESC;
 
 -- 数据库概况
 SELECT '小说' as type, COUNT(*) as cnt FROM novels
 UNION ALL
-SELECT '场景', COUNT(*) FROM scenes
+SELECT '事件', COUNT(*) FROM events
 UNION ALL
-SELECT '标签记录', COUNT(*) FROM scene_tags
+SELECT '标签记录', COUNT(*) FROM event_tags
 UNION ALL
 SELECT '人物', COUNT(*) FROM characters;
 ```
@@ -319,15 +319,15 @@ SELECT '人物', COUNT(*) FROM characters;
 
 `search.py` 是 SQLite 的封装，不用写 SQL 也能查。4 个子命令：
 
-**场景检索** `scene`：
+**事件检索** `event`：
 
 ```bash
-python scripts/core/search.py scene [过滤条件] [--limit N]
+python scripts/core/search.py event [过滤条件] [--limit N]
 ```
 
 | 参数 | 对应维度 | 示例 |
 |------|---------|------|
-| `--scene-type` | scene_type | `--scene-type 对决` |
+| `--event-type` | event_type | `--event-type 对决` |
 | `--conflict` | conflict | `--conflict 生死` |
 | `--stakes` | stakes | `--stakes 世界存亡` |
 | `--emotion` | emotion | `--emotion 燃` |
@@ -365,7 +365,7 @@ python scripts/core/search.py character [--name X] [--archetype X] [--role X] [-
 python scripts/core/search.py text --query 告别 [--limit 20]
 ```
 
-搜索场景的 title 和 summary 中包含关键词的记录。
+搜索事件的 title 和 summary 中包含关键词的记录。
 
 **数据库概况** `stats`：
 
@@ -377,7 +377,7 @@ python scripts/core/search.py stats
 
 ## 八、重建索引
 
-### 正常流程（场景拆分后自动执行）
+### 正常流程（事件拆分后自动执行）
 
 ```bash
 /build-index nm_novel_20260405_zhbk
@@ -394,7 +394,7 @@ python scripts/core/build_db.py --material nm_novel_20260405_zhbk
 # 全量重建（所有小说）
 python scripts/core/build_db.py
 
-# 增量更新（修改场景后）
+# 增量更新（修改事件后）
 python scripts/core/build_db.py --incremental nm_novel_20260405_zhbk
 ```
 
@@ -403,19 +403,19 @@ SQLite（`data/material.db`）是 YAML 的派生产物，丢了随时重建。
 ### 手动重建 YAML 索引
 
 ```bash
-python scripts/core/build_scene_index.py nm_novel_20260405_zhbk
+python scripts/core/build_event_index.py nm_novel_20260405_zhbk
 ```
 
 ---
 
 ## 九、在 novel 项目中使用
 
-### 写章节时找参考场景
+### 写章节时找参考事件
 
 在 `novel` 项目中：
 
 ```bash
-python ../novel-material/scripts/core/search.py scene --emotion 悲伤 --interaction 告别 --technique 留白 --limit 5
+python ../novel-material/scripts/core/search.py event --emotion 悲伤 --interaction 告别 --technique 留白 --limit 5
 ```
 
 ### 找类似的角色参考
@@ -427,7 +427,7 @@ python ../novel-material/scripts/core/search.py character --archetype 反叛者 
 ### 记录灵感来源
 
 ```bash
-/inspiration-log nm_novel_20260405_zhbk ch0089_s01 参考了该场景的权力翻转手法
+/inspiration-log nm_novel_20260405_zhbk ch0089_s01 参考了该事件的权力翻转手法
 ```
 
 ### novel 项目怎么配置素材库
@@ -449,7 +449,7 @@ external_refs:
 
 ### 入库 & 导入
 
-| 场景 | 命令 |
+| 事件 | 命令 |
 |------|------|
 | 全自动入库 | `/novel-pipeline full [路径]` |
 | 只要骨架 | `/novel-pipeline quick [路径]` |
@@ -463,20 +463,20 @@ external_refs:
 |------|------|------|
 | ① 入库+清洗 | `/pipeline-ingest [路径]` | ~1分钟 |
 | ② 骨架分析 | `/pipeline-analyze [id]` | ~5-10分钟 |
-| ③ 场景+索引 | `/pipeline-scenes [id]` | 可跨对话 |
+| ③ 事件+索引 | `/pipeline-scenes [id]` | 可跨对话 |
 | ④ 精调+统计 | `/pipeline-finalize [id]` | ~5分钟 |
 
 ### 检索
 
-| 场景 | 命令 |
+| 事件 | 命令 |
 |------|------|
-| 场景检索 | `/material-search-scene [需求描述]` |
+| 事件检索 | `/material-search-scene [需求描述]` |
 | 写作找灵感 | `/material-search-context [上下文]` |
 | 找书/人/风格 | `/material-search [关键词]` |
 
 ### 标签
 
-| 场景 | 命令 |
+| 事件 | 命令 |
 |------|------|
 | 加新标签 | `/tag-add [维度] [值]` |
 | 合并重复标签 | `/tag-merge [旧值] [新值]` |
@@ -492,11 +492,11 @@ external_refs:
 
 | 脚本 | 功能 | 什么时候用 |
 |------|------|-----------|
-| `scripts/core/search.py` | SQLite 结构化查询 | 检索场景/人物/全文 |
-| `scripts/core/build_db.py` | 构建 SQLite 索引 | 场景拆分后、手动重建 |
-| `scripts/core/build_scene_index.py` | 构建 YAML 倒排索引 | 场景拆分后（自动调用） |
+| `scripts/core/search.py` | SQLite 结构化查询 | 检索事件/人物/全文 |
+| `scripts/core/build_db.py` | 构建 SQLite 索引 | 事件拆分后、手动重建 |
+| `scripts/core/build_event_index.py` | 构建 YAML 倒排索引 | 事件拆分后（自动调用） |
 | `scripts/core/quality_audit.py` | 质量审计 | 每批/全书质量检查 |
-| `scripts/core/validate_yaml.py` | YAML 格式校验 | 场景写入后（自动调用） |
+| `scripts/core/validate_yaml.py` | YAML 格式校验 | 事件写入后（自动调用） |
 | `scripts/core/source_format.py` | 格式清洗 | 入库时（自动调用） |
 
 ---
@@ -508,12 +508,12 @@ external_refs:
 - `/material-import [文件夹]` — 别人分析好的直接导入
 
 **恢复**：
-- `/pipeline-scenes [id]` — 场景拆分断了接着来（最常用）
+- `/pipeline-scenes [id]` — 事件拆分断了接着来（最常用）
 - `/novel-pipeline continue [id]` — 不确定断在哪时用这个
 
 **找东西**：
 - `/material-search-scene [描述]` — 最常用，自然语言描述需求
-- `python scripts/core/search.py scene --emotion X --technique Y` — 精确控制
+- `python scripts/core/search.py event --emotion X --technique Y` — 精确控制
 
 **出问题了**：
 - `python scripts/core/quality_audit.py [id]` — 质量不对劲
@@ -539,10 +539,10 @@ cd frontend && npm install && npm run dev
 
 | 页面 | 路径 | 功能 |
 |------|------|------|
-| 总览 | `/` | 统计仪表盘（小说/场景/人物/标签数量 + 场景类型/情绪/张力分布图表） |
+| 总览 | `/` | 统计仪表盘（小说/事件/人物/标签数量 + 事件类型/情绪/张力分布图表） |
 | 素材库 | `/materials` | 全部小说列表，点击进入详情 |
-| 素材详情 | `/materials/:id` | 7 个 tab（概览/大纲/世界观/人物/标签/场景/统计） + Pipeline 控制面板 |
-| 场景搜索 | `/search/scenes` | 标签多选搜索（20 维标签 + 张力范围 + 人物名） + 全文搜索 |
+| 素材详情 | `/materials/:id` | 7 个 tab（概览/大纲/世界观/人物/标签/事件/统计） + Pipeline 控制面板 |
+| 事件搜索 | `/search/events` | 标签多选搜索（20 维标签 + 张力范围 + 人物名） + 全文搜索 |
 | 人物搜索 | `/search/characters` | 按人名/角色类型/原型/道德光谱搜索 |
 | 标签字典 | `/tags` | 浏览全部标签维度和值，支持新增/合并标签 |
 | 上传 | `/upload` | 上传 txt 文件创建新素材 |
@@ -557,7 +557,7 @@ cd frontend && npm install && npm run dev
 | 入库检查 | ✅ | 检查文件完整性 |
 | 格式清洗 | ✅ | 调用 source_format.py |
 | 分析(LLM) | ✅ | 生成大纲→世界观→人物→标签 |
-| 场景拆分 | ⚠️ | 提示通过 Agent 执行（太复杂） |
+| 事件拆分 | ⚠️ | 提示通过 Agent 执行（太复杂） |
 | 构建索引 | ✅ | 构建 SQLite + YAML 索引 |
 | 统计报告 | ✅ | LLM 生成统计数据 |
 

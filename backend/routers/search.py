@@ -6,9 +6,9 @@ from services import data_service as ds
 router = APIRouter(tags=["search"])
 
 
-@router.get("/search/scenes")
-def search_scenes(
-    scene_type: Optional[str] = None,
+@router.get("/search/events")
+def search_events(
+    event_type: Optional[str] = None,
     conflict: Optional[str] = None,
     stakes: Optional[str] = None,
     relationship: Optional[str] = None,
@@ -35,7 +35,7 @@ def search_scenes(
     limit: int = Query(20, ge=1, le=100),
 ):
     filters = dict(
-        scene_type=scene_type, conflict=conflict, stakes=stakes,
+        event_type=event_type, conflict=conflict, stakes=stakes,
         relationship=relationship, interaction=interaction,
         character_moment=character_moment, emotion=emotion,
         reader_effect=reader_effect, plot_function=plot_function,
@@ -48,7 +48,7 @@ def search_scenes(
         tension_min=tension_min, tension_max=tension_max,
         limit=limit,
     )
-    return ds.search_scenes(filters)
+    return ds.search_events(filters)
 
 
 @router.get("/search/characters")

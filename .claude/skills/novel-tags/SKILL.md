@@ -10,7 +10,7 @@ arguments: material_id
 
 为小说生成整体级别的多维标签，描述全书的类型、基调、叙事风格和参考价值。
 
-**小说级标签与场景级标签不同**：场景标签描述单个场景（6 层 20 维），小说标签描述全书特征（7 维），值域在 `data/tags.yaml` 的 G 部分（genre / tone / narrative_structure / time_handling / prose_style / writing_strength / tropes）。
+**小说级标签与事件级标签不同**：事件标签描述单个事件（6 层 20 维），小说标签描述全书特征（7 维），值域在 `data/tags.yaml` 的 G 部分（genre / tone / narrative_structure / time_handling / prose_style / writing_strength / tropes）。
 
 ## 前置检查
 
@@ -83,7 +83,7 @@ arguments: material_id
 从 `data/tags.yaml` → `tone` 维度选取，2-3 个值。
 
 **判断依据**：
-- 读抽样章节的叙述语气、对话风格、场景氛围
+- 读抽样章节的叙述语气、对话风格、事件氛围
 - 参考 outline 的 pacing_note 描述
 - 注意：tone 是**全书主基调**，不是某几章的情绪。一本热血为主、偶尔沉重的小说，tone 应该是 `[热血]` 而非 `[热血, 沉重]`
 
@@ -193,7 +193,7 @@ good_for:
 📁 文件：data/novels/{id}/tags.yaml
 
 后续步骤：
-  /pipeline-scenes {id}    # 拆分全书场景
+  /pipeline-scenes {id}    # 拆分全书事件
 ```
 
 ## 注意事项

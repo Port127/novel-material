@@ -2,11 +2,11 @@
 """
 validate_yaml.py — 通用 YAML 校验脚本
 
-校验场景文件（必填字段 + 标签值合法性 + 章节名匹配）和其他产出文件。
+校验事件文件（必填字段 + 标签值合法性 + 章节名匹配）和其他产出文件。
 
 用法:
-    python scripts/core/validate_yaml.py scene <material_id>          # 校验全部场景
-    python scripts/core/validate_yaml.py scene <material_id> ch0001   # 校验单个/匹配前缀
+    python scripts/core/validate_yaml.py event <material_id>          # 校验全部事件
+    python scripts/core/validate_yaml.py event <material_id> ev001   # 校验单个/匹配前缀
     python scripts/core/validate_yaml.py meta <material_id>           # 校验 meta.yaml
     python scripts/core/validate_yaml.py all <material_id>            # 校验全部产出
 
@@ -21,8 +21,8 @@ from pathlib import Path
 from collections import defaultdict
 
 
-SCENE_TAG_FIELDS = {
-    'scene_type': list, 'conflict': list, 'stakes': list,
+EVENT_TAG_FIELDS = {
+    'event_type': list, 'conflict': list, 'stakes': list,
     'relationship': list, 'interaction': list, 'power_dynamic': str,
     'character_moment': list, 'moral_spectrum': str,
     'emotion': list, 'reader_effect': list,
@@ -32,7 +32,7 @@ SCENE_TAG_FIELDS = {
 }
 
 NESTED_MAP = {
-    'content': ['scene_type', 'conflict', 'stakes'],
+    'content': ['event_type', 'conflict', 'stakes'],
     'people': ['relationship', 'interaction', 'power_dynamic', 'character_moment', 'moral_spectrum'],
     'emotion': ['emotion', 'reader_effect'],
     'structure': ['plot_stage', 'plot_function', 'pacing'],
@@ -79,16 +79,16 @@ def load_chapter_index(base_dir: Path):
     return titles if titles else None
 
 
-def _flatten_scene(raw: dict) -> dict:
-    """Normalize nested scene format to flat format for uniform validation.
+def _flatten_event(raw: dict) -> dict:
+    """Normalize nested event format to flat format for uniform validation.
 
-    Handles both flat format (scene.schema.yaml Flat Output Contract)
+    Handles both flat format (event-unit.schema.yaml Flat Output Contract)
     and legacy nested format (content/people/emotion/structure/craft/setting groups).
     """
     flat = dict(raw)
 
-    if 'scene_id' in flat and 'id' not in flat:
-        flat['id'] = flat.pop('scene_id')
+    if 'event_id' in flat and 'id' not in flat:
+        flat['id'] = flat.pop('event_id')
 
     for group_key, fields in NESTED_MAP.items():
         if group_key in flat and isinstance(flat[group_key], dict):
@@ -116,12 +116,12 @@ def _flatten_scene(raw: dict) -> dict:
     return flat
 
 
-def validate_scene(scene_path: Path, tags_dict, chapter_titles):
-    """Validate a single scene YAML file. Returns list of error strings."""
+def validate_event(event_path: Path, tags_dict, chapter_titles):
+    """Validate a single event YAML file. Returns list of error strings."""
     errors = []
 
     try:
-        with open(scene_path, 'r', encoding='utf-8') as f:
+        with open(event_path, 'r', encoding='utf-8') as f:
             raw = yaml.safe_load(f)
     except yaml.YAMLError as e:
         return [f"YAML 解析失败: {e}"]
@@ -132,41 +132,41 @@ def validate_scene(scene_path: Path, tags_dict, chapter_titles):
     if not isinstance(raw, dict):
         return [f"顶层不是字典，实际类型: {type(raw).__name__}"]
 
-    scene = _flatten_scene(raw)
+    event = _flatten_event(raw)
 
     core_fields = {'id': str, 'chapter': str, 'title': str, 'summary': str}
     for field, expected_type in core_fields.items():
-        if field not in scene:
+        if field not in event:
             errors.append(f"缺少必填字段: {field}")
-        elif not isinstance(scene[field], expected_type) and scene[field] is not None:
-            errors.append(f"字段 {field} 应为 {expected_type.__name__}，实际: {type(scene[field]).__name__}")
+        elif not isinstance(event[field], expected_type) and event[field] is not None:
+            errors.append(f"字段 {field} 应为 {expected_type.__name__}，实际: {type(event[field]).__name__}")
 
-    for field, expected_type in SCENE_TAG_FIELDS.items():
-        if field not in scene:
+    for field, expected_type in EVENT_TAG_FIELDS.items():
+        if field not in event:
             errors.append(f"缺少标签字段: {field}")
-        elif expected_type == list and not isinstance(scene[field], list):
-            if scene[field] is not None:
-                errors.append(f"字段 {field} 应为列表，实际: {type(scene[field]).__name__}")
-        elif expected_type == str and not isinstance(scene[field], str):
-            if scene[field] is not None:
-                errors.append(f"字段 {field} 应为字符串，实际: {type(scene[field]).__name__}")
+        elif expected_type == list and not isinstance(event[field], list):
+            if event[field] is not None:
+                errors.append(f"字段 {field} 应为列表，实际: {type(event[field]).__name__}")
+        elif expected_type == str and not isinstance(event[field], str):
+            if event[field] is not None:
+                errors.append(f"字段 {field} 应为字符串，实际: {type(event[field]).__name__}")
 
-    if 'tension' not in scene:
+    if 'tension' not in event:
         errors.append(f"缺少必填字段: tension")
-    elif isinstance(scene.get('tension'), (int, float)):
-        if not (1 <= scene['tension'] <= 5):
-            errors.append(f"tension 值越界: {scene['tension']}（应为 1-5）")
+    elif isinstance(event.get('tension'), (int, float)):
+        if not (1 <= event['tension'] <= 5):
+            errors.append(f"tension 值越界: {event['tension']}（应为 1-5）")
 
-    if 'title' in scene and isinstance(scene['title'], str):
-        title = scene['title'].strip()
-        if title.startswith('场景') and title[2:].isdigit():
+    if 'title' in event and isinstance(event['title'], str):
+        title = event['title'].strip()
+        if title.startswith('事件') and title[2:].isdigit():
             errors.append(f"title 无语义: '{title}'（禁止纯编号）")
 
     if tags_dict:
-        for field in SCENE_TAG_FIELDS:
-            if field not in scene:
+        for field in EVENT_TAG_FIELDS:
+            if field not in event:
                 continue
-            val = scene[field]
+            val = event[field]
             if field not in tags_dict:
                 continue
             allowed = tags_dict[field]
@@ -178,8 +178,8 @@ def validate_scene(scene_path: Path, tags_dict, chapter_titles):
                 if str(val) not in allowed:
                     errors.append(f"标签越界: {field}='{val}'（不在 tags.yaml 中）")
 
-    if chapter_titles and 'chapter' in scene:
-        ch = scene['chapter']
+    if chapter_titles and 'chapter' in event:
+        ch = event['chapter']
         if isinstance(ch, str) and ch not in chapter_titles:
             errors.append(f"章节名不匹配: '{ch}'（不在 chapter_index.yaml 中）")
 
@@ -222,40 +222,40 @@ def validate_meta(base_dir: Path):
     return errors
 
 
-def cmd_scene(material_id: str, pattern: str = None):
-    """Validate scene files."""
+def cmd_event(material_id: str, pattern: str = None):
+    """Validate event files."""
     base_dir = Path(f"data/novels/{material_id}")
-    scenes_dir = base_dir / "scenes"
+    events_dir = base_dir / "events"
 
-    if not scenes_dir.exists():
-        print(f"ERROR: 场景目录不存在: {scenes_dir}", file=sys.stderr)
+    if not events_dir.exists():
+        print(f"ERROR: 事件目录不存在: {events_dir}", file=sys.stderr)
         return 1
 
     tags_dict = load_tags_dict()
     chapter_titles = load_chapter_index(base_dir)
 
     if pattern:
-        scene_files = sorted(scenes_dir.glob(f"{pattern}*.yaml"))
+        event_files = sorted(events_dir.glob(f"{pattern}*.yaml"))
     else:
-        scene_files = sorted(scenes_dir.glob("ch*.yaml"))
+        event_files = sorted(events_dir.glob("ev*.yaml"))
 
-    if not scene_files:
-        print(f"WARNING: 未找到匹配的场景文件")
+    if not event_files:
+        print(f"WARNING: 未找到匹配的事件文件")
         return 0
 
-    total = len(scene_files)
+    total = len(event_files)
     failed_count = 0
     error_details = []
 
-    for sf in scene_files:
-        errs = validate_scene(sf, tags_dict, chapter_titles)
+    for ef in event_files:
+        errs = validate_event(ef, tags_dict, chapter_titles)
         if errs:
             failed_count += 1
-            error_details.append((sf.name, errs))
+            error_details.append((ef.name, errs))
 
     passed = total - failed_count
 
-    print(f"📊 场景校验报告: {material_id}")
+    print(f"📊 事件校验报告: {material_id}")
     print(f"   总文件数: {total}")
     print(f"   通过: {passed}")
     print(f"   失败: {failed_count}")
@@ -309,8 +309,8 @@ def cmd_all(material_id: str):
         ('worldbuilding.yaml', False),
         ('characters.yaml', False),
         ('tags.yaml', False),
-        ('scenes_index.yaml', False),
-        ('scenes_manifest.yaml', False),
+        ('events_index.yaml', False),
+        ('events_manifest.yaml', False),
         ('stats.yaml', False),
     ]
 
@@ -337,14 +337,14 @@ def cmd_all(material_id: str):
         else:
             print(f"  ✅ {filename}")
 
-    scenes_dir = base_dir / "scenes"
-    if scenes_dir.exists():
+    events_dir = base_dir / "events"
+    if events_dir.exists():
         print()
-        scene_exit = cmd_scene(material_id)
-        if scene_exit != 0:
+        event_exit = cmd_event(material_id)
+        if event_exit != 0:
             exit_code = 1
     else:
-        print(f"\n  ⏭️  scenes/: 不存在（跳过）")
+        print(f"\n  ⏭️  events/: 不存在（跳过）")
 
     return exit_code
 
@@ -353,9 +353,9 @@ def main():
     parser = argparse.ArgumentParser(description='通用 YAML 校验脚本')
     subparsers = parser.add_subparsers(dest='command', required=True)
 
-    scene_parser = subparsers.add_parser('scene', help='校验场景文件')
-    scene_parser.add_argument('material_id', help='素材 ID')
-    scene_parser.add_argument('pattern', nargs='?', help='场景 ID 前缀（如 ch0001）')
+    event_parser = subparsers.add_parser('event', help='校验事件文件')
+    event_parser.add_argument('material_id', help='素材 ID')
+    event_parser.add_argument('pattern', nargs='?', help='事件 ID 前缀（如 ev001）')
 
     meta_parser = subparsers.add_parser('meta', help='校验 meta.yaml')
     meta_parser.add_argument('material_id', help='素材 ID')
@@ -365,8 +365,8 @@ def main():
 
     args = parser.parse_args()
 
-    if args.command == 'scene':
-        sys.exit(cmd_scene(args.material_id, args.pattern))
+    if args.command == 'event':
+        sys.exit(cmd_event(args.material_id, args.pattern))
     elif args.command == 'meta':
         sys.exit(cmd_meta(args.material_id))
     elif args.command == 'all':

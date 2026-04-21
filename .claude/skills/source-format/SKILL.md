@@ -58,7 +58,7 @@ python scripts/core/source_format.py \
 
 如果脚本输出中发现以下情况，**才**动态生成补充脚本：
 
-| 场景 | 处理方式 |
+| 事件 | 处理方式 |
 |------|----------|
 | 原文使用非标准章节格式（如自定义分卷、番外） | 动态生成针对性正则 |
 | 特殊引号风格（如日式「」混用） | 动态调整引号规则 |
@@ -97,7 +97,16 @@ chapters:
 
 ### 6. 更新 meta.yaml
 
-在 `meta.yaml` 中增加 `formatted: true`、`format_date` 和 `chapters` 字段。
+在 `meta.yaml` 的 `pipeline` 字段内增加格式化信息：
+
+```yaml
+pipeline:
+  formatted: true
+  format_date: {today}
+  chapters: {total_chapters}
+```
+
+**注意**：`formatted` 和 `format_date` 必须在 `pipeline` 内，不要在顶层重复定义。
 
 ## 输出格式
 

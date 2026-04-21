@@ -67,7 +67,7 @@ export default function MaterialList() {
                 <div className="flex items-center gap-4 text-xs text-slate-500">
                   <span className="flex items-center gap-1">
                     <Film className="w-3 h-3" />
-                    {m.scene_count} 场景
+                    {m.event_count} 事件
                   </span>
                   <span className="flex items-center gap-1">
                     <Calendar className="w-3 h-3" />

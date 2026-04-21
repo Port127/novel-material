@@ -14,7 +14,7 @@ if str(BACKEND_DIR) not in sys.path:
 TEST_MATERIAL_ID = "nm_novel_20260101_test"
 
 TAGS_YAML = {
-    "scene_type": {"description": "场景类型", "values": ["对决", "日常", "回忆", "追逐", "密谋"]},
+    "event_type": {"description": "事件类型", "values": ["对决", "日常", "回忆", "追逐", "密谋"]},
     "conflict": {"description": "冲突类型", "values": ["人与人", "人与命运", "人与自然"]},
     "stakes": {"description": "赌注", "values": ["生死", "情感", "尊严"]},
     "relationship": {"description": "关系", "values": ["师徒", "对手", "恋人"]},
@@ -27,7 +27,7 @@ TAGS_YAML = {
     "technique": {"description": "技巧", "values": ["伏笔", "反转", "蒙太奇"]},
     "dialogue_type": {"description": "对白类型", "values": ["争论", "独白", "潜台词"]},
     "info_delivery": {"description": "信息传达", "values": ["展示", "叙述", "对话"]},
-    "setting": {"description": "场景", "values": ["战场", "城市", "荒野"]},
+    "setting": {"description": "空间类型", "values": ["战场", "城市", "荒野"]},
     "time_weather": {"description": "时间天气", "values": ["黎明", "暴雨", "深夜"]},
     "pacing": {"description": "节奏", "values": ["快", "中", "慢"]},
     "pov": {"description": "视角", "values": ["第一人称", "第三人称限制", "全知"]},
@@ -42,18 +42,18 @@ def _create_test_db(db_path: Path):
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS novels (
             material_id TEXT PRIMARY KEY, name TEXT, author TEXT,
-            status TEXT, total_scenes INTEGER DEFAULT 0, built_at TEXT
+            status TEXT, total_events INTEGER DEFAULT 0, built_at TEXT
         );
-        CREATE TABLE IF NOT EXISTS scenes (
-            scene_id TEXT NOT NULL, material_id TEXT NOT NULL,
+        CREATE TABLE IF NOT EXISTS events (
+            event_id TEXT NOT NULL, material_id TEXT NOT NULL,
             chapter TEXT, title TEXT, summary TEXT, tension INTEGER DEFAULT 0,
             pacing TEXT, pov TEXT, power_dynamic TEXT, moral_spectrum TEXT,
             plot_stage TEXT, scale TEXT,
-            PRIMARY KEY (scene_id, material_id)
+            PRIMARY KEY (event_id, material_id)
         );
-        CREATE TABLE IF NOT EXISTS scene_tags (
+        CREATE TABLE IF NOT EXISTS event_tags (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            scene_id TEXT NOT NULL, material_id TEXT NOT NULL,
+            event_id TEXT NOT NULL, material_id TEXT NOT NULL,
             dimension TEXT NOT NULL, value TEXT NOT NULL
         );
         CREATE TABLE IF NOT EXISTS characters (
@@ -63,15 +63,15 @@ def _create_test_db(db_path: Path):
             arc_summary TEXT, narrative_function TEXT,
             fatal_flaw TEXT, obsession TEXT, soft_spot TEXT, misbelief TEXT
         );
-        CREATE TABLE IF NOT EXISTS scene_characters (
-            scene_id TEXT NOT NULL, material_id TEXT NOT NULL,
+        CREATE TABLE IF NOT EXISTS event_characters (
+            event_id TEXT NOT NULL, material_id TEXT NOT NULL,
             character_name TEXT NOT NULL,
-            PRIMARY KEY (scene_id, material_id, character_name)
+            PRIMARY KEY (event_id, material_id, character_name)
         );
-        CREATE INDEX IF NOT EXISTS idx_st_dv ON scene_tags(dimension, value);
-        CREATE INDEX IF NOT EXISTS idx_scenes_mat ON scenes(material_id);
+        CREATE INDEX IF NOT EXISTS idx_et_dv ON event_tags(dimension, value);
+        CREATE INDEX IF NOT EXISTS idx_events_mat ON events(material_id);
         CREATE INDEX IF NOT EXISTS idx_chars_mat ON characters(material_id);
-        CREATE INDEX IF NOT EXISTS idx_sc_name ON scene_characters(character_name);
+        CREATE INDEX IF NOT EXISTS idx_ec_name ON event_characters(character_name);
     """)
 
     mid = TEST_MATERIAL_ID
@@ -80,26 +80,26 @@ def _create_test_db(db_path: Path):
         (mid, "测试小说", "测试作者", "complete", 3, "2026-01-01T00:00:00"),
     )
 
-    scenes = [
+    events = [
         (f"{mid}_ch001_s1", mid, "第1章 起始", "黎明之战", "主角在黎明时分与宿敌展开决战", 4, "快", "第三人称限制", "以弱胜强", "正义", "发展", "个人"),
         (f"{mid}_ch002_s1", mid, "第2章 转折", "温暖的回忆", "主角回忆起师父的教诲", 2, "慢", "第一人称", "势均力敌", "灰色", "发展", "个人"),
         (f"{mid}_ch003_s1", mid, "第3章 高潮", "最终对决", "正邪大战一触即发", 5, "快", "全知", "以弱胜强", "正义", "高潮", "国家"),
     ]
-    conn.executemany("INSERT INTO scenes VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", scenes)
+    conn.executemany("INSERT INTO events VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", events)
 
     tag_rows = [
-        (f"{mid}_ch001_s1", mid, "scene_type", "对决"),
+        (f"{mid}_ch001_s1", mid, "event_type", "对决"),
         (f"{mid}_ch001_s1", mid, "emotion", "燃"),
         (f"{mid}_ch001_s1", mid, "conflict", "人与人"),
-        (f"{mid}_ch002_s1", mid, "scene_type", "回忆"),
+        (f"{mid}_ch002_s1", mid, "event_type", "回忆"),
         (f"{mid}_ch002_s1", mid, "emotion", "温暖"),
-        (f"{mid}_ch003_s1", mid, "scene_type", "对决"),
+        (f"{mid}_ch003_s1", mid, "event_type", "对决"),
         (f"{mid}_ch003_s1", mid, "emotion", "燃"),
         (f"{mid}_ch003_s1", mid, "emotion", "紧张"),
         (f"{mid}_ch003_s1", mid, "conflict", "人与命运"),
     ]
     conn.executemany(
-        "INSERT INTO scene_tags (scene_id, material_id, dimension, value) VALUES (?,?,?,?)",
+        "INSERT INTO event_tags (event_id, material_id, dimension, value) VALUES (?,?,?,?)",
         tag_rows,
     )
 
@@ -112,12 +112,12 @@ def _create_test_db(db_path: Path):
         chars,
     )
 
-    sc_rows = [
+    ec_rows = [
         (f"{mid}_ch001_s1", mid, "张三"), (f"{mid}_ch001_s1", mid, "李四"),
         (f"{mid}_ch002_s1", mid, "张三"),
         (f"{mid}_ch003_s1", mid, "张三"), (f"{mid}_ch003_s1", mid, "李四"),
     ]
-    conn.executemany("INSERT INTO scene_characters VALUES (?,?,?)", sc_rows)
+    conn.executemany("INSERT INTO event_characters VALUES (?,?,?)", ec_rows)
 
     conn.commit()
     conn.close()
@@ -170,23 +170,23 @@ def _create_novel_dir(novels_dir: Path):
     with open(novel_dir / "tags.yaml", "w", encoding="utf-8") as f:
         yaml.dump(tags, f, allow_unicode=True)
 
-    stats = {"material_id": mid, "total_scenes": 3, "avg_tension": 3.67}
+    stats = {"material_id": mid, "total_events": 3, "avg_tension": 3.67}
     with open(novel_dir / "stats.yaml", "w", encoding="utf-8") as f:
         yaml.dump(stats, f, allow_unicode=True)
 
     (novel_dir / "stats.html").write_text("<html><body>Stats</body></html>", encoding="utf-8")
     (novel_dir / "source.txt").write_text("第1章 起始\n这是正文内容。\n\n第2章 转折\n继续。", encoding="utf-8")
 
-    scenes_dir = novel_dir / "scenes"
-    scenes_dir.mkdir(exist_ok=True)
+    events_dir = novel_dir / "events"
+    events_dir.mkdir(exist_ok=True)
     for i, (sid, ch, title, summary) in enumerate([
         (f"{mid}_ch001_s1", "第1章 起始", "黎明之战", "主角在黎明时分与宿敌展开决战"),
         (f"{mid}_ch002_s1", "第2章 转折", "温暖的回忆", "主角回忆起师父的教诲"),
         (f"{mid}_ch003_s1", "第3章 高潮", "最终对决", "正邪大战一触即发"),
     ], 1):
-        scene = {
+        event = {
             "id": sid, "chapter": ch, "title": title, "summary": summary,
-            "tension": i + 2, "scene_type": ["对决"], "emotion": ["燃"],
+            "tension": i + 2, "event_type": ["对决"], "emotion": ["燃"],
             "conflict": ["人与人"], "stakes": ["生死"],
             "relationship": ["对手"], "interaction": ["对抗"],
             "character_moment": ["觉醒"], "power_dynamic": "以弱胜强",
@@ -198,8 +198,8 @@ def _create_novel_dir(novels_dir: Path):
             "time_weather": ["黎明"], "reader_effect": ["爽感"],
             "characters": ["张三", "李四"],
         }
-        with open(scenes_dir / f"ch{i:04d}_s1.yaml", "w", encoding="utf-8") as f:
-            yaml.dump(scene, f, allow_unicode=True)
+        with open(events_dir / f"ev{i:04d}.yaml", "w", encoding="utf-8") as f:
+            yaml.dump(event, f, allow_unicode=True)
 
 
 @pytest.fixture()

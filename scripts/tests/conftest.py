@@ -12,7 +12,7 @@ if str(SCRIPTS_DIR) not in sys.path:
 TEST_MATERIAL_ID = "nm_novel_20260101_test"
 
 TAGS_YAML = {
-    "scene_type": {"description": "场景类型", "values": ["对决", "日常", "回忆"]},
+    "event_type": {"description": "事件类型", "values": ["对决", "日常", "回忆"]},
     "conflict": {"description": "冲突", "values": ["人与人", "人与命运"]},
     "stakes": {"description": "赌注", "values": ["生死", "情感"]},
     "relationship": {"description": "关系", "values": ["师徒", "对手"]},
@@ -25,7 +25,7 @@ TAGS_YAML = {
     "technique": {"description": "技巧", "values": ["伏笔", "反转"]},
     "dialogue_type": {"description": "对白", "values": ["争论", "独白"]},
     "info_delivery": {"description": "信息", "values": ["展示", "叙述"]},
-    "setting": {"description": "场景", "values": ["战场", "城市"]},
+    "setting": {"description": "空间类型", "values": ["战场", "城市"]},
     "time_weather": {"description": "天气", "values": ["黎明", "暴雨"]},
     "pacing": {"description": "节奏", "values": ["快", "中", "慢"]},
     "pov": {"description": "视角", "values": ["第一人称", "第三人称限制"]},
@@ -49,8 +49,8 @@ def novel_env(tmp_path, monkeypatch):
     mid = TEST_MATERIAL_ID
     novel_dir = novels_dir / mid
     novel_dir.mkdir()
-    scenes_dir = novel_dir / "scenes"
-    scenes_dir.mkdir()
+    events_dir = novel_dir / "events"
+    events_dir.mkdir()
 
     meta = {"material_id": mid, "name": "测试小说", "author": "测试作者",
             "type": "novel", "status": "complete", "source": "source.txt"}
@@ -75,11 +75,11 @@ def novel_env(tmp_path, monkeypatch):
         yaml.dump(index, f, allow_unicode=True)
 
     for i in range(1, 11):
-        scene = {
-            "id": f"{mid}_ch{i:04d}_s1", "chapter": f"第{i}章 标题{i}",
-            "title": f"场景标题_{i}", "summary": f"第{i}章的精彩场景描述，各不相同_{i}",
+        event = {
+            "id": f"{mid}_ev{i:04d}", "chapter": f"第{i}章 标题{i}",
+            "title": f"事件标题_{i}", "summary": f"第{i}章的精彩事件描述，各不相同_{i}",
             "tension": (i % 5) + 1,
-            "scene_type": ["对决" if i % 2 == 0 else "日常"],
+            "event_type": ["对决" if i % 2 == 0 else "日常"],
             "conflict": ["人与人"], "stakes": ["生死"],
             "relationship": ["对手"], "interaction": ["对抗"],
             "character_moment": ["觉醒"], "power_dynamic": "以弱胜强",
@@ -92,8 +92,8 @@ def novel_env(tmp_path, monkeypatch):
             "emotion": ["燃" if i % 3 != 0 else "悲伤"],
             "characters": ["张三", "李四"],
         }
-        with open(scenes_dir / f"ch{i:04d}_s1.yaml", "w", encoding="utf-8") as f:
-            yaml.dump(scene, f, allow_unicode=True)
+        with open(events_dir / f"ev{i:04d}.yaml", "w", encoding="utf-8") as f:
+            yaml.dump(event, f, allow_unicode=True)
 
     monkeypatch.chdir(tmp_path)
     return tmp_path, data_dir, novel_dir, mid

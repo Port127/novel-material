@@ -29,12 +29,12 @@ imported_folder/
 ├── worldbuilding.yaml      # 世界观设定
 ├── characters.yaml         # 人物体系
 ├── tags.yaml               # 小说级标签
-├── scenes/                 # 场景文件夹
+├── events/                 # 事件文件夹
 │   ├── ch0001_s01.yaml
 │   ├── ch0001_s02.yaml
 │   └── ...
-├── scenes_index.yaml       # 倒排索引（可选，可重建）
-├── scenes_manifest.yaml    # 场景清单（可选，可重建）
+├── events_index.yaml       # 倒排索引（可选，可重建）
+├── events_manifest.yaml    # 事件清单（可选，可重建）
 ├── stats.yaml              # 统计数据（可选）
 ├── stats.md                # 可视化报告（可选）
 └── stats.html              # 交互报告（可选）
@@ -55,9 +55,9 @@ scan_result:
   worldbuilding: true/false
   characters: true/false
   tags: true/false
-  scenes_count: N          # scenes/ 下 ch*.yaml 文件数
-  scenes_index: true/false
-  scenes_manifest: true/false
+  events_count: N          # events/ 下 ev*.yaml 文件数
+  events_index: true/false
+  events_manifest: true/false
   stats: true/false
   stats_md: true/false
   stats_html: true/false
@@ -87,7 +87,7 @@ scan_result:
 | worldbuilding.yaml | YAML 可解析 |
 | characters.yaml | YAML 可解析 + `roster` 字段存在 |
 | tags.yaml | YAML 可解析 + 标签值在 `data/tags.yaml` 字典中 |
-| scenes/*.yaml | YAML 可解析 + 必填字段（id, chapter, title, summary, scene_type）+ 标签值合法 |
+| events/*.yaml | YAML 可解析 + 必填字段（id, chapter, title, summary, event_type）+ 标签值合法 |
 
 **标签合法性检查**：扫描所有文件中的标签值，与 `data/tags.yaml` 对比。
 
@@ -105,9 +105,9 @@ scan_result:
 
 | 条件 | status |
 |------|--------|
-| 有 scenes/ 且通过校验 + 有索引 + 有 refine 痕迹 | `refined` |
-| 有 scenes/ 且通过校验 + 有索引 | `complete` |
-| 有 scenes/ 且通过校验 | `complete`（后续自动建索引） |
+| 有 events/ 且通过校验 + 有索引 + 有 refine 痕迹 | `refined` |
+| 有 events/ 且通过校验 + 有索引 | `complete` |
+| 有 events/ 且通过校验 | `complete`（后续自动建索引） |
 | 有 tags.yaml | `tagged` |
 | 有 outline.yaml | `outlined` |
 | 仅有 source.txt | `raw` |
@@ -127,13 +127,13 @@ scan_result:
   ✅ worldbuilding.yaml  (世界观)
   ✅ characters.yaml     (人物体系)
   ✅ tags.yaml           (小说级标签)
-  ✅ scenes/             ({N} 个场景文件)
-  ❌ scenes_index.yaml   (缺失，将自动构建)
-  ❌ scenes_manifest.yaml(缺失，将自动构建)
+  ✅ events/             ({N} 个事件文件)
+  ❌ events_index.yaml   (缺失，将自动构建)
+  ❌ events_manifest.yaml(缺失，将自动构建)
 
 {如有标签问题}
   ⚠️ 标签合法性：
-    - scene_type 中 "群殴" 不在字典中
+    - event_type 中 "群殴" 不在字典中
     - emotion 中 "窒息感" 不在字典中
     选择：(1) 自动新增到字典 (2) 忽略非法值 (3) 终止
 
@@ -143,7 +143,7 @@ scan_result:
   1. 生成 material_id
   2. 复制文件到 data/novels/{id}/
   3. 写入 meta.yaml + 更新 index.yaml
-  {如有 scenes} 4. 运行 build-index 构建索引
+  {如有 events} 4. 运行 build-index 构建索引
 
 确认导入？(yes/no)
 ```
@@ -178,9 +178,9 @@ pipeline:
 ```
 
 5. **更新 index.yaml**
-6. **自动构建索引**（如有 scenes 但缺 index/manifest）：
+6. **自动构建索引**（如有 events 但缺 index/manifest）：
    - 读取并执行 `build-index/SKILL.md`
-   - 或直接运行 `python scripts/core/build_scene_index.py {material_id}` + `python scripts/core/build_db.py --material {material_id}`
+   - 或直接运行 `python scripts/core/build_event_index.py {material_id}` + `python scripts/core/build_db.py --material {material_id}`
 
 ### 8. 输出报告
 
@@ -197,13 +197,13 @@ pipeline:
   - worldbuilding.yaml  ✅
   - characters.yaml     ✅
   - tags.yaml           ✅
-  - scenes/ ({N}个)     ✅
-  - scenes_index.yaml   ✅ (自动构建)
-  - scenes_manifest.yaml ✅ (自动构建)
+  - events/ ({N}个)     ✅
+  - events_index.yaml   ✅ (自动构建)
+  - events_manifest.yaml ✅ (自动构建)
 
 {如果 status 不是 refined}
 后续操作：
-  /pipeline-scenes {id}     # 补充场景拆分（如部分缺失）
+  /pipeline-scenes {id}     # 补充事件拆分（如部分缺失）
   /pipeline-finalize {id}   # 精调+统计报告
 ```
 
@@ -213,7 +213,7 @@ pipeline:
 - MUST 校验所有 YAML 文件可解析
 - MUST 检查标签值合法性，不合法值需用户决定处理方式
 - MUST 在预览中展示所有检测结果，等待用户确认
-- MUST 导入后如有 scenes 缺索引，自动构建
+- MUST 导入后如有 events 缺索引，自动构建
 - NEVER 直接移动源文件夹（复制，不删除原始）
 - NEVER 跳过去重检查
 

@@ -244,11 +244,11 @@ outcome:
       values: []
 
 # ====================================================================
-# 场景级标签维度（原有）
+# 事件级标签维度（原有）
 # ====================================================================
 
-scene_type:
-  description: 场景类型
+event_type:
+  description: 事件类型
   values:
   - 争吵
   - 告白
@@ -370,7 +370,7 @@ conflict:
       description: 用户自定义冲突类型
       values: []
 stakes:
-  description: 赌注（场景中赌上了什么）
+  description: 赌注（事件中赌上了什么）
   values:
   - 生死
   - 荣辱
@@ -680,7 +680,7 @@ setting:
   - 边境
   - 异空间
 scale:
-  description: 场景人数规模
+  description: 事件人数规模
   values:
   - 独角戏
   - 双人戏

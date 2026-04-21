@@ -186,14 +186,14 @@ class TestRunBuildIndex:
             ps._run_build_index("any_material")
 
 
-# ── _run_scenes ──────────────────────────────────────────────────────
+# ── _run_events ──────────────────────────────────────────────────────
 
 
-class TestRunScenes:
+class TestRunEvents:
     def test_always_raises_for_agent(self, patched_ps):
         ps = patched_ps
-        with pytest.raises(RuntimeError, match="场景拆分"):
-            ps._run_scenes("any")
+        with pytest.raises(RuntimeError, match="事件拆分"):
+            ps._run_events("any")
 
 
 # ── reset_status ─────────────────────────────────────────────────────

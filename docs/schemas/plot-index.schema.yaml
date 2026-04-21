@@ -7,9 +7,9 @@ entries:
   - material_id: nm_xxx
     novel_name: "《书名》"
     genre: [科幻]                    # 从小说级 tags.yaml 读取
-    total_scenes: 907
+    total_events: 907
     structure:
-      plot_stages:                   # 各阶段场景分布
+      plot_stages:                   # 各阶段事件分布
         开篇: 15
         第一幕-诱因: 45
         第一幕-发展: 120

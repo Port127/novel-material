@@ -59,7 +59,7 @@ arguments: path
 data/novels/{material_id}/
 ├── meta.yaml
 ├── source.txt     # 复制原文
-└── scenes/        # 空目录
+└── events/        # 空目录
 ```
 
 ### 5. 写入 meta.yaml

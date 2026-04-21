@@ -1,37 +1,36 @@
 ---
 name: build-index
-description: 构建场景倒排索引和清单文件，支持高效检索
-when_to_use: 场景拆分完成后，构建索引加速检索
+description: 构建事件倒排索引和清单文件，支持高效检索
+when_to_use: 事件拆分完成后，构建索引加速检索
 argument-hint: "[material_id]"
 arguments: material_id
 ---
 
 # 任务
 
-为已完成场景拆分的小说构建两个索引文件：倒排索引（`scenes_index.yaml`）和场景清单（`scenes_manifest.yaml`），使检索不再需要遍历全部场景文件。
+为已完成事件拆分的小说构建两个索引文件：倒排索引（`events_index.yaml`）和事件清单（`events_manifest.yaml`），使检索不再需要遍历全部事件文件。
 
-**不读原文，只读 scene YAML 数据。**
+**不读原文，只读 event YAML 数据。**
 
-**优先使用固化脚本** `scripts/core/build_scene_index.py`，仅在脚本不满足需求时动态补充。
+**优先使用固化脚本** `scripts/core/build_event_index.py`，仅在脚本不满足需求时动态补充。
 
 ## 前置检查
 
-1. 读取 `data/novels/{material_id}/meta.yaml`，确认 scenes 已完成（或部分完成）
-2. 确认 `scenes/` 目录下有场景文件
+1. 读取 `data/novels/{material_id}/meta.yaml`，确认 events 已完成（或部分完成）
+2. 确认 `events/` 目录下有事件文件
 
 ## 输出文件
 
-### Per-Novel（场景索引）
-- `data/novels/{material_id}/scenes_index.yaml` — 倒排索引（标签 → scene_id 列表）
-- `data/novels/{material_id}/scenes_manifest.yaml` — 场景清单（压缩视图）
+### Per-Novel（事件索引）
+- `data/novels/{material_id}/events_index.yaml` — 倒排索引（标签 → event_id 列表）
+- `data/novels/{material_id}/events_manifest.yaml` — 事件清单（压缩视图）
 
 ### Global（跨小说聚合索引）
 - `data/character_index.yaml` — 人物索引（跨小说人物汇总）
 - `data/plot_index.yaml` — 剧情索引（跨小说剧情结构汇总）
 
 遵循对应 schema：
-- `docs/schemas/scenes-index.schema.yaml`
-- `docs/schemas/scenes-manifest.schema.yaml`
+- `docs/schemas/event-unit.schema.yaml` — 事件单元结构
 - `docs/schemas/character-index.schema.yaml`
 - `docs/schemas/plot-index.schema.yaml`
 
@@ -41,121 +40,115 @@ arguments: material_id
 
 ```bash
 # 步骤一：构建 YAML 索引（人可读 + git 友好）
-python scripts/core/build_scene_index.py {material_id}
+python scripts/core/build_event_index.py {material_id}
 
 # 步骤二：构建/更新 SQLite 索引（机器查询加速）
 python scripts/core/build_db.py --material {material_id}
 ```
 
 两个脚本的关系：
-- `build_scene_index.py` → 生成 YAML 倒排索引和场景清单（**source of truth**）
-- `build_db.py` → 将场景数据导入 SQLite（**派生查询层**，可随时重建）
+- `build_event_index.py` → 生成 YAML 倒排索引和事件清单（**source of truth**）
+- `build_db.py` → 将事件数据导入 SQLite（**派生查询层**，可随时重建）
 
 agent 只需读取脚本输出即可。如果脚本报错或需要特殊处理，再按以下步骤手动执行。
 
 **职责分工**：
 
-| 产出 | 方式 | 说明 |
-|------|------|------|
-| scenes_index.yaml | `build_scene_index.py` | 脚本完成 |
-| scenes_manifest.yaml | `build_scene_index.py` | 脚本完成 |
-| material.db (SQLite) | `build_db.py` | 脚本完成 |
-| character_index.yaml | agent 手动 | 需读 characters.yaml + 统计出场 |
-| plot_index.yaml | agent 手动 | 需读 outline.yaml + 场景统计 |
+|| 产出 | 方式 | 说明 |
+||------|------|------|
+|| events_index.yaml | `build_event_index.py` | 脚本完成 |
+|| events_manifest.yaml | `build_event_index.py` | 脚本完成 |
+|| material.db (SQLite) | `build_db.py` | 脚本完成 |
+|| character_index.yaml | agent 手动 | 需读 characters.yaml + 统计出场 |
+|| plot_index.yaml | agent 手动 | 需读 outline.yaml + 事件统计 |
 
 步骤 0 完成 per-novel 索引和 SQLite 后，继续步骤 4-5 聚合全局索引。如果步骤 0 脚本报错，则按步骤 1-3 手动处理 per-novel 部分。
 
-### 1. 遍历场景文件（手动 fallback）
+### 1. 遍历事件文件（手动 fallback）
 
-分批读取 `scenes/` 目录下所有 YAML 文件，每批 50 个。
+分批读取 `events/` 目录下所有 YAML 文件，每批 50 个。
 
-从每个场景提取：
-- `scene_id`, `chapter`, `title`, `summary`
-- 全部标签字段（6 层 20 维）
-- `characters[].name`
-- `tension`
+从每个事件提取：
+- `event_id`, `thread`, `chapters`, `title`, `summary`
+- 全部标签字段（多层多维）
+- `characters`
+- `tension_peak`, `tension_curve`
 - `plot_function`
 - `plot_threads`（如有）
+- `hooks`（如有）
 
-### 2. 构建场景清单 (scenes_manifest.yaml)
+### 2. 构建事件清单 (events_manifest.yaml)
 
-每个场景保留检索关键字段，按 scene_id 排序：
+每个事件保留检索关键字段，按 event_id 排序：
 
 ```yaml
 material_id: nm_xxx
-total_scenes: 907
+total_events: 45
 built_at: "2026-04-05T12:00:00Z"
 
-scenes:
-  - id: ch01_s01
-    chapter: "第1章 喝酒不开车"
-    title: "应酬酒桌上的陈总"
-    summary: "35岁的陈汉升在建邺国际酒店参加应酬..."
-    scene_type: [宴会]
-    conflict: [利益]
-    tension: 2
-    pacing: 蓄力
-    plot_function: [铺垫]
-    characters: [陈汉升]
-    emotion: [平静, 压抑]
-    reader_effect: [会心一笑]
+events:
+  - id: ev_main_001
+    thread: main
+    chapters: [1, 2, 3, 4, 5]
+    title: "税银案破案自救"
+    summary: "许七安穿越入狱，面临流放边陲的命运..."
+    event_type: 推理破案
+    conflict: [生死, 自由]
+    tension_peak: 5
+    pacing: 加速
+    plot_function: [铺垫, 转折]
+    characters: [许七安, 许新年]
+    emotion_arc: [恐惧, 挐扎, 狂喜]
 ```
 
-### 3. 构建倒排索引 (scenes_index.yaml)
+### 3. 构建倒排索引 (events_index.yaml)
 
-为每个标签维度建立 值 → scene_id 列表 的映射：
+为每个标签维度建立 值 → event_id 列表 的映射：
 
 ```yaml
 material_id: nm_xxx
-total_scenes: 907
+total_events: 45
 built_at: "2026-04-05T12:00:00Z"
 
 # A. 内容层
-scene_type:
-  宴会: [ch01_s01, ch45_s02, ch302_s01]
-  争吵: [ch05_s02, ch23_s01, ch156_s03]
+event_type:
+  推理破案: [ev_main_001, ev_main_005]
+  修炼突破: [ev_main_002, ev_subplot_魏渊_001]
 conflict:
-  利益: [ch01_s01, ch02_s01, ch56_s01]
-stakes:
-  荣辱: [ch01_s01, ch03_s02]
+  生死: [ev_main_001, ev_main_010]
+  利益: [ev_main_003, ev_romance_怀庆_002]
 
 # B. 人物层
 character:
-  陈汉升: [ch01_s01, ch01_s02, ch01_s03, ...]
-  萧容鱼: [ch03_s01, ch15_s02, ...]
-relationship:
-  恋人: [ch12_s01, ch45_s02, ch156_s03]
-# interaction, power_dynamic, character_moment 同理
+  许七安: [ev_main_001, ev_main_002, ev_main_003, ...]
+  萧容鱼: [ev_main_005, ev_romance_怀庆_001, ...]
+thread:
+  main: [ev_main_001, ev_main_002, ...]
+  romance_怀庆: [ev_romance_怀庆_001, ev_romance_怀庆_002]
 
 # C. 情感层
-emotion:
-  紧张: [ch05_s02, ch89_s01, ch302_s01]
-tension:
-  5: [ch302_s01, ch445_s03, ch801_s01]
-# reader_effect 同理
+emotion_arc:
+  紧张: [ev_main_005, ev_main_010]
+tension_peak:
+  5: [ev_main_001, ev_main_015]
 
 # D. 结构层
 plot_function:
-  伏笔埋设: [ch03_s02, ch45_s01, ch100_s01]
-  伏笔回收: [ch302_s01, ch800_s01, ch956_s01]
-# plot_stage, pacing 同理
+  铺垫: [ev_main_001, ev_main_003]
+  转折: [ev_main_005, ev_main_010]
 
 # E. 技法层
 technique:
-  对比: [ch01_s01, ch156_s03]
-# dialogue_type 同理
+  闪回: [ev_main_002]
 
 # F. 物理层
 setting:
-  室内: [ch01_s01, ch05_s01]
-# scale, time_weather 同理
+  监牢: [ev_main_001]
 
-# 钩子线索（如有 plot_threads）
-plot_threads:
-  "陈汉升身份秘密":
-    plant: [ch03_s02, ch05_s01]
-    develop: [ch45_s01, ch200_s02]
-    payoff: [ch302_s01, ch800_s01]
+# 钩子线索（从 events hooks 字段聚合）
+hooks:
+  章末悬念: [ev_main_001, ev_main_005]
+  道具钩子: [ev_main_002]
 ```
 
 ### 4. 聚合全局人物索引 (character_index.yaml)
@@ -170,36 +163,23 @@ entries:
   - material_id: nm_novel_20260405_zhbk
     novel_name: "《书名》"
     characters:
-      - name: 陈汉升
+      - name: 许七安
         role: protagonist
         archetype: 英雄
         traits: [果断, 重情义, 隐忍]
         moral_spectrum: 灰色
         arc_summary: "失意商人 → 重生逆袭 → 权力巅峰的孤独"
         arc_stages: 5
-        appearance_count: 907        # 出场场景数（从 scenes_index character 维度统计）
+        appearance_count: 45        # 出场事件数（从 events_index character 维度统计）
         first_appearance: "第1章"
         narrative_function: 推动主线
-      - name: 萧容鱼
-        role: supporting
-        archetype: 盟友
-        traits: [聪慧, 外冷内热]
-        moral_spectrum: 正义
-        arc_summary: "冰山美女 → 逐渐信任 → 并肩作战"
-        arc_stages: 3
-        appearance_count: 245
-        first_appearance: "第3章"
-        narrative_function: 情感锚点
-  - material_id: nm_novel_20260401_xxxx
-    novel_name: "《另一本书》"
-    characters: [...]
 ```
 
-从 `characters.yaml` 的 `roster` 中提取字段，`arc_summary` 是将 `arc` 的阶段链浓缩为一句话描述。`appearance_count` 从 `scenes_index.yaml` 的 `character` 维度统计。
+从 `characters.yaml` 的 `roster` 中提取字段。`appearance_count` 从 `events_index.yaml` 的 `character` 维度统计。
 
 ### 5. 聚合全局剧情索引 (plot_index.yaml)
 
-读取当前素材的 `outline.yaml` 和 `scenes_index.yaml`，提取剧情结构信息，写入 `data/plot_index.yaml`。
+读取当前素材的 `outline.yaml` 和 `events_index.yaml`，提取剧情结构信息，写入 `data/plot_index.yaml`。
 
 同样采用 upsert 语义。
 
@@ -208,38 +188,22 @@ entries:
 entries:
   - material_id: nm_novel_20260405_zhbk
     novel_name: "《书名》"
-    genre: [都市, 重生]           # 从 tags.yaml 读取
-    total_scenes: 907
+    genre: [都市, 重生]
+    total_events: 45
     structure:
-      plot_stages:                # 各阶段场景分布
-        开篇: 15
-        第一幕-诱因: 45
-        第一幕-发展: 120
-        第二幕-对抗: 280
-        中点: 30
-        第二幕-低谷: 150
-        第三幕-高潮: 180
-        第三幕-收束: 70
-        尾声: 17
-      turning_points:             # 主要转折点（从 outline.yaml 提取）
-        - chapter: 89
-          description: "身份暴露"
-          plot_function: 转折
-        - chapter: 302
-          description: "全面反击"
-          plot_function: 高潮
-      hooks_count: 42               # 钩子总数
-      hooks_verified: 38            # 已验证回收的钩子数
-    dominant_functions:            # 高频情节功能 Top-5
-      - {function: 铺垫, count: 320}
-      - {function: 升级, count: 210}
-      - {function: 转折, count: 85}
-      - {function: 伏笔埋设, count: 78}
-      - {function: 伏笔回收, count: 65}
-    pacing_profile:               # 节奏概况
+      plot_stages:                # 各阶段事件分布
+        开篇: 3
+        第一幕-诱因: 5
+        第一幕-发展: 8
+        第二幕-对抗: 12
+      hooks_count: 42
+      hooks_verified: 38
+    dominant_functions:
+      - {function: 铺垫, count: 15}
+      - {function: 转折, count: 8}
+    pacing_profile:
       avg_tension: 3.2
-      peak_tension_chapter: 302
-      tension_variance: 1.1
+      peak_tension_chapter: 89
 ```
 
 ### 6. 更新 meta.yaml
@@ -248,15 +212,15 @@ entries:
 pipeline:
   index_built: true
   index_at: "2026-04-05T12:00:00Z"
-  manifest_scenes: 907
+  manifest_events: 45
   global_indexes_updated: true
 ```
 
 ## 增量更新
 
-如果后续新增了场景（continue 模式），`build-index` 支持增量更新：
+如果后续新增了事件（continue 模式），`build-index` 支持增量更新：
 1. 读取现有 manifest 和 index
-2. 扫描 scenes/ 中不在 manifest 里的新文件
+2. 扫描 events/ 中不在 manifest 里的新文件
 3. 只处理新增部分，合并到现有索引
 
 ## 输出格式
@@ -265,9 +229,9 @@ pipeline:
 ✅ 索引构建完成
 
 📚 素材：{name}
-📊 场景索引：
-  场景总数：907
-  标签维度：19
+📊 事件索引：
+  事件总数：45
+  标签维度：20
   人物索引：{n} 个角色
   钩子线索：{n} 条
 
@@ -275,18 +239,18 @@ pipeline:
   👥 character_index.yaml — {n} 个角色（本素材）
   📖 plot_index.yaml — {转折点数}/{钩子数}
 
-📄 倒排索引：data/novels/{id}/scenes_index.yaml
-📄 场景清单：data/novels/{id}/scenes_manifest.yaml
+📄 倒排索引：data/novels/{id}/events_index.yaml
+📄 事件清单：data/novels/{id}/events_manifest.yaml
 📄 全局人物：data/character_index.yaml
 📄 全局剧情：data/plot_index.yaml
 ```
 
 ## 注意事项
 
-- 分批读取场景文件（每批 50 个），避免 token 溢出
-- 倒排索引中 scene_id 列表按章节顺序排列
+- 分批读取事件文件（每批 50 个），避免 token 溢出
+- 倒排索引中 event_id 列表按事件顺序排列
 - manifest 中 summary 截断到 50 字以内
-- 索引文件需与实际场景保持一致，新增场景后需重建或增量更新
+- 索引文件需与实际事件保持一致，新增事件后需重建或增量更新
 - `material-search-scene` 检索时应优先调用 `scripts/core/search.py` 查 SQLite，而非直接读 YAML 索引
 - 全局索引采用 upsert 语义——只替换当前 material_id 的条目，保留其他素材数据
 - `character_index` 中的 `arc_summary` 应浓缩为一句话，不超过 30 字
@@ -296,7 +260,6 @@ pipeline:
 
 ## References
 
-- [scripts/core/build_scene_index.py](../../../scripts/core/build_scene_index.py) — 固化索引脚本
-- [scenes-index.schema.yaml](../../../docs/schemas/scenes-index.schema.yaml)
-- [scenes-manifest.schema.yaml](../../../docs/schemas/scenes-manifest.schema.yaml)
+- [scripts/core/build_event_index.py](../../../scripts/core/build_event_index.py) — 固化索引脚本
+- [event-unit.schema.yaml](../../../docs/schemas/event-unit.schema.yaml)
 - [AGENTS.md](../../../AGENTS.md)

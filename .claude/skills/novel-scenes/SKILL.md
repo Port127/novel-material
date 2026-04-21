@@ -291,7 +291,7 @@ info_hint:
   - detail: '城东的井水最近变苦了'
     chapter: 12
     lines: [280, 285]
-    context: 闲聊对话                     # 出现场景（闲聊对话/背景描写/人物独白）
+    context: 闲聊对话                     # 出现语境（闲聊对话/背景描写/人物独白）
     confidence: low                       # 默认 low
 ```
 
@@ -634,6 +634,12 @@ python scripts/core/quality_audit.py {material_id} --event {event_id}
 | 含中文引号的值用单引号包裹 | `note: '许七安说"活下去"'` | `note: 许七安说"活下去"` |
 | summary 超过一行用 `>-` | `summary: >-` 换行写内容 | 直接写超长单行 |
 | 数值字段不加引号 | `tension_peak: 5` | `tension_peak: "5"` |
+| **列表项破折号后必须有空格** | `  - 尴尬` | `  -尴尬` |
+
+**⚠️ 常见格式错误**：
+- 列表项 `-` 与内容之间缺少空格会导致 YAML 解析失败或解析为错误类型
+- 检查所有列表字段：`emotion_arc`, `characters`, `technique`, `setting` 等
+- 生成后必须验证：`python scripts/core/validate_yaml.py event {material_id} {event_id}`
 
 ## 注意事项
 

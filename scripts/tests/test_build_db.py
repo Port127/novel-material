@@ -8,7 +8,7 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "core"))
 
-from build_db import create_schema, ingest_novel, _flatten_scene, _as_list, _str_or_first
+from build_db import create_schema, ingest_novel, _flatten_event, _as_list, _str_or_first
 
 
 class TestHelpers:
@@ -37,34 +37,34 @@ class TestHelpers:
         assert _as_list({"name": "x"}) == []
 
 
-class TestFlattenScene:
+class TestFlattenEvent:
     def test_flat_passthrough(self):
-        scene = {"id": "s1", "scene_type": ["对决"], "tension": 3}
-        flat = _flatten_scene(scene)
-        assert flat["id"] == "s1"
-        assert flat["scene_type"] == ["对决"]
+        event = {"id": "e1", "event_type": ["对决"], "tension": 3}
+        flat = _flatten_event(event)
+        assert flat["id"] == "e1"
+        assert flat["event_type"] == ["对决"]
 
     def test_nested_to_flat(self):
-        scene = {
-            "scene_id": "s1",
-            "content": {"scene_type": ["对决"], "conflict": ["人与人"], "stakes": ["生死"]},
+        event = {
+            "event_id": "e1",
+            "content": {"event_type": ["对决"], "conflict": ["人与人"], "stakes": ["生死"]},
             "people": {"relationship": ["对手"], "power_dynamic": "以弱胜强"},
             "emotion": {"emotion": ["燃"], "tension": 4, "reader_effect": ["爽感"]},
         }
-        flat = _flatten_scene(scene)
-        assert flat["id"] == "s1"
-        assert flat["scene_type"] == ["对决"]
+        flat = _flatten_event(event)
+        assert flat["id"] == "e1"
+        assert flat["event_type"] == ["对决"]
         assert flat["power_dynamic"] == "以弱胜强"
         assert flat["tension"] == 4
 
     def test_moral_spectrum_list_to_scalar(self):
-        scene = {"moral_spectrum": ["正义", "灰色"]}
-        flat = _flatten_scene(scene)
+        event = {"moral_spectrum": ["正义", "灰色"]}
+        flat = _flatten_event(event)
         assert flat["moral_spectrum"] == "正义"
 
     def test_characters_dict_to_names(self):
-        scene = {"characters": [{"name": "张三"}, {"name": "李四"}]}
-        flat = _flatten_scene(scene)
+        event = {"characters": [{"name": "张三"}, {"name": "李四"}]}
+        flat = _flatten_event(event)
         assert flat["characters"] == ["张三", "李四"]
 
 
@@ -81,17 +81,17 @@ class TestIngestNovel:
         row = conn.execute("SELECT * FROM novels WHERE material_id=?", (mid,)).fetchone()
         assert row is not None
 
-        scenes = conn.execute("SELECT COUNT(*) FROM scenes WHERE material_id=?", (mid,)).fetchone()[0]
-        assert scenes == 10
+        events = conn.execute("SELECT COUNT(*) FROM events WHERE material_id=?", (mid,)).fetchone()[0]
+        assert events == 10
 
-        tags = conn.execute("SELECT COUNT(*) FROM scene_tags WHERE material_id=?", (mid,)).fetchone()[0]
+        tags = conn.execute("SELECT COUNT(*) FROM event_tags WHERE material_id=?", (mid,)).fetchone()[0]
         assert tags > 0
 
         chars = conn.execute("SELECT COUNT(*) FROM characters WHERE material_id=?", (mid,)).fetchone()[0]
         assert chars == 2
 
-        sc = conn.execute("SELECT COUNT(*) FROM scene_characters").fetchone()[0]
-        assert sc > 0
+        ec = conn.execute("SELECT COUNT(*) FROM event_characters").fetchone()[0]
+        assert ec > 0
 
         conn.close()
 

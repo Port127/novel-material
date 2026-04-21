@@ -22,7 +22,7 @@ arguments: dimension, old_value, new_value
 在执行前先扫描受影响范围：
 
 1. 读取 `data/tags.yaml`，确认维度、旧值、新值均存在
-2. 遍历所有 `data/novels/*/scenes_index.yaml`，统计旧值在倒排索引中关联的 scene_id 数量
+2. 遍历所有 `data/novels/*/events_index.yaml`，统计旧值在倒排索引中关联的 event_id 数量
 3. 遍历所有 `data/novels/*/tags.yaml`，检查小说级标签是否包含旧值
 
 输出影响摘要，等待用户确认后执行。
@@ -33,28 +33,28 @@ arguments: dimension, old_value, new_value
 - 从维度的 `values` 列表中移除旧值
 - 确认新值存在
 
-### 3. 全局替换场景文件
+### 3. 全局替换事件文件
 
-在所有场景文件和小说标签文件中替换：
-- `data/novels/*/scenes/*.yaml` — 场景级标签
+在所有事件文件和小说标签文件中替换：
+- `data/novels/*/events/*.yaml` — 事件级标签
 - `data/novels/*/tags.yaml` — 小说级标签
 
 统计被替换的文件数。
 
 ### 4. 重建倒排索引
 
-对每个受影响的小说（即 `scenes_index.yaml` 中包含旧值的小说）：
+对每个受影响的小说（即 `events_index.yaml` 中包含旧值的小说）：
 
-1. 读取 `scenes_index.yaml`
-2. 在对应维度下：将旧值 key 的 scene_id 列表合并到新值 key 下（去重、按章节顺序排列）
+1. 读取 `events_index.yaml`
+2. 在对应维度下：将旧值 key 的 event_id 列表合并到新值 key 下（去重、按章节顺序排列）
 3. 删除旧值 key
-4. 写回 `scenes_index.yaml`
+4. 写回 `events_index.yaml`
 
-如果存在固化脚本 `scripts/core/build_scene_index.py`，也可对受影响的 material_id 重跑索引构建。
+如果存在固化脚本 `scripts/core/build_event_index.py`，也可对受影响的 material_id 重跑索引构建。
 
-### 5. 更新场景清单
+### 5. 更新事件清单
 
-对受影响的小说，更新 `scenes_manifest.yaml` 中对应场景的标签字段（如果 manifest 包含该维度）。
+对受影响的小说，更新 `events_manifest.yaml` 中对应事件的标签字段（如果 manifest 包含该维度）。
 
 ### 6. 重建 SQLite 索引
 
@@ -76,17 +76,17 @@ python scripts/core/build_db.py
 📂 维度：{dimension}
 🔀 {old_value} → {new_value}
 📝 影响统计：
-  场景文件：{scene_count} 个
+  事件文件：{event_count} 个
   小说标签：{novel_count} 个
   倒排索引：{index_count} 个已重建
-  场景清单：{manifest_count} 个已更新
+  事件清单：{manifest_count} 个已更新
   SQLite：已重建
 ```
 
 ## 注意事项
 
 - 合并前先评估影响范围，等待用户确认
-- 场景文件、倒排索引、场景清单、SQLite 四者必须同步更新，缺一不可
+- 事件文件、倒排索引、事件清单、SQLite 四者必须同步更新，缺一不可
 - 合并不可撤销，谨慎操作
 
 ## References

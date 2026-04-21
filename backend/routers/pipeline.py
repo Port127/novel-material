@@ -72,7 +72,7 @@ async def trigger_pipeline(
     background_tasks: BackgroundTasks,
     stage: str = "ingest",
 ):
-    valid_stages = ("ingest", "format", "build-index", "analyze", "scenes", "finalize")
+    valid_stages = ("ingest", "format", "build-index", "analyze", "events", "finalize")
     if stage not in valid_stages:
         raise HTTPException(400, f"Invalid stage: {stage}. Valid: {valid_stages}")
 
@@ -84,7 +84,7 @@ async def trigger_pipeline(
     if current.get("running"):
         raise HTTPException(409, "Pipeline already running for this material")
 
-    needs_llm = stage in ("analyze", "scenes", "finalize")
+    needs_llm = stage in ("analyze", "events", "finalize")
     if needs_llm:
         llm_cfg = ps.get_llm_config()
         if not llm_cfg.get("base_url") or not llm_cfg.get("api_key"):

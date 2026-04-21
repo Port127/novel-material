@@ -11,7 +11,7 @@ DB_PATH = DATA_DIR / "material.db"
 NOVELS_DIR = DATA_DIR / "novels"
 
 TAG_DIMENSIONS = [
-    "scene_type", "conflict", "stakes",
+    "event_type", "conflict", "stakes",
     "relationship", "interaction", "character_moment",
     "emotion", "reader_effect",
     "plot_function", "plot_stage",
@@ -79,13 +79,13 @@ def list_materials() -> list[dict]:
         for m in materials:
             mid = m.get("id", "")
             row = conn.execute(
-                "SELECT total_scenes FROM novels WHERE material_id = ?", (mid,)
+                "SELECT total_events FROM novels WHERE material_id = ?", (mid,)
             ).fetchone()
-            m["scene_count"] = row["total_scenes"] if row else 0
+            m["event_count"] = row["total_events"] if row else 0
         conn.close()
     else:
         for m in materials:
-            m["scene_count"] = 0
+            m["event_count"] = 0
 
     return materials
 
@@ -101,9 +101,9 @@ def get_material(material_id: str) -> Optional[dict]:
     if DB_PATH.exists():
         conn = _get_db()
         row = conn.execute(
-            "SELECT total_scenes FROM novels WHERE material_id = ?", (material_id,)
+            "SELECT total_events FROM novels WHERE material_id = ?", (material_id,)
         ).fetchone()
-        meta["scene_count"] = row["total_scenes"] if row else 0
+        meta["event_count"] = row["total_events"] if row else 0
         meta["character_count"] = conn.execute(
             "SELECT COUNT(*) FROM characters WHERE material_id = ?", (material_id,)
         ).fetchone()[0]
@@ -114,7 +114,7 @@ def get_material(material_id: str) -> Optional[dict]:
     meta["has_characters"] = (nd / "characters.yaml").exists()
     meta["has_tags"] = (nd / "tags.yaml").exists()
     meta["has_stats"] = (nd / "stats.yaml").exists()
-    meta["has_scenes"] = (nd / "scenes").is_dir()
+    meta["has_events"] = (nd / "events").is_dir()
 
     return meta
 
@@ -146,63 +146,63 @@ def get_stats_html(material_id: str) -> Optional[str]:
     return path.read_text(encoding="utf-8")
 
 
-# ── Scenes ─────────────────────────────────────────────────────────────
+# ── Events ─────────────────────────────────────────────────────────────
 
 
-def get_scenes(material_id: str, page: int = 1, limit: int = 50) -> dict:
+def get_events(material_id: str, page: int = 1, limit: int = 50) -> dict:
     if not DB_PATH.exists():
-        return {"total": 0, "page": page, "limit": limit, "scenes": []}
+        return {"total": 0, "page": page, "limit": limit, "events": []}
 
     conn = _get_db()
     offset = (page - 1) * limit
 
     total = conn.execute(
-        "SELECT COUNT(*) FROM scenes WHERE material_id = ?", (material_id,)
+        "SELECT COUNT(*) FROM events WHERE material_id = ?", (material_id,)
     ).fetchone()[0]
 
     rows = conn.execute(
-        """SELECT scene_id, chapter, title, summary, tension, pacing,
+        """SELECT event_id, chapter, title, summary, tension, pacing,
                   pov, power_dynamic, moral_spectrum, plot_stage, scale
-           FROM scenes WHERE material_id = ?
-           ORDER BY scene_id LIMIT ? OFFSET ?""",
+           FROM events WHERE material_id = ?
+           ORDER BY event_id LIMIT ? OFFSET ?""",
         (material_id, limit, offset),
     ).fetchall()
 
-    scenes = []
+    events = []
     for row in rows:
-        scene = dict(row)
+        event = dict(row)
         tags = {}
         for tr in conn.execute(
-            "SELECT dimension, value FROM scene_tags WHERE scene_id = ? AND material_id = ?",
-            (row["scene_id"], material_id),
+            "SELECT dimension, value FROM event_tags WHERE event_id = ? AND material_id = ?",
+            (row["event_id"], material_id),
         ):
             tags.setdefault(tr["dimension"], []).append(tr["value"])
-        scene["tags"] = tags
+        event["tags"] = tags
 
-        scene["characters"] = [
+        event["characters"] = [
             cr["character_name"]
             for cr in conn.execute(
-                "SELECT character_name FROM scene_characters WHERE scene_id = ? AND material_id = ?",
-                (row["scene_id"], material_id),
+                "SELECT character_name FROM event_characters WHERE event_id = ? AND material_id = ?",
+                (row["event_id"], material_id),
             )
         ]
-        scenes.append(scene)
+        events.append(event)
 
     conn.close()
-    return {"total": total, "page": page, "limit": limit, "scenes": scenes}
+    return {"total": total, "page": page, "limit": limit, "events": events}
 
 
-def get_scene_detail(material_id: str, scene_id: str):
-    scene_path = _novel_dir(material_id) / "scenes" / f"{scene_id}.yaml"
-    if scene_path.exists():
-        return _read_yaml(scene_path)
+def get_event_detail(material_id: str, event_id: str):
+    event_path = _novel_dir(material_id) / "events" / f"{event_id}.yaml"
+    if event_path.exists():
+        return _read_yaml(event_path)
 
     if not DB_PATH.exists():
         return None
     conn = _get_db()
     row = conn.execute(
-        "SELECT * FROM scenes WHERE scene_id = ? AND material_id = ?",
-        (scene_id, material_id),
+        "SELECT * FROM events WHERE event_id = ? AND material_id = ?",
+        (event_id, material_id),
     ).fetchone()
     conn.close()
     return dict(row) if row else None
@@ -211,7 +211,7 @@ def get_scene_detail(material_id: str, scene_id: str):
 # ── Search ─────────────────────────────────────────────────────────────
 
 
-def search_scenes(filters: dict) -> dict:
+def search_events(filters: dict) -> dict:
     if not DB_PATH.exists():
         return {"query": filters, "total": 0, "results": [], "relaxed": False}
 
@@ -238,7 +238,7 @@ def search_scenes(filters: dict) -> dict:
         ids = {
             (r[0], r[1])
             for r in conn.execute(
-                f"SELECT DISTINCT scene_id, material_id FROM scene_tags WHERE dimension=? AND value IN ({ph})",
+                f"SELECT DISTINCT event_id, material_id FROM event_tags WHERE dimension=? AND value IN ({ph})",
                 [dim, *vals],
             )
         }
@@ -248,7 +248,7 @@ def search_scenes(filters: dict) -> dict:
         ids = {
             (r[0], r[1])
             for r in conn.execute(
-                "SELECT DISTINCT scene_id, material_id FROM scene_characters WHERE character_name=?",
+                "SELECT DISTINCT event_id, material_id FROM event_characters WHERE character_name=?",
                 (character_filter,),
             )
         }
@@ -258,7 +258,7 @@ def search_scenes(filters: dict) -> dict:
         ids = {
             (r[0], r[1])
             for r in conn.execute(
-                "SELECT scene_id, material_id FROM scenes WHERE material_id=?", (material_filter,)
+                "SELECT event_id, material_id FROM events WHERE material_id=?", (material_filter,)
             )
         }
         candidate_sets.append(ids)
@@ -289,23 +289,23 @@ def search_scenes(filters: dict) -> dict:
     params: list = []
     if result_ids:
         where_clauses = " OR ".join(
-            "(s.scene_id=? AND s.material_id=?)" for _ in result_ids
+            "(s.event_id=? AND s.material_id=?)" for _ in result_ids
         )
         for sid, mid in result_ids:
             params.extend([sid, mid])
         sql = f"""
-            SELECT s.scene_id, s.material_id, s.chapter, s.title, s.summary,
+            SELECT s.event_id, s.material_id, s.chapter, s.title, s.summary,
                    s.tension, s.pacing, s.plot_stage, s.power_dynamic, s.scale,
                    n.name as novel_name
-            FROM scenes s LEFT JOIN novels n ON s.material_id=n.material_id
+            FROM events s LEFT JOIN novels n ON s.material_id=n.material_id
             WHERE ({where_clauses})
         """
     else:
         sql = """
-            SELECT s.scene_id, s.material_id, s.chapter, s.title, s.summary,
+            SELECT s.event_id, s.material_id, s.chapter, s.title, s.summary,
                    s.tension, s.pacing, s.plot_stage, s.power_dynamic, s.scale,
                    n.name as novel_name
-            FROM scenes s LEFT JOIN novels n ON s.material_id=n.material_id
+            FROM events s LEFT JOIN novels n ON s.material_id=n.material_id
             WHERE 1=1
         """
     if tension_min is not None:
@@ -314,30 +314,30 @@ def search_scenes(filters: dict) -> dict:
     if tension_max is not None:
         sql += " AND s.tension <= ?"
         params.append(tension_max)
-    sql += f" ORDER BY s.tension DESC, s.scene_id LIMIT {limit}"
+    sql += f" ORDER BY s.tension DESC, s.event_id LIMIT {limit}"
 
     rows = conn.execute(sql, params).fetchall()
     results = []
     for row in rows:
-        sid = row["scene_id"]
+        sid = row["event_id"]
         mid = row["material_id"]
-        scene_tags: dict[str, list[str]] = {}
+        event_tags: dict[str, list[str]] = {}
         for tr in conn.execute(
-            "SELECT dimension, value FROM scene_tags WHERE scene_id=? AND material_id=?", (sid, mid)
+            "SELECT dimension, value FROM event_tags WHERE event_id=? AND material_id=?", (sid, mid)
         ):
-            scene_tags.setdefault(tr["dimension"], []).append(tr["value"])
+            event_tags.setdefault(tr["dimension"], []).append(tr["value"])
 
         chars = [
             cr[0]
             for cr in conn.execute(
-                "SELECT character_name FROM scene_characters WHERE scene_id=? AND material_id=?", (sid, mid)
+                "SELECT character_name FROM event_characters WHERE event_id=? AND material_id=?", (sid, mid)
             )
         ]
 
         match_count = 0
         matched_dims = []
         for dim, vals in tag_filters.items():
-            matched_vals = [v for v in vals if v in scene_tags.get(dim, [])]
+            matched_vals = [v for v in vals if v in event_tags.get(dim, [])]
             if matched_vals:
                 match_count += 1
                 matched_dims.append(f"{dim}={','.join(matched_vals)}")
@@ -350,7 +350,7 @@ def search_scenes(filters: dict) -> dict:
 
         results.append(
             {
-                "scene_id": sid,
+                "event_id": sid,
                 "material_id": row["material_id"],
                 "novel": row["novel_name"] or row["material_id"],
                 "chapter": row["chapter"],
@@ -358,7 +358,7 @@ def search_scenes(filters: dict) -> dict:
                 "summary": row["summary"],
                 "tension": row["tension"],
                 "characters": chars,
-                "tags": scene_tags,
+                "tags": event_tags,
                 "matched": matched_dims,
                 "score": score,
             }
@@ -427,7 +427,7 @@ def search_characters(filters: dict) -> dict:
             item["psychology"] = psych
 
         item["appearance_count"] = conn.execute(
-            "SELECT COUNT(*) FROM scene_characters WHERE character_name=?",
+            "SELECT COUNT(*) FROM event_characters WHERE character_name=?",
             (row["name"],),
         ).fetchone()[0]
         results.append(item)
@@ -442,17 +442,17 @@ def search_text(query: str, limit: int = 20) -> dict:
 
     conn = _get_db()
     rows = conn.execute(
-        """SELECT s.scene_id, s.material_id, s.chapter, s.title, s.summary,
+        """SELECT s.event_id, s.material_id, s.chapter, s.title, s.summary,
                   s.tension, s.plot_stage, n.name as novel_name
-           FROM scenes s LEFT JOIN novels n ON s.material_id=n.material_id
+           FROM events s LEFT JOIN novels n ON s.material_id=n.material_id
            WHERE s.summary LIKE ? OR s.title LIKE ?
-           ORDER BY s.scene_id LIMIT ?""",
+           ORDER BY s.event_id LIMIT ?""",
         (f"%{query}%", f"%{query}%", limit),
     ).fetchall()
 
     results = [
         {
-            "scene_id": r["scene_id"],
+            "event_id": r["event_id"],
             "novel": r["novel_name"] or r["material_id"],
             "material_id": r["material_id"],
             "chapter": r["chapter"],
@@ -471,48 +471,48 @@ def search_text(query: str, limit: int = 20) -> dict:
 
 def get_dashboard_stats() -> dict:
     if not DB_PATH.exists():
-        return {"novels": 0, "scenes": 0, "characters": 0, "tag_records": 0}
+        return {"novels": 0, "events": 0, "characters": 0, "tag_records": 0}
 
     conn = _get_db()
     stats: dict = {}
 
     stats["novels"] = conn.execute("SELECT COUNT(*) FROM novels").fetchone()[0]
-    stats["scenes"] = conn.execute("SELECT COUNT(*) FROM scenes").fetchone()[0]
+    stats["events"] = conn.execute("SELECT COUNT(*) FROM events").fetchone()[0]
     stats["characters"] = conn.execute("SELECT COUNT(*) FROM characters").fetchone()[0]
-    stats["tag_records"] = conn.execute("SELECT COUNT(*) FROM scene_tags").fetchone()[0]
+    stats["tag_records"] = conn.execute("SELECT COUNT(*) FROM event_tags").fetchone()[0]
 
     stats["per_novel"] = [
-        {"material_id": r[0], "name": r[1], "scenes": r[2]}
+        {"material_id": r[0], "name": r[1], "events": r[2]}
         for r in conn.execute(
-            "SELECT material_id, name, total_scenes FROM novels ORDER BY total_scenes DESC"
+            "SELECT material_id, name, total_events FROM novels ORDER BY total_events DESC"
         )
     ]
 
-    stats["top_scene_types"] = [
+    stats["top_event_types"] = [
         {"value": r[0], "count": r[1]}
         for r in conn.execute(
-            "SELECT value, COUNT(*) c FROM scene_tags WHERE dimension='scene_type' GROUP BY value ORDER BY c DESC LIMIT 15"
+            "SELECT value, COUNT(*) c FROM event_tags WHERE dimension='event_type' GROUP BY value ORDER BY c DESC LIMIT 15"
         )
     ]
 
     stats["top_emotions"] = [
         {"value": r[0], "count": r[1]}
         for r in conn.execute(
-            "SELECT value, COUNT(*) c FROM scene_tags WHERE dimension='emotion' GROUP BY value ORDER BY c DESC LIMIT 15"
+            "SELECT value, COUNT(*) c FROM event_tags WHERE dimension='emotion' GROUP BY value ORDER BY c DESC LIMIT 15"
         )
     ]
 
     stats["tension_distribution"] = [
         {"tension": r[0], "count": r[1]}
         for r in conn.execute(
-            "SELECT tension, COUNT(*) c FROM scenes WHERE tension>0 GROUP BY tension ORDER BY tension"
+            "SELECT tension, COUNT(*) c FROM events WHERE tension>0 GROUP BY tension ORDER BY tension"
         )
     ]
 
     stats["top_techniques"] = [
         {"value": r[0], "count": r[1]}
         for r in conn.execute(
-            "SELECT value, COUNT(*) c FROM scene_tags WHERE dimension='technique' GROUP BY value ORDER BY c DESC LIMIT 10"
+            "SELECT value, COUNT(*) c FROM event_tags WHERE dimension='technique' GROUP BY value ORDER BY c DESC LIMIT 10"
         )
     ]
 
@@ -559,7 +559,7 @@ def merge_tag_values(dimension: str, source: str, target: str) -> dict:
     if DB_PATH.exists():
         conn = _get_db()
         conn.execute(
-            "UPDATE scene_tags SET value=? WHERE dimension=? AND value=?",
+            "UPDATE event_tags SET value=? WHERE dimension=? AND value=?",
             (target, dimension, source),
         )
         updated = conn.total_changes
@@ -580,7 +580,7 @@ def get_tag_usage() -> dict:
     conn = _get_db()
     usage: dict[str, list] = {}
     for r in conn.execute(
-        "SELECT dimension, value, COUNT(*) c FROM scene_tags GROUP BY dimension, value ORDER BY dimension, c DESC"
+        "SELECT dimension, value, COUNT(*) c FROM event_tags GROUP BY dimension, value ORDER BY dimension, c DESC"
     ):
         usage.setdefault(r["dimension"], []).append({"value": r["value"], "count": r["c"]})
     conn.close()

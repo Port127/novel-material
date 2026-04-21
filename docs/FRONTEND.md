@@ -53,8 +53,8 @@ frontend/
     └── pages/
         ├── Dashboard.tsx     # 仪表盘（总览统计 + 图表）
         ├── MaterialList.tsx  # 素材列表（卡片网格）
-        ├── MaterialDetail.tsx # 素材详情（多 Tab：概览/大纲/世界观/人物/标签/场景/统计）
-        ├── SceneSearch.tsx   # 场景搜索（标签多选 + 全文搜索双模式）
+        ├── MaterialDetail.tsx # 素材详情（多 Tab：概览/大纲/世界观/人物/标签/事件/统计）
+        ├── EventSearch.tsx   # 事件搜索（标签多选 + 全文搜索双模式）
         ├── CharacterSearch.tsx # 人物搜索（条件筛选 + 人物卡片）
         ├── TagDictionary.tsx # 标签字典（展开/收起 + 新增/合并管理）
         ├── Upload.tsx        # 上传小说（拖拽 + 元信息填写）
@@ -68,7 +68,7 @@ frontend/
 | `/` | Dashboard | 仪表盘首页 |
 | `/materials` | MaterialList | 素材列表 |
 | `/materials/:id` | MaterialDetail | 素材详情 |
-| `/search/scenes` | SceneSearch | 场景搜索 |
+| `/search/events` | EventSearch | 事件搜索 |
 | `/search/characters` | CharacterSearch | 人物搜索 |
 | `/tags` | TagDictionary | 标签字典 |
 | `/upload` | Upload | 上传小说 |
@@ -85,18 +85,18 @@ frontend/
 数据来源: `GET /api/stats`
 
 展示内容：
-- 四个数字卡片：小说总数、场景总数、人物总数、标签记录数
-- 场景类型 Top 10 饼图 (ECharts)
+- 四个数字卡片：小说总数、事件总数、人物总数、标签记录数
+- 事件类型 Top 10 饼图 (ECharts)
 - 张力分布柱状图 (ECharts)
 - 情绪 Top 10 条形图
-- 每部小说场景数对比
+- 每部小说事件数对比
 
 ### MaterialList（素材列表）
 
 数据来源: `GET /api/materials`
 
 - 卡片网格展示所有素材
-- 每张卡片显示：书名、作者、状态标签、场景数、添加日期
+- 每张卡片显示：书名、作者、状态标签、事件数、添加日期
 - 点击卡片跳转到详情页
 
 ### MaterialDetail（素材详情）
@@ -112,8 +112,8 @@ frontend/
 | 世界观 | `GET /api/materials/{id}/worldbuilding` | 按分类（力量体系/地理/势力等）卡片展示 |
 | 人物 | `GET /api/materials/{id}/characters` | 人物卡片（角色图标 + 别名 + 特质标签 + 弧线时间线 + 出场统计） |
 | 标签 | `GET /api/materials/{id}/tags` | 分组 badge（类型/主题/基调/文笔/套路/叙事结构） |
-| 场景 | `GET /api/materials/{id}/scenes` | 可展开的场景列表，带分页，展开显示摘要/人物/标签 |
-| 统计 | `GET /api/materials/{id}/stats` | 数字卡片 + 张力柱状图 + 场景类型饼图 + 情绪条形图 + 人物 Top 10 + 转折点时间线 + 钩子统计 + 写作技法标签 |
+| 事件 | `GET /api/materials/{id}/scenes` | 可展开的事件列表，带分页，展开显示摘要/人物/标签 |
+| 统计 | `GET /api/materials/{id}/stats` | 数字卡片 + 张力柱状图 + 事件类型饼图 + 情绪条形图 + 人物 Top 10 + 转折点时间线 + 钩子统计 + 写作技法标签 |
 
 **Pipeline 操作面板：**
 - 四个可触发按钮：入库检查 / 格式清洗 / 构建索引 / 分析(LLM)
@@ -121,7 +121,7 @@ frontend/
 - 完成状态绿色标记，运行中显示加载动画
 - 错误信息红色提示
 
-### SceneSearch（场景搜索）
+### EventSearch（事件搜索）
 
 双模式切换（顶部 Tab）：
 
@@ -133,13 +133,13 @@ frontend/
   - 每个维度下所有标签值以**可点击 checkbox** 形式呈现（支持多选）
   - 已选标签高亮并带勾号，层级标题旁有选中指示
 - 右侧结果区：独立滚动
-- 结果卡片：场景 ID、标题、张力、来源小说/章节、摘要、匹配标签（绿色）、全部标签（按维度着色）、出场人物
+- 结果卡片：事件 ID、标题、张力、来源小说/章节、摘要、匹配标签（绿色）、全部标签（按维度着色）、出场人物
 
 **全文搜索模式：**
 - 搜索框 + 回车触发
 - 结果卡片展示同上
 
-数据来源: `GET /api/search/scenes` / `GET /api/search/text`
+数据来源: `GET /api/search/events` / `GET /api/search/text`
 
 ### CharacterSearch（人物搜索）
 
@@ -197,10 +197,10 @@ frontend/
 | `api.getWorldbuilding(id)` | `GET /api/materials/{id}/worldbuilding` |
 | `api.getCharacters(id)` | `GET /api/materials/{id}/characters` |
 | `api.getNovelTags(id)` | `GET /api/materials/{id}/tags` |
-| `api.getScenes(id, page, limit)` | `GET /api/materials/{id}/scenes` |
-| `api.getScene(id, sceneId)` | `GET /api/materials/{id}/scenes/{sceneId}` |
+| `api.getEvents(id, page, limit)` | `GET /api/materials/{id}/events` |
+| `api.getEvent(id, eventId)` | `GET /api/materials/{id}/events/{eventId}` |
 | `api.getMaterialStats(id)` | `GET /api/materials/{id}/stats` |
-| `api.searchScenes(filters)` | `GET /api/search/scenes` |
+| `api.searchEvents(filters)` | `GET /api/search/events` |
 | `api.searchCharacters(filters)` | `GET /api/search/characters` |
 | `api.searchText(query, limit)` | `GET /api/search/text` |
 | `api.getTagDict()` | `GET /api/tags` |
@@ -227,11 +227,11 @@ frontend/
 
 ## 标签体系
 
-6 个场景标签层级（20 个维度），前端在 `src/lib/utils.ts` 中定义：
+6 个事件标签层级（20 个维度），前端在 `src/lib/utils.ts` 中定义：
 
 | 层级 | 维度 | 配色 |
 |------|------|------|
-| A. 内容层 | scene_type / conflict / stakes | 玫红 |
+| A. 内容层 | event_type / conflict / stakes | 玫红 |
 | B. 人物层 | relationship / interaction / power_dynamic / character_moment / moral_spectrum | 紫色 |
 | C. 情感层 | emotion / reader_effect | 琥珀 |
 | D. 结构层 | plot_stage / plot_function / pacing | 蓝色 |
@@ -253,9 +253,9 @@ frontend/
 | `PipelineStatus` | Pipeline 状态 |
 | `PipelineStatusResponse` | Pipeline API 响应 |
 | `DashboardStats` | 仪表盘统计数据 |
-| `SceneItem` | 场景数据 |
-| `ScenesResponse` | 分页场景列表 |
-| `SceneSearchResponse` | 场景搜索结果 |
+| `EventItem` | 事件数据 |
+| `EventsResponse` | 分页事件列表 |
+| `EventSearchResponse` | 事件搜索结果 |
 | `CharacterItem` | 人物数据 |
 | `CharacterSearchResponse` | 人物搜索结果 |
 | `TextSearchResponse` | 全文搜索结果 |

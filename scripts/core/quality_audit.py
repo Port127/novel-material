@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 """
-quality_audit.py — 场景标注质量审计脚本
+quality_audit.py — 事件标注质量审计脚本
 
 纯确定性检查，不依赖 LLM。检测标签多样性、空字段率、质量漂移。
-可审计全书或单个批次。结果写入 meta.yaml 的 scene_batches 字段。
+可审计全书或单个批次。结果写入 meta.yaml 的 event_batches 字段。
 
 用法:
     python scripts/core/quality_audit.py <material_id>                    # 全书审计
@@ -20,7 +20,7 @@ from datetime import datetime
 from collections import Counter, defaultdict
 
 TAG_LIST_FIELDS = [
-    'scene_type', 'conflict', 'stakes',
+    'event_type', 'conflict', 'stakes',
     'relationship', 'interaction', 'character_moment',
     'emotion', 'reader_effect',
     'plot_function',
@@ -37,7 +37,7 @@ ALL_TAG_FIELDS = TAG_LIST_FIELDS + TAG_SCALAR_FIELDS
 
 REQUIRED_FIELDS = [
     'id', 'chapter', 'title', 'summary',
-    'scene_type', 'conflict', 'stakes',
+    'event_type', 'conflict', 'stakes',
     'characters', 'relationship', 'interaction',
     'power_dynamic', 'character_moment', 'moral_spectrum',
     'emotion', 'tension', 'reader_effect',
@@ -55,62 +55,68 @@ def _as_list(val):
     return [str(val)]
 
 
-def load_scenes(scenes_dir: Path, chapter_range: str = None):
-    """Load scene YAML files, optionally filtered by chapter range."""
-    scene_files = sorted(scenes_dir.glob("ch*.yaml"))
-    if not scene_files:
+def load_events(events_dir: Path, chapter_range: str = None):
+    """Load event YAML files, optionally filtered by chapter range."""
+    event_files = sorted(events_dir.glob("ev*.yaml"))
+    if not event_files:
         return []
 
     if chapter_range:
         start, end = map(int, chapter_range.split('-'))
         filtered = []
-        for sf in scene_files:
-            stem = sf.stem
+        for ef in event_files:
+            stem = ef.stem
             try:
-                ch_num = int(stem.split('_')[0].replace('ch', ''))
-                if start <= ch_num <= end:
-                    filtered.append(sf)
-            except (ValueError, IndexError):
+                # Extract chapter number from event ID (e.g., ev_main_001 -> check if related to chapter)
+                # For now, use a simpler approach: check if the file name contains chapter info
+                # or read the file to get chapter field
+                with open(ef, 'r', encoding='utf-8') as f:
+                    data = yaml.safe_load(f)
+                if data and 'chapters' in data:
+                    ch_nums = data.get('chapters', [])
+                    if isinstance(ch_nums, list) and any(start <= int(ch) <= end for ch in ch_nums if isinstance(ch, (int, str)) and str(ch).isdigit()):
+                        filtered.append(ef)
+            except (ValueError, IndexError, yaml.YAMLError):
                 continue
-        scene_files = filtered
+        event_files = filtered
 
-    scenes = []
-    for sf in scene_files:
+    events = []
+    for ef in event_files:
         try:
-            with open(sf, 'r', encoding='utf-8') as f:
+            with open(ef, 'r', encoding='utf-8') as f:
                 data = yaml.safe_load(f)
             if data:
-                data['_file'] = sf.name
-                scenes.append(data)
+                data['_file'] = ef.name
+                events.append(data)
         except yaml.YAMLError:
-            scenes.append({'_file': sf.name, '_parse_error': True})
-    return scenes
+            events.append({'_file': ef.name, '_parse_error': True})
+    return events
 
 
-def compute_batch_quality(scenes: list) -> dict:
-    """Compute quality metrics for a batch of scenes."""
-    if not scenes:
-        return {'status': 'empty', 'scenes_count': 0}
+def compute_batch_quality(events: list) -> dict:
+    """Compute quality metrics for a batch of events."""
+    if not events:
+        return {'status': 'empty', 'events_count': 0}
 
-    valid_scenes = [s for s in scenes if not s.get('_parse_error')]
-    parse_errors = len(scenes) - len(valid_scenes)
+    valid_events = [e for e in events if not e.get('_parse_error')]
+    parse_errors = len(events) - len(valid_events)
 
-    if not valid_scenes:
+    if not valid_events:
         return {
             'status': 'failed',
-            'scenes_count': len(scenes),
+            'events_count': len(events),
             'parse_errors': parse_errors,
         }
 
-    n = len(valid_scenes)
+    n = len(valid_events)
 
     # 1. Tag combination uniqueness
     tag_combos = []
-    for s in valid_scenes:
+    for e in valid_events:
         combo = tuple(sorted(
-            _as_list(s.get('scene_type')) +
-            _as_list(s.get('emotion')) +
-            _as_list(s.get('conflict'))
+            _as_list(e.get('event_type')) +
+            _as_list(e.get('emotion')) +
+            _as_list(e.get('conflict'))
         ))
         tag_combos.append(combo)
     unique_combos = len(set(tag_combos))
@@ -119,40 +125,40 @@ def compute_batch_quality(scenes: list) -> dict:
     # 2. Empty field rate
     empty_count = 0
     total_checks = 0
-    for s in valid_scenes:
+    for e in valid_events:
         for field in TAG_LIST_FIELDS:
             total_checks += 1
-            val = s.get(field)
+            val = e.get(field)
             if val is None or val == [] or val == '':
                 empty_count += 1
     empty_field_rate = round(empty_count / total_checks, 3) if total_checks > 0 else 0
 
     # 3. Tension distribution
     tension_dist = Counter()
-    for s in valid_scenes:
-        t = s.get('tension', 0)
+    for e in valid_events:
+        t = e.get('tension', 0)
         tension_dist[int(t)] += 1
     tension_dist = dict(sorted(tension_dist.items()))
 
-    # 4. Average tags per scene
+    # 4. Average tags per event
     total_tags = 0
-    for s in valid_scenes:
+    for e in valid_events:
         for field in TAG_LIST_FIELDS:
-            total_tags += len(_as_list(s.get(field)))
+            total_tags += len(_as_list(e.get(field)))
         for field in TAG_SCALAR_FIELDS:
-            if s.get(field):
+            if e.get(field):
                 total_tags += 1
     avg_tags = round(total_tags / n, 1) if n > 0 else 0
 
     # 5. Title quality check
     bad_titles = 0
-    for s in valid_scenes:
-        title = str(s.get('title', ''))
-        if not title or title.startswith('场景') or title.replace('场景', '').isdigit():
+    for e in valid_events:
+        title = str(e.get('title', ''))
+        if not title or title.startswith('事件') or title.replace('事件', '').isdigit():
             bad_titles += 1
 
     # 6. Summary uniqueness
-    summaries = [str(s.get('summary', ''))[:30] for s in valid_scenes]
+    summaries = [str(e.get('summary', ''))[:30] for e in valid_events]
     unique_summaries = len(set(summaries))
     summary_diversity = round(unique_summaries / n, 3) if n > 0 else 0
 
@@ -160,9 +166,7 @@ def compute_batch_quality(scenes: list) -> dict:
     t5_count = tension_dist.get(5, 0)
     t5_rate = round(t5_count / n, 3) if n > 0 else 0
 
-    # Scale thresholds based on batch size — tag combos naturally repeat in
-    # larger batches because the vocabulary of scene_type+emotion+conflict is
-    # finite. Strict thresholds only make sense for small batches.
+    # Scale thresholds based on batch size
     if n <= 30:
         diversity_threshold = 0.5
     elif n <= 80:
@@ -172,7 +176,7 @@ def compute_batch_quality(scenes: list) -> dict:
 
     issues = []
     if tag_diversity < diversity_threshold:
-        issues.append(f"标签多样性过低: {tag_diversity} (阈值={diversity_threshold}, 场景数={n})")
+        issues.append(f"标签多样性过低: {tag_diversity} (阈值={diversity_threshold}, 事件数={n})")
     if empty_field_rate > 0.3:
         issues.append(f"空字段率过高: {empty_field_rate}")
     if bad_titles > 0:
@@ -186,14 +190,14 @@ def compute_batch_quality(scenes: list) -> dict:
 
     return {
         'status': status,
-        'scenes_count': n,
+        'events_count': n,
         'parse_errors': parse_errors,
         'quality': {
             'tag_diversity': tag_diversity,
             'empty_field_rate': empty_field_rate,
             'tension_distribution': tension_dist,
             'tension_5_rate': t5_rate,
-            'avg_tags_per_scene': avg_tags,
+            'avg_tags_per_event': avg_tags,
             'summary_diversity': summary_diversity,
             'bad_titles': bad_titles,
         },
@@ -222,8 +226,8 @@ def detect_quality_drift(batches: list) -> dict:
     late_div = avg_metric(late, 'tag_diversity')
     early_empty = avg_metric(early, 'empty_field_rate')
     late_empty = avg_metric(late, 'empty_field_rate')
-    early_tags = avg_metric(early, 'avg_tags_per_scene')
-    late_tags = avg_metric(late, 'avg_tags_per_scene')
+    early_tags = avg_metric(early, 'avg_tags_per_event')
+    late_tags = avg_metric(late, 'avg_tags_per_event')
 
     warnings = []
     if late_div < early_div * 0.7:
@@ -256,35 +260,37 @@ def detect_quality_drift(batches: list) -> dict:
 def full_audit(material_id: str, write_report: bool = False):
     """Run full-book quality audit."""
     base_dir = Path(f"data/novels/{material_id}")
-    scenes_dir = base_dir / "scenes"
+    events_dir = base_dir / "events"
     meta_path = base_dir / "meta.yaml"
 
-    if not scenes_dir.exists():
-        print(f"ERROR: 场景目录不存在: {scenes_dir}", file=sys.stderr)
+    if not events_dir.exists():
+        print(f"ERROR: 事件目录不存在: {events_dir}", file=sys.stderr)
         sys.exit(1)
 
-    all_scenes = load_scenes(scenes_dir)
-    total = len(all_scenes)
-    print(f"场景文件总数: {total}")
+    all_events = load_events(events_dir)
+    total = len(all_events)
+    print(f"事件文件总数: {total}")
 
     if total == 0:
-        print("无场景文件，跳过审计")
+        print("无事件文件，跳过审计")
         return
 
-    # Determine batch boundaries from scene IDs
+    # Determine batch boundaries from event IDs
     ch_nums = []
-    for s in all_scenes:
-        if s.get('_parse_error'):
+    for e in all_events:
+        if e.get('_parse_error'):
             continue
-        sid = s.get('id', s.get('_file', ''))
-        try:
-            ch_num = int(sid.split('_')[0].replace('ch', ''))
-            ch_nums.append(ch_num)
-        except (ValueError, IndexError):
-            continue
+        chapters = e.get('chapters', [])
+        if isinstance(chapters, list):
+            for ch in chapters:
+                try:
+                    ch_num = int(ch)
+                    ch_nums.append(ch_num)
+                except (ValueError, TypeError):
+                    continue
 
     if not ch_nums:
-        print("无法从场景ID解析章节号")
+        print("无法从事件数据解析章节号")
         return
 
     min_ch = min(ch_nums)
@@ -296,7 +302,7 @@ def full_audit(material_id: str, write_report: bool = False):
         with open(meta_path, 'r', encoding='utf-8') as f:
             meta = yaml.safe_load(f) or {}
         pipeline = meta.get('pipeline', {})
-        processed = pipeline.get('scenes_processed', [])
+        processed = pipeline.get('events_processed', [])
         if processed and isinstance(processed[0], str) and '-' in processed[0]:
             try:
                 first_range = processed[0]
@@ -310,11 +316,11 @@ def full_audit(material_id: str, write_report: bool = False):
     for batch_start in range(min_ch, max_ch + 1, batch_size):
         batch_end = min(batch_start + batch_size - 1, max_ch)
         batch_range = f"{batch_start}-{batch_end}"
-        batch_scenes = load_scenes(scenes_dir, batch_range)
-        if not batch_scenes:
+        batch_events = load_events(events_dir, batch_range)
+        if not batch_events:
             continue
 
-        result = compute_batch_quality(batch_scenes)
+        result = compute_batch_quality(batch_events)
         result['range'] = batch_range
         result['processed_at'] = datetime.now().isoformat()
         batch_results.append(result)
@@ -323,7 +329,7 @@ def full_audit(material_id: str, write_report: bool = False):
     drift = detect_quality_drift(batch_results)
 
     # Global stats
-    all_valid = [s for s in all_scenes if not s.get('_parse_error')]
+    all_valid = [e for e in all_events if not e.get('_parse_error')]
     global_quality = compute_batch_quality(all_valid)
 
     failed_batches = [b['range'] for b in batch_results if b['status'] == 'failed']
@@ -332,7 +338,7 @@ def full_audit(material_id: str, write_report: bool = False):
     print(f"\n{'='*50}")
     print(f"📊 质量审计报告 — {material_id}")
     print(f"{'='*50}")
-    print(f"场景总数: {total}")
+    print(f"事件总数: {total}")
     print(f"批次数: {len(batch_results)}")
     print(f"通过批次: {len(batch_results) - len(failed_batches)}")
     print(f"失败批次: {len(failed_batches)}")
@@ -343,7 +349,7 @@ def full_audit(material_id: str, write_report: bool = False):
     print(f"\n全书指标:")
     print(f"  标签多样性: {q.get('tag_diversity', 'N/A')}")
     print(f"  空字段率: {q.get('empty_field_rate', 'N/A')}")
-    print(f"  平均标签数/场景: {q.get('avg_tags_per_scene', 'N/A')}")
+    print(f"  平均标签数/事件: {q.get('avg_tags_per_event', 'N/A')}")
     print(f"  tension=5 占比: {q.get('tension_5_rate', 'N/A')}")
     print(f"  张力分布: {q.get('tension_distribution', {})}")
 
@@ -359,7 +365,7 @@ def full_audit(material_id: str, write_report: bool = False):
         report = {
             'material_id': material_id,
             'audited_at': datetime.now().isoformat(),
-            'total_scenes': total,
+            'total_events': total,
             'global_quality': global_quality.get('quality'),
             'drift': drift,
             'failed_batches': failed_batches,
@@ -374,7 +380,7 @@ def full_audit(material_id: str, write_report: bool = False):
     if meta_path.exists():
         with open(meta_path, 'r', encoding='utf-8') as f:
             meta = yaml.safe_load(f) or {}
-        meta['scene_batches'] = batch_results
+        meta['event_batches'] = batch_results
         meta['quality_drift'] = drift
         with open(meta_path, 'w', encoding='utf-8') as f:
             yaml.dump(meta, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
@@ -393,14 +399,14 @@ def batch_audit(material_id: str, batch_range: str):
 
     IMPORTANT: batch_range should cover ONLY the new batch (e.g. '181-200'),
     not a cumulative range from chapter 1 (e.g. '1-200'). Cumulative ranges
-    inflate scene counts and drag down tag_diversity unfairly.
+    inflate event counts and drag down tag_diversity unfairly.
     """
     base_dir = Path(f"data/novels/{material_id}")
-    scenes_dir = base_dir / "scenes"
+    events_dir = base_dir / "events"
     meta_path = base_dir / "meta.yaml"
 
-    if not scenes_dir.exists():
-        print(f"ERROR: 场景目录不存在: {scenes_dir}", file=sys.stderr)
+    if not events_dir.exists():
+        print(f"ERROR: 事件目录不存在: {events_dir}", file=sys.stderr)
         sys.exit(1)
 
     start, end = map(int, batch_range.split('-'))
@@ -409,12 +415,12 @@ def batch_audit(material_id: str, batch_range: str):
               f"可能是累积范围而非单批范围。建议只传入本批新增章节范围。",
               file=sys.stderr)
 
-    scenes = load_scenes(scenes_dir, batch_range)
-    if not scenes:
-        print(f"批次 {batch_range} 无场景文件")
+    events = load_events(events_dir, batch_range)
+    if not events:
+        print(f"批次 {batch_range} 无事件文件")
         return
 
-    result = compute_batch_quality(scenes)
+    result = compute_batch_quality(events)
     result['range'] = batch_range
     result['processed_at'] = datetime.now().isoformat()
 
@@ -422,10 +428,10 @@ def batch_audit(material_id: str, batch_range: str):
     status_icon = '✅' if result['status'] == 'passed' else '❌'
 
     print(f"{status_icon} 批次 {batch_range}: {result['status']}")
-    print(f"  场景数: {result['scenes_count']}")
+    print(f"  事件数: {result['events_count']}")
     print(f"  标签多样性: {q.get('tag_diversity', 'N/A')}")
     print(f"  空字段率: {q.get('empty_field_rate', 'N/A')}")
-    print(f"  平均标签数: {q.get('avg_tags_per_scene', 'N/A')}")
+    print(f"  平均标签数: {q.get('avg_tags_per_event', 'N/A')}")
 
     if result.get('issues'):
         print(f"  问题:")
@@ -439,7 +445,7 @@ def batch_audit(material_id: str, batch_range: str):
     else:
         meta = {}
 
-    batches = meta.get('scene_batches', [])
+    batches = meta.get('event_batches', [])
     found = False
     for i, b in enumerate(batches):
         if b.get('range') == batch_range:
@@ -449,7 +455,7 @@ def batch_audit(material_id: str, batch_range: str):
     if not found:
         batches.append(result)
 
-    meta['scene_batches'] = batches
+    meta['event_batches'] = batches
     with open(meta_path, 'w', encoding='utf-8') as f:
         yaml.dump(meta, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
 
@@ -458,7 +464,7 @@ def batch_audit(material_id: str, batch_range: str):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='场景标注质量审计')
+    parser = argparse.ArgumentParser(description='事件标注质量审计')
     parser.add_argument('material_id', help='素材 ID')
     parser.add_argument('--batch', help='审计单批（如 1-5, 6-10）', default=None)
     parser.add_argument('--report', action='store_true', help='输出 quality_report.yaml')

@@ -6,16 +6,16 @@ LLM 不再需要读索引文件，调用此脚本即可完成多维检索。
 输出精简的 YAML 结果，只含 top-N 关键字段。
 
 子命令:
-    scene       多维标签检索场景
+    event       多维标签检索事件
     character   检索人物
     text        全文搜索（summary）
     stats       数据库统计
 
 用法:
-    python scripts/core/search.py scene --scene-type 对决 --emotion 燃 --limit 10
-    python scripts/core/search.py scene --conflict 人与命运 --reader-effect 催泪 --tension-min 4
-    python scripts/core/search.py scene --character 陈汉升 --scene-type 对决
-    python scripts/core/search.py scene --material nm_novel_20260405_zhbk --emotion 悲伤
+    python scripts/core/search.py event --event-type 对决 --emotion 燃 --limit 10
+    python scripts/core/search.py event --conflict 人与命运 --reader-effect 催泪 --tension-min 4
+    python scripts/core/search.py event --character 陈汉升 --event-type 对决
+    python scripts/core/search.py event --material nm_novel_20260405_zhbk --emotion 悲伤
     python scripts/core/search.py character --archetype 导师 --material nm_novel_20260405_zhbk
     python scripts/core/search.py character --name 陈汉升
     python scripts/core/search.py text --query 告别 --limit 10
@@ -31,7 +31,7 @@ from pathlib import Path
 DB_PATH = Path("data/material.db")
 
 TAG_DIMENSIONS = [
-    'scene_type', 'conflict', 'stakes',
+    'event_type', 'conflict', 'stakes',
     'relationship', 'interaction', 'character_moment',
     'emotion', 'reader_effect',
     'plot_function', 'plot_stage',
@@ -49,7 +49,7 @@ def get_conn():
     return sqlite3.connect(str(DB_PATH))
 
 
-def search_scenes(args):
+def search_events(args):
     conn = get_conn()
     conn.row_factory = sqlite3.Row
 
@@ -71,32 +71,32 @@ def search_scenes(args):
         print("ERROR: 请至少提供一个筛选条件", file=sys.stderr)
         sys.exit(1)
 
-    # Strategy: intersect scene_ids from each tag filter
+    # Strategy: intersect event_ids from each tag filter
     candidate_sets = []
 
     for dim, val in tag_filters.items():
         cursor = conn.execute(
-            "SELECT DISTINCT scene_id FROM scene_tags WHERE dimension = ? AND value = ?",
+            "SELECT DISTINCT event_id FROM event_tags WHERE dimension = ? AND value = ?",
             (dim, val)
         )
-        scene_ids = {row[0] for row in cursor}
-        candidate_sets.append(scene_ids)
+        event_ids = {row[0] for row in cursor}
+        candidate_sets.append(event_ids)
 
     if character_filter:
         cursor = conn.execute(
-            "SELECT DISTINCT scene_id FROM scene_characters WHERE character_name = ?",
+            "SELECT DISTINCT event_id FROM event_characters WHERE character_name = ?",
             (character_filter,)
         )
-        scene_ids = {row[0] for row in cursor}
-        candidate_sets.append(scene_ids)
+        event_ids = {row[0] for row in cursor}
+        candidate_sets.append(event_ids)
 
     if material_filter:
         cursor = conn.execute(
-            "SELECT scene_id FROM scenes WHERE material_id = ?",
+            "SELECT event_id FROM events WHERE material_id = ?",
             (material_filter,)
         )
-        scene_ids = {row[0] for row in cursor}
-        candidate_sets.append(scene_ids)
+        event_ids = {row[0] for row in cursor}
+        candidate_sets.append(event_ids)
 
     # Intersect all sets (AND logic)
     if candidate_sets:
@@ -124,15 +124,15 @@ def search_scenes(args):
             conn.close()
             return
 
-    # Fetch scene details
+    # Fetch event details
     placeholders = ','.join('?' * len(result_ids))
     query = f"""
-        SELECT s.scene_id, s.material_id, s.chapter, s.title, s.summary,
+        SELECT s.event_id, s.material_id, s.chapter, s.title, s.summary,
                s.tension, s.pacing, s.plot_stage, s.power_dynamic, s.scale,
                n.name as novel_name
-        FROM scenes s
+        FROM events s
         LEFT JOIN novels n ON s.material_id = n.material_id
-        WHERE s.scene_id IN ({placeholders})
+        WHERE s.event_id IN ({placeholders})
     """
     params = list(result_ids)
 
@@ -143,7 +143,7 @@ def search_scenes(args):
         query += " AND s.tension <= ?"
         params.append(tension_max)
 
-    query += " ORDER BY s.tension DESC, s.scene_id"
+    query += " ORDER BY s.tension DESC, s.event_id"
     query += f" LIMIT {limit}"
 
     cursor = conn.execute(query, params)
@@ -152,22 +152,22 @@ def search_scenes(args):
     # Compute match score for each result
     results = []
     for row in rows:
-        scene_id = row['scene_id']
+        event_id = row['event_id']
 
-        # Get all tags for this scene
+        # Get all tags for this event
         tag_cursor = conn.execute(
-            "SELECT dimension, value FROM scene_tags WHERE scene_id = ?",
-            (scene_id,)
+            "SELECT dimension, value FROM event_tags WHERE event_id = ?",
+            (event_id,)
         )
-        scene_tags = {}
+        event_tags = {}
         for tr in tag_cursor:
             dim = tr[0]
-            scene_tags.setdefault(dim, []).append(tr[1])
+            event_tags.setdefault(dim, []).append(tr[1])
 
         # Get characters
         char_cursor = conn.execute(
-            "SELECT character_name FROM scene_characters WHERE scene_id = ?",
-            (scene_id,)
+            "SELECT character_name FROM event_characters WHERE event_id = ?",
+            (event_id,)
         )
         chars = [cr[0] for cr in char_cursor]
 
@@ -175,7 +175,7 @@ def search_scenes(args):
         match_count = 0
         matched_dims = []
         for dim, val in tag_filters.items():
-            if val in scene_tags.get(dim, []):
+            if val in event_tags.get(dim, []):
                 match_count += 1
                 matched_dims.append(f"{dim}={val}")
         if character_filter and character_filter in chars:
@@ -186,7 +186,7 @@ def search_scenes(args):
         score = round(match_count / total_filters, 2) if total_filters > 0 else 1.0
 
         results.append({
-            'scene_id': scene_id,
+            'event_id': event_id,
             'material_id': row['material_id'],
             'novel': row['novel_name'] or row['material_id'],
             'chapter': row['chapter'],
@@ -274,9 +274,9 @@ def search_characters(args):
         if psych:
             item['psychology'] = psych
 
-        # Count scene appearances
+        # Count event appearances
         count_cursor = conn.execute(
-            "SELECT COUNT(*) FROM scene_characters WHERE character_name = ?",
+            "SELECT COUNT(*) FROM event_characters WHERE character_name = ?",
             (row['name'],)
         )
         item['appearance_count'] = count_cursor.fetchone()[0]
@@ -299,12 +299,12 @@ def search_text(args):
     limit = args.limit
 
     cursor = conn.execute(
-        """SELECT s.scene_id, s.material_id, s.chapter, s.title, s.summary,
+        """SELECT s.event_id, s.material_id, s.chapter, s.title, s.summary,
                   s.tension, s.plot_stage, n.name as novel_name
-           FROM scenes s
+           FROM events s
            LEFT JOIN novels n ON s.material_id = n.material_id
            WHERE s.summary LIKE ? OR s.title LIKE ?
-           ORDER BY s.scene_id
+           ORDER BY s.event_id
            LIMIT ?""",
         (f"%{query_text}%", f"%{query_text}%", limit)
     )
@@ -313,7 +313,7 @@ def search_text(args):
     results = []
     for row in rows:
         results.append({
-            'scene_id': row['scene_id'],
+            'event_id': row['event_id'],
             'novel': row['novel_name'] or row['material_id'],
             'chapter': row['chapter'],
             'title': row['title'],
@@ -335,17 +335,17 @@ def show_stats(args):
 
     cursor = conn.execute("SELECT COUNT(*) FROM novels")
     n_novels = cursor.fetchone()[0]
-    cursor = conn.execute("SELECT COUNT(*) FROM scenes")
-    n_scenes = cursor.fetchone()[0]
-    cursor = conn.execute("SELECT COUNT(DISTINCT dimension) FROM scene_tags")
+    cursor = conn.execute("SELECT COUNT(*) FROM events")
+    n_events = cursor.fetchone()[0]
+    cursor = conn.execute("SELECT COUNT(DISTINCT dimension) FROM event_tags")
     n_dims = cursor.fetchone()[0]
-    cursor = conn.execute("SELECT COUNT(*) FROM scene_tags")
+    cursor = conn.execute("SELECT COUNT(*) FROM event_tags")
     n_tags = cursor.fetchone()[0]
     cursor = conn.execute("SELECT COUNT(*) FROM characters")
     n_chars = cursor.fetchone()[0]
 
     print(f"novels: {n_novels}")
-    print(f"scenes: {n_scenes}")
+    print(f"events: {n_events}")
     print(f"tag_dimensions: {n_dims}")
     print(f"tag_records: {n_tags}")
     print(f"characters: {n_chars}")
@@ -353,24 +353,24 @@ def show_stats(args):
     if n_novels > 0:
         print(f"\nper_novel:")
         cursor = conn.execute(
-            "SELECT material_id, name, total_scenes FROM novels ORDER BY material_id"
+            "SELECT material_id, name, total_events FROM novels ORDER BY material_id"
         )
         for row in cursor:
-            print(f"  - {row[0]}: {row[1]} ({row[2]} scenes)")
+            print(f"  - {row[0]}: {row[1]} ({row[2]} events)")
 
     # Top tag values
     if n_tags > 0:
-        print(f"\ntop_scene_types:")
+        print(f"\ntop_event_types:")
         cursor = conn.execute(
-            """SELECT value, COUNT(*) as cnt FROM scene_tags
-               WHERE dimension = 'scene_type' GROUP BY value ORDER BY cnt DESC LIMIT 10"""
+            """SELECT value, COUNT(*) as cnt FROM event_tags
+               WHERE dimension = 'event_type' GROUP BY value ORDER BY cnt DESC LIMIT 10"""
         )
         for row in cursor:
             print(f"  - {row[0]}: {row[1]}")
 
         print(f"\ntop_emotions:")
         cursor = conn.execute(
-            """SELECT value, COUNT(*) as cnt FROM scene_tags
+            """SELECT value, COUNT(*) as cnt FROM event_tags
                WHERE dimension = 'emotion' GROUP BY value ORDER BY cnt DESC LIMIT 10"""
         )
         for row in cursor:
@@ -383,33 +383,33 @@ def main():
     parser = argparse.ArgumentParser(description='素材库结构化检索')
     subparsers = parser.add_subparsers(dest='command', help='子命令')
 
-    # scene subcommand
-    scene_parser = subparsers.add_parser('scene', help='多维标签检索场景')
-    scene_parser.add_argument('--scene-type', dest='scene_type')
-    scene_parser.add_argument('--conflict')
-    scene_parser.add_argument('--stakes')
-    scene_parser.add_argument('--relationship')
-    scene_parser.add_argument('--interaction')
-    scene_parser.add_argument('--character-moment', dest='character_moment')
-    scene_parser.add_argument('--emotion')
-    scene_parser.add_argument('--reader-effect', dest='reader_effect')
-    scene_parser.add_argument('--plot-function', dest='plot_function')
-    scene_parser.add_argument('--plot-stage', dest='plot_stage')
-    scene_parser.add_argument('--technique')
-    scene_parser.add_argument('--dialogue-type', dest='dialogue_type')
-    scene_parser.add_argument('--info-delivery', dest='info_delivery')
-    scene_parser.add_argument('--setting')
-    scene_parser.add_argument('--time-weather', dest='time_weather')
-    scene_parser.add_argument('--pacing')
-    scene_parser.add_argument('--pov')
-    scene_parser.add_argument('--power-dynamic', dest='power_dynamic')
-    scene_parser.add_argument('--moral-spectrum', dest='moral_spectrum')
-    scene_parser.add_argument('--scale')
-    scene_parser.add_argument('--character', help='按人物名过滤')
-    scene_parser.add_argument('--material', help='限定素材ID')
-    scene_parser.add_argument('--tension-min', type=int, dest='tension_min')
-    scene_parser.add_argument('--tension-max', type=int, dest='tension_max')
-    scene_parser.add_argument('--limit', type=int, default=20)
+    # event subcommand
+    event_parser = subparsers.add_parser('event', help='多维标签检索事件')
+    event_parser.add_argument('--event-type', dest='event_type')
+    event_parser.add_argument('--conflict')
+    event_parser.add_argument('--stakes')
+    event_parser.add_argument('--relationship')
+    event_parser.add_argument('--interaction')
+    event_parser.add_argument('--character-moment', dest='character_moment')
+    event_parser.add_argument('--emotion')
+    event_parser.add_argument('--reader-effect', dest='reader_effect')
+    event_parser.add_argument('--plot-function', dest='plot_function')
+    event_parser.add_argument('--plot-stage', dest='plot_stage')
+    event_parser.add_argument('--technique')
+    event_parser.add_argument('--dialogue-type', dest='dialogue_type')
+    event_parser.add_argument('--info-delivery', dest='info_delivery')
+    event_parser.add_argument('--setting')
+    event_parser.add_argument('--time-weather', dest='time_weather')
+    event_parser.add_argument('--pacing')
+    event_parser.add_argument('--pov')
+    event_parser.add_argument('--power-dynamic', dest='power_dynamic')
+    event_parser.add_argument('--moral-spectrum', dest='moral_spectrum')
+    event_parser.add_argument('--scale')
+    event_parser.add_argument('--character', help='按人物名过滤')
+    event_parser.add_argument('--material', help='限定素材ID')
+    event_parser.add_argument('--tension-min', type=int, dest='tension_min')
+    event_parser.add_argument('--tension-max', type=int, dest='tension_max')
+    event_parser.add_argument('--limit', type=int, default=20)
 
     # character subcommand
     char_parser = subparsers.add_parser('character', help='检索人物')
@@ -430,8 +430,8 @@ def main():
 
     args = parser.parse_args()
 
-    if args.command == 'scene':
-        search_scenes(args)
+    if args.command == 'event':
+        search_events(args)
     elif args.command == 'character':
         search_characters(args)
     elif args.command == 'text':

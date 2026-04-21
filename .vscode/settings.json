@@ -1,6 +1,6 @@
 {
   "yaml.schemaStore.enable": false,
-  "yaml.schemas": {
-    "./docs/schemas/meta.json": "data/**/meta.yaml"
-  }
+  "yaml.customTags": [],
+  "yaml.format.enable": true,
+  "yaml.validate": false
 }

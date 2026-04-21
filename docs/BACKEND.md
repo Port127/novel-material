@@ -36,7 +36,7 @@ backend/
 ├── requirements.txt         # Python 依赖
 ├── routers/
 │   ├── materials.py         # 素材 CRUD 接口
-│   ├── search.py            # 场景/人物/全文检索接口
+│   ├── search.py            # 事件/人物/全文检索接口
 │   ├── tags.py              # 标签字典和管理接口
 │   └── pipeline.py          # 上传、Pipeline 触发、LLM 配置接口
 └── services/
@@ -50,7 +50,7 @@ backend/
 
 | 数据源 | 路径 | 说明 |
 |--------|------|------|
-| SQLite | `data/material.db` | 场景、人物、标签的索引数据库 |
+| SQLite | `data/material.db` | 事件、人物、标签的索引数据库 |
 | index.yaml | `data/index.yaml` | 素材注册清单 |
 | tags.yaml | `data/tags.yaml` | 全局标签字典 |
 | 小说目录 | `data/novels/{material_id}/` | 每部小说的 YAML 文件 |
@@ -65,7 +65,7 @@ backend/
 | `characters.yaml` | 人物体系（名册、弧线、关系） |
 | `tags.yaml` | 小说级标签 |
 | `stats.yaml` | 统计报告 |
-| `scenes/*.yaml` | 场景文件 |
+| `events/*.yaml` | 事件文件 |
 
 ---
 
@@ -96,7 +96,7 @@ backend/
     "folder": "novels/nm_novel_20260405_zhbk",
     "status": "complete",
     "added": "2026-04-05",
-    "scene_count": 884
+    "event_count": 884
   }
 ]
 ```
@@ -112,13 +112,13 @@ backend/
 | name | string | 书名 |
 | author | string | 作者 |
 | status | string | 状态 (raw / formatted / outlined / tagged / complete / refined) |
-| scene_count | number | 场景总数 |
+| event_count | number | 事件总数 |
 | character_count | number | 人物总数 |
 | has_outline | boolean | 是否有大纲 |
 | has_worldbuilding | boolean | 是否有世界观 |
 | has_characters | boolean | 是否有人物 |
 | has_tags | boolean | 是否有标签 |
-| has_scenes | boolean | 是否有场景 |
+| has_events | boolean | 是否有事件 |
 | has_stats | boolean | 是否有统计 |
 
 #### `GET /api/materials/{material_id}/outline`
@@ -176,9 +176,9 @@ backend/
 | style | object | 写作风格 (prose / strength) |
 | tropes | string[] | 套路 |
 
-#### `GET /api/materials/{material_id}/scenes`
+#### `GET /api/materials/{material_id}/events`
 
-分页返回场景列表。
+分页返回事件列表。
 
 **查询参数：**
 | 参数 | 类型 | 默认值 | 说明 |
@@ -192,16 +192,16 @@ backend/
   "total": 884,
   "page": 1,
   "limit": 50,
-  "scenes": [
+  "events": [
     {
-      "scene_id": "ch0001_s01",
+      "event_id": "ev0001",
       "chapter": "第一章",
-      "title": "场景标题",
-      "summary": "场景摘要",
+      "title": "事件标题",
+      "summary": "事件摘要",
       "tension": 3,
       "characters": ["陈汉升", "萧容鱼"],
       "tags": {
-        "scene_type": ["日常"],
+        "event_type": ["日常"],
         "emotion": ["平静"]
       }
     }
@@ -209,9 +209,9 @@ backend/
 }
 ```
 
-#### `GET /api/materials/{material_id}/scenes/{scene_id}`
+#### `GET /api/materials/{material_id}/events/{event_id}`
 
-返回单个场景的完整信息。
+返回单个事件的完整信息。
 
 #### `GET /api/materials/{material_id}/stats`
 
@@ -220,15 +220,15 @@ backend/
 **响应字段：**
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| basic | object | 基础统计 (total_chapters / total_scenes / avg_scenes_per_chapter) |
-| scene_type_distribution | object[] | 场景类型分布 (type / count / ratio) |
+| basic | object | 基础统计 (total_chapters / total_events / avg_events_per_chapter) |
+| event_type_distribution | object[] | 事件类型分布 (type / count / ratio) |
 | emotion_distribution | object[] | 情绪分布 (emotion / count) |
 | pacing | object | 节奏统计 |
 | pacing.tension_distribution | object | 张力分布 {"1": n, "2": n, ...} |
 | pacing.avg_tension | number | 平均张力 |
-| pacing.high_tension_scenes | number | 高张力场景数 |
+| pacing.high_tension_events | number | 高张力事件数 |
 | character_stats | object | 人物统计 (total_indexed / top_10) |
-| foreshadowing_stats | object | 钩子统计 (plant_scenes / payoff_scenes) |
+| foreshadowing_stats | object | 钩子统计 (plant_events / payoff_events) |
 | turning_points | object | 转折点 (total_in_outline / key_turning_points[]) |
 | technique_stats | object | 技法统计 (techniques_used[]) |
 
@@ -240,15 +240,15 @@ backend/
 
 ### 检索 (Search)
 
-#### `GET /api/search/scenes`
+#### `GET /api/search/events`
 
-多维标签检索场景。所有标签参数可选，多条件取交集；无交集结果时自动放宽为取并集排序。
+多维标签检索事件。所有标签参数可选，多条件取交集；无交集结果时自动放宽为取并集排序。
 
 **查询参数：**
 
 | 参数 | 类型 | 说明 |
 |------|------|------|
-| scene_type | string | 场景类型 |
+| event_type | string | 事件类型 |
 | conflict | string | 冲突类型 |
 | stakes | string | 赌注 |
 | relationship | string | 人物关系 |
@@ -282,14 +282,14 @@ backend/
   "relaxed": false,
   "results": [
     {
-      "scene_id": "ch0450_s01",
+      "event_id": "ev0450",
       "novel": "《我真没想重生啊》",
       "chapter": "450",
       "title": "修罗场爆发",
       "summary": "...",
       "tension": 5,
       "characters": ["陈汉升", "沈幼楚", "萧容鱼"],
-      "tags": { "scene_type": ["争吵"], "emotion": ["紧张"] },
+      "tags": { "event_type": ["争吵"], "emotion": ["紧张"] },
       "matched": ["emotion=紧张"],
       "score": 1.0
     }
@@ -313,7 +313,7 @@ backend/
 
 #### `GET /api/search/text`
 
-按关键词搜索场景标题和摘要。
+按关键词搜索事件标题和摘要。
 
 **查询参数：**
 | 参数 | 类型 | 说明 |
@@ -333,11 +333,11 @@ backend/
 | 字段 | 说明 |
 |------|------|
 | novels | 小说总数 |
-| scenes | 场景总数 |
+| events | 事件总数 |
 | characters | 人物总数 |
 | tag_records | 标签记录总数 |
-| per_novel | 每部小说的场景数 |
-| top_scene_types | 场景类型 Top 15 |
+| per_novel | 每部小说的事件数 |
+| top_event_types | 事件类型 Top 15 |
 | top_emotions | 情绪 Top 15 |
 | tension_distribution | 张力分布 |
 | top_techniques | 技法 Top 10 |
@@ -353,12 +353,12 @@ backend/
 **响应格式：**
 ```json
 {
-  "scene_type": {
-    "description": "场景的基本类型",
+  "event_type": {
+    "description": "事件的基本类型",
     "values": ["日常", "战斗", "谈判", ...]
   },
   "emotion": {
-    "description": "场景的情绪基调",
+    "description": "事件的情绪基调",
     "values": ["平静", "紧张", "温馨", ...]
   }
 }
@@ -375,8 +375,8 @@ backend/
 **请求体：**
 ```json
 {
-  "dimension": "scene_type",
-  "value": "新场景类型"
+  "dimension": "event_type",
+  "value": "新事件类型"
 }
 ```
 
@@ -439,9 +439,9 @@ backend/
 **查询参数：**
 | 参数 | 说明 |
 |------|------|
-| stage | 阶段名: `ingest` / `format` / `build-index` / `analyze` / `scenes` / `finalize` |
+| stage | 阶段名: `ingest` / `format` / `build-index` / `analyze` / `events` / `finalize` |
 
-> `analyze`、`scenes`、`finalize` 需要配置 LLM API。
+> `analyze`、`events`、`finalize` 需要配置 LLM API。
 
 ---
 

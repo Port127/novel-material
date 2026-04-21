@@ -21,9 +21,9 @@ sys.path.insert(0, str(SCRIPTS_DIR))
 sys.path.insert(0, str(BACKEND_DIR))
 sys.path.insert(0, str(SCRIPTS_DIR / "core"))
 
-from core.validate_yaml import validate_scene, validate_meta, validate_yaml_parseable, _flatten_scene
-from core.quality_audit import compute_batch_quality, load_scenes, _as_list
-from core.build_db import create_schema, ingest_novel, _flatten_scene as db_flatten
+from core.validate_yaml import validate_event, validate_meta, validate_yaml_parseable, _flatten_event
+from core.quality_audit import compute_batch_quality, load_events, _as_list
+from core.build_db import create_schema, ingest_novel, _flatten_event as db_flatten
 
 REAL_DATA = ROOT / "data"
 REAL_NOVELS = REAL_DATA / "novels"
@@ -35,12 +35,12 @@ if (REAL_DATA / "tags.yaml").exists():
     TAGS_DICT = {dim: set(str(v) for v in info["values"]) for dim, info in raw.items() if isinstance(info, dict) and "values" in info}
 
 
-def _make_scene(overrides=None):
+def _make_event(overrides=None):
     s = {
-        "id": "ch0001_s01", "chapter": "第1章 测试", "title": "黎明之战",
+        "id": "ev0001", "chapter": "第1章 测试", "title": "黎明之战",
         "summary": "主角在黎明时与敌人展开激战，最终以弱胜强",
         "tension": 4,
-        "scene_type": ["对决"], "conflict": ["人与人"], "stakes": ["生死"],
+        "event_type": ["对决"], "conflict": ["人与人"], "stakes": ["生死"],
         "characters": ["张三", "李四"],
         "relationship": ["对手"], "interaction": ["对抗"],
         "power_dynamic": "以弱胜强", "character_moment": ["觉醒"],
@@ -56,7 +56,7 @@ def _make_scene(overrides=None):
     return s
 
 
-def _setup_novel_env(tmp_path, num_scenes=10):
+def _setup_novel_env(tmp_path, num_events=10):
     """Create a complete novel environment for testing."""
     data_dir = tmp_path / "data"
     data_dir.mkdir()
@@ -65,8 +65,8 @@ def _setup_novel_env(tmp_path, num_scenes=10):
     mid = "nm_novel_20260101_test"
     novel_dir = novels_dir / mid
     novel_dir.mkdir()
-    scenes_dir = novel_dir / "scenes"
-    scenes_dir.mkdir()
+    events_dir = novel_dir / "events"
+    events_dir.mkdir()
 
     meta = {"material_id": mid, "name": "测试小说", "author": "测试作者",
             "type": "novel", "status": "complete", "source": "source.txt"}
@@ -79,7 +79,7 @@ def _setup_novel_env(tmp_path, num_scenes=10):
     (novel_dir / "tags.yaml").write_text(yaml.dump({"genre": ["玄幻"]}, allow_unicode=True), encoding="utf-8")
     (novel_dir / "worldbuilding.yaml").write_text(yaml.dump({"power_system": {"name": "灵力"}}, allow_unicode=True), encoding="utf-8")
 
-    tags = {"scene_type": {"description": "t", "values": ["对决", "日常"]},
+    tags = {"event_type": {"description": "t", "values": ["对决", "日常"]},
             "emotion": {"description": "e", "values": ["燃", "悲伤"]},
             "conflict": {"description": "c", "values": ["人与人"]},
             "stakes": {"description": "s", "values": ["生死"]},
@@ -103,45 +103,45 @@ def _setup_novel_env(tmp_path, num_scenes=10):
     (data_dir / "index.yaml").write_text(
         yaml.dump({"materials": [{"id": mid, "name": "测试", "folder": f"novels/{mid}"}]}, allow_unicode=True), encoding="utf-8")
 
-    for i in range(1, num_scenes + 1):
-        scene = _make_scene({
+    for i in range(1, num_events + 1):
+        event = _make_event({
             "id": f"ch{i:04d}_s01", "chapter": f"第{i}章 标题{i}",
-            "title": f"精彩场景_{i}", "summary": f"独特的场景描述_{i}",
+            "title": f"精彩事件_{i}", "summary": f"独特的事件描述_{i}",
             "tension": (i % 5) + 1,
-            "scene_type": ["对决" if i % 2 == 0 else "日常"],
+            "event_type": ["对决" if i % 2 == 0 else "日常"],
             "emotion": ["燃" if i % 3 != 0 else "悲伤"],
         })
-        (scenes_dir / f"ch{i:04d}_s01.yaml").write_text(
-            yaml.dump(scene, allow_unicode=True), encoding="utf-8")
+        (events_dir / f"ch{i:04d}_s01.yaml").write_text(
+            yaml.dump(event, allow_unicode=True), encoding="utf-8")
 
-    return data_dir, novel_dir, scenes_dir, mid
+    return data_dir, novel_dir, events_dir, mid
 
 
 # ==============================================================================
 # 一、文件误删与恢复 TC-RO-001 ~ TC-RO-040
 # ==============================================================================
 class TestFileDeletionRecovery:
-    """TC-RO-001~040: 场景/索引/分析文件误删与批量误操作"""
+    """TC-RO-001~040: 事件/索引/分析文件误删与批量误操作"""
 
-    def test_ro001_delete_single_scene(self, tmp_path):
-        """TC-RO-001: 删除单个场景文件后其他文件不受影响"""
-        _, _, scenes_dir, _ = _setup_novel_env(tmp_path, 10)
-        target = scenes_dir / "ch0005_s01.yaml"
+    def test_ro001_delete_single_event(self, tmp_path):
+        """TC-RO-001: 删除单个事件文件后其他文件不受影响"""
+        _, _, events_dir, _ = _setup_novel_env(tmp_path, 10)
+        target = events_dir / "ch0005_s01.yaml"
         assert target.exists()
         target.unlink()
-        remaining = list(scenes_dir.glob("ch*.yaml"))
+        remaining = list(events_dir.glob("ch*.yaml"))
         assert len(remaining) == 9
 
-    def test_ro002_delete_entire_scenes_dir(self, tmp_path):
-        """TC-RO-002: 删除整个 scenes 文件夹"""
-        _, novel_dir, scenes_dir, _ = _setup_novel_env(tmp_path)
-        shutil.rmtree(scenes_dir)
-        assert not scenes_dir.exists()
+    def test_ro002_delete_entire_events_dir(self, tmp_path):
+        """TC-RO-002: 删除整个 events 文件夹"""
+        _, novel_dir, events_dir, _ = _setup_novel_env(tmp_path)
+        shutil.rmtree(events_dir)
+        assert not events_dir.exists()
         assert (novel_dir / "meta.yaml").exists(), "meta.yaml 不应受影响"
 
     def test_ro005_db_stale_after_yaml_delete(self, tmp_path):
-        """TC-RO-005: 删了场景但 SQLite 还有记录 → 重建后一致"""
-        data_dir, novel_dir, scenes_dir, mid = _setup_novel_env(tmp_path)
+        """TC-RO-005: 删了事件但 SQLite 还有记录 → 重建后一致"""
+        data_dir, novel_dir, events_dir, mid = _setup_novel_env(tmp_path)
         db_path = data_dir / "material.db"
         conn = sqlite3.connect(str(db_path))
         create_schema(conn)
@@ -149,11 +149,11 @@ class TestFileDeletionRecovery:
         os.chdir(tmp_path)
         try:
             ingest_novel(conn, mid)
-            before = conn.execute("SELECT COUNT(*) FROM scenes").fetchone()[0]
+            before = conn.execute("SELECT COUNT(*) FROM events").fetchone()[0]
             assert before == 10
-            (scenes_dir / "ch0010_s01.yaml").unlink()
+            (events_dir / "ch0010_s01.yaml").unlink()
             ingest_novel(conn, mid)
-            after = conn.execute("SELECT COUNT(*) FROM scenes").fetchone()[0]
+            after = conn.execute("SELECT COUNT(*) FROM events").fetchone()[0]
             assert after == 9
         finally:
             os.chdir(old_cwd)
@@ -199,16 +199,16 @@ class TestFileDeletionRecovery:
             conn = sqlite3.connect(str(db_path))
             create_schema(conn)
             ingest_novel(conn, mid)
-            n = conn.execute("SELECT COUNT(*) FROM scenes").fetchone()[0]
+            n = conn.execute("SELECT COUNT(*) FROM events").fetchone()[0]
             assert n == 10
         finally:
             os.chdir(old_cwd)
             conn.close()
 
     def test_ro018_delete_db_and_index(self, tmp_path):
-        """TC-RO-018: 同时删除 DB 和 scenes_index 后重建"""
+        """TC-RO-018: 同时删除 DB 和 events_index 后重建"""
         data_dir, novel_dir, _, mid = _setup_novel_env(tmp_path)
-        si = novel_dir / "scenes_index.yaml"
+        si = novel_dir / "events_index.yaml"
         si.write_text("test: true", encoding="utf-8")
         db_path = data_dir / "material.db"
         conn = sqlite3.connect(str(db_path))
@@ -239,7 +239,7 @@ class TestFileDeletionRecovery:
 
     def test_ro033_delete_all_yaml(self, tmp_path):
         """TC-RO-033: 删除所有 .yaml 文件的影响"""
-        data_dir, novel_dir, scenes_dir, _ = _setup_novel_env(tmp_path)
+        data_dir, novel_dir, events_dir, _ = _setup_novel_env(tmp_path)
         yaml_files = list(data_dir.rglob("*.yaml"))
         assert len(yaml_files) > 10
         for f in yaml_files:
@@ -247,21 +247,21 @@ class TestFileDeletionRecovery:
         remaining = list(data_dir.rglob("*.yaml"))
         assert len(remaining) == 0
 
-    def test_ro036_copy_scenes_between_novels(self, tmp_path):
-        """TC-RO-036: 把 A 的 scenes 复制到 B 不会破坏文件系统"""
-        data_dir, novel_a, scenes_a, _ = _setup_novel_env(tmp_path)
+    def test_ro036_copy_events_between_novels(self, tmp_path):
+        """TC-RO-036: 把 A 的 events 复制到 B 不会破坏文件系统"""
+        data_dir, novel_a, events_a, _ = _setup_novel_env(tmp_path)
         novel_b = data_dir / "novels" / "nm_novel_20260102_test"
         novel_b.mkdir(parents=True)
-        scenes_b = novel_b / "scenes"
-        shutil.copytree(scenes_a, scenes_b)
-        assert len(list(scenes_b.glob("ch*.yaml"))) == 10
+        events_b = novel_b / "events"
+        shutil.copytree(events_a, events_b)
+        assert len(list(events_b.glob("ch*.yaml"))) == 10
 
     def test_ro039_disk_full_simulation(self, tmp_path):
         """TC-RO-039: 写入不完整文件的检测"""
-        _, novel_dir, scenes_dir, _ = _setup_novel_env(tmp_path)
-        incomplete = scenes_dir / "ch0099_s01.yaml"
+        _, novel_dir, events_dir, _ = _setup_novel_env(tmp_path)
+        incomplete = events_dir / "ch0099_s01.yaml"
         incomplete.write_text("id: ch0099_s01\ntitle: 未完", encoding="utf-8")
-        errs = validate_scene(incomplete, TAGS_DICT, None)
+        errs = validate_event(incomplete, TAGS_DICT, None)
         assert len(errs) > 0, "不完整文件应有校验错误"
 
 
@@ -297,18 +297,18 @@ class TestYAMLFormatErrors:
 
     def test_ro045_tension_as_string(self, tmp_path):
         """TC-RO-045: tension 写成字符串"""
-        scene = _make_scene({"tension": "5"})
+        event = _make_event({"tension": "5"})
         p = tmp_path / "test.yaml"
-        p.write_text(yaml.dump(scene, allow_unicode=True), encoding="utf-8")
+        p.write_text(yaml.dump(event, allow_unicode=True), encoding="utf-8")
         data = yaml.safe_load(p.read_text(encoding="utf-8"))
         assert isinstance(data["tension"], str), "YAML dump 把 '5' 变成了整数"
 
     def test_ro046_tension_float(self, tmp_path):
         """TC-RO-046: tension 是小数"""
-        scene = _make_scene({"tension": 3.5})
+        event = _make_event({"tension": 3.5})
         p = tmp_path / "test.yaml"
-        p.write_text(yaml.dump(scene, allow_unicode=True), encoding="utf-8")
-        errs = validate_scene(p, TAGS_DICT, None)
+        p.write_text(yaml.dump(event, allow_unicode=True), encoding="utf-8")
+        errs = validate_event(p, TAGS_DICT, None)
         # 3.5 is within 1-5 range, but not integer
         # Current implementation accepts float in range - document this behavior
         assert isinstance(errs, list)
@@ -317,11 +317,11 @@ class TestYAMLFormatErrors:
         """TC-RO-047: 列表写成逗号分隔字符串"""
         content = """id: ch0001_s01
 chapter: 第1章 测试
-title: 测试场景
+title: 测试事件
 summary: 测试内容
 tension: 3
 emotion: 燃, 悲伤
-scene_type: [对决]
+event_type: [对决]
 conflict: [人与人]
 stakes: [生死]
 relationship: [对手]
@@ -345,25 +345,25 @@ characters: [张三]"""
         p.write_text(content, encoding="utf-8")
         data = yaml.safe_load(p.read_text(encoding="utf-8"))
         assert isinstance(data["emotion"], str), "逗号分隔被解析为字符串而非列表"
-        errs = validate_scene(p, TAGS_DICT, None)
+        errs = validate_event(p, TAGS_DICT, None)
         assert any("emotion" in e and "列表" in e for e in errs)
 
     def test_ro049_missing_id(self, tmp_path):
         """TC-RO-049: 缺少必填字段 id"""
-        scene = _make_scene()
-        del scene["id"]
+        event = _make_event()
+        del event["id"]
         p = tmp_path / "test.yaml"
-        p.write_text(yaml.dump(scene, allow_unicode=True), encoding="utf-8")
-        errs = validate_scene(p, TAGS_DICT, None)
+        p.write_text(yaml.dump(event, allow_unicode=True), encoding="utf-8")
+        errs = validate_event(p, TAGS_DICT, None)
         assert any("id" in e for e in errs)
 
     def test_ro050_missing_chapter(self, tmp_path):
         """TC-RO-050: 缺少必填字段 chapter"""
-        scene = _make_scene()
-        del scene["chapter"]
+        event = _make_event()
+        del event["chapter"]
         p = tmp_path / "test.yaml"
-        p.write_text(yaml.dump(scene, allow_unicode=True), encoding="utf-8")
-        errs = validate_scene(p, TAGS_DICT, None)
+        p.write_text(yaml.dump(event, allow_unicode=True), encoding="utf-8")
+        errs = validate_event(p, TAGS_DICT, None)
         assert any("chapter" in e for e in errs)
 
     def test_ro053_chinese_colon(self, tmp_path):
@@ -376,9 +376,9 @@ characters: [张三]"""
 
     def test_ro055_null_in_array(self, tmp_path):
         """TC-RO-055: 列表中混入 null"""
-        scene = _make_scene({"emotion": ["燃", None, "悲伤"]})
+        event = _make_event({"emotion": ["燃", None, "悲伤"]})
         p = tmp_path / "test.yaml"
-        p.write_text(yaml.dump(scene, allow_unicode=True), encoding="utf-8")
+        p.write_text(yaml.dump(event, allow_unicode=True), encoding="utf-8")
         data = yaml.safe_load(p.read_text(encoding="utf-8"))
         assert None in data["emotion"]
 
@@ -389,11 +389,11 @@ characters: [张三]"""
         data = yaml.safe_load(p.read_text(encoding="utf-8-sig"))
         assert data.get("id") == "ch0001_s01"
 
-    def test_ro060_empty_scene_file(self, tmp_path):
-        """TC-RO-060: 空场景文件"""
+    def test_ro060_empty_event_file(self, tmp_path):
+        """TC-RO-060: 空事件文件"""
         p = tmp_path / "empty.yaml"
         p.write_text("", encoding="utf-8")
-        errs = validate_scene(p, TAGS_DICT, None)
+        errs = validate_event(p, TAGS_DICT, None)
         assert any("空" in e for e in errs)
 
     def test_ro061_invalid_status(self, tmp_path):
@@ -424,44 +424,44 @@ characters: [张三]"""
 
     def test_ro074_numbered_title_detected(self):
         """TC-RO-074: 编号形式 title 被检测"""
-        scene = _make_scene({"title": "场景3"})
-        scenes = [scene]
-        result = compute_batch_quality(scenes)
+        event = _make_event({"title": "事件3"})
+        events = [event]
+        result = compute_batch_quality(events)
         assert result["quality"]["bad_titles"] > 0
 
     def test_ro075_identical_emotion_detected(self):
-        """TC-RO-075: 所有场景相同 emotion 标签被检测"""
-        scenes = [_make_scene({"id": f"ch{i:04d}_s01", "emotion": ["平静"],
-                               "scene_type": ["日常"], "conflict": []})
+        """TC-RO-075: 所有事件相同 emotion 标签被检测"""
+        events = [_make_event({"id": f"ch{i:04d}_s01", "emotion": ["平静"],
+                               "event_type": ["日常"], "conflict": []})
                   for i in range(1, 11)]
-        result = compute_batch_quality(scenes)
+        result = compute_batch_quality(events)
         assert result["quality"]["tag_diversity"] < 0.5
 
     def test_ro076_illegal_tag_from_llm(self, tmp_path):
         """TC-RO-076: LLM 给出非法标签值"""
-        scene = _make_scene({"scene_type": ["超自然"]})
+        event = _make_event({"event_type": ["超自然"]})
         p = tmp_path / "test.yaml"
-        p.write_text(yaml.dump(scene, allow_unicode=True), encoding="utf-8")
+        p.write_text(yaml.dump(event, allow_unicode=True), encoding="utf-8")
         if TAGS_DICT:
-            errs = validate_scene(p, TAGS_DICT, None)
+            errs = validate_event(p, TAGS_DICT, None)
             assert any("标签越界" in e for e in errs)
 
     def test_ro077_missing_characters(self, tmp_path):
         """TC-RO-077: 缺少 characters 字段"""
-        scene = _make_scene()
-        del scene["characters"]
+        event = _make_event()
+        del event["characters"]
         p = tmp_path / "test.yaml"
-        p.write_text(yaml.dump(scene, allow_unicode=True), encoding="utf-8")
-        # characters is not in SCENE_TAG_FIELDS so validate_scene won't catch it
+        p.write_text(yaml.dump(event, allow_unicode=True), encoding="utf-8")
+        # characters is not in EVENT_TAG_FIELDS so validate_event won't catch it
         data = yaml.safe_load(p.read_text(encoding="utf-8"))
         assert "characters" not in data
 
     def test_ro079_tension_chinese(self, tmp_path):
         """TC-RO-079: tension 写成中文"""
-        scene = _make_scene({"tension": "三"})
+        event = _make_event({"tension": "三"})
         p = tmp_path / "test.yaml"
-        p.write_text(yaml.dump(scene, allow_unicode=True), encoding="utf-8")
-        errs = validate_scene(p, TAGS_DICT, None)
+        p.write_text(yaml.dump(event, allow_unicode=True), encoding="utf-8")
+        errs = validate_event(p, TAGS_DICT, None)
         # tension "三" is a string, not int
         assert isinstance(errs, list)
 
@@ -474,10 +474,10 @@ class TestPipelineInterruption:
 
     def test_ro087_continue_from_batch(self, tmp_path):
         """TC-RO-087: 中断后从特定批次恢复——进度记录在 meta"""
-        _, novel_dir, scenes_dir, mid = _setup_novel_env(tmp_path, 15)
+        _, novel_dir, events_dir, mid = _setup_novel_env(tmp_path, 15)
         meta_path = novel_dir / "meta.yaml"
         meta = yaml.safe_load(meta_path.read_text(encoding="utf-8"))
-        meta["pipeline"] = {"scenes_processed": ["1-10"], "last_batch": "1-10"}
+        meta["pipeline"] = {"events_processed": ["1-10"], "last_batch": "1-10"}
         meta_path.write_text(yaml.dump(meta, allow_unicode=True), encoding="utf-8")
         reloaded = yaml.safe_load(meta_path.read_text(encoding="utf-8"))
         assert reloaded["pipeline"]["last_batch"] == "1-10"
@@ -494,18 +494,18 @@ class TestPipelineInterruption:
             create_schema(conn1)
             create_schema(conn2)
             ingest_novel(conn1, mid)
-            n1 = conn1.execute("SELECT COUNT(*) FROM scenes").fetchone()[0]
-            n2 = conn2.execute("SELECT COUNT(*) FROM scenes").fetchone()[0]
+            n1 = conn1.execute("SELECT COUNT(*) FROM events").fetchone()[0]
+            n2 = conn2.execute("SELECT COUNT(*) FROM events").fetchone()[0]
             assert n1 == n2
         finally:
             os.chdir(old_cwd)
             conn1.close()
             conn2.close()
 
-    def test_ro101_scene_continuity(self, tmp_path):
-        """TC-RO-101: 场景文件编号连续性"""
-        _, _, scenes_dir, _ = _setup_novel_env(tmp_path, 10)
-        files = sorted(scenes_dir.glob("ch*.yaml"))
+    def test_ro101_event_continuity(self, tmp_path):
+        """TC-RO-101: 事件文件编号连续性"""
+        _, _, events_dir, _ = _setup_novel_env(tmp_path, 10)
+        files = sorted(events_dir.glob("ch*.yaml"))
         nums = []
         for f in files:
             n = int(f.stem.split("_")[0].replace("ch", ""))
@@ -515,8 +515,8 @@ class TestPipelineInterruption:
 
     def test_ro117_gap_in_numbering(self, tmp_path):
         """TC-RO-117: 编号有空洞时 build-index 不崩溃"""
-        data_dir, _, scenes_dir, mid = _setup_novel_env(tmp_path, 10)
-        (scenes_dir / "ch0005_s01.yaml").unlink()
+        data_dir, _, events_dir, mid = _setup_novel_env(tmp_path, 10)
+        (events_dir / "ch0005_s01.yaml").unlink()
         db_path = data_dir / "material.db"
         conn = sqlite3.connect(str(db_path))
         create_schema(conn)
@@ -531,7 +531,7 @@ class TestPipelineInterruption:
 
     def test_ro118_stale_index_after_tag_change(self, tmp_path):
         """TC-RO-118: 修改标签后不重建索引导致不一致"""
-        data_dir, _, scenes_dir, mid = _setup_novel_env(tmp_path)
+        data_dir, _, events_dir, mid = _setup_novel_env(tmp_path)
         db_path = data_dir / "material.db"
         conn = sqlite3.connect(str(db_path))
         create_schema(conn)
@@ -539,17 +539,17 @@ class TestPipelineInterruption:
         os.chdir(tmp_path)
         try:
             ingest_novel(conn, mid)
-            sf = scenes_dir / "ch0001_s01.yaml"
-            scene = yaml.safe_load(sf.read_text(encoding="utf-8"))
-            scene["emotion"] = ["悲伤"]
-            sf.write_text(yaml.dump(scene, allow_unicode=True), encoding="utf-8")
+            sf = events_dir / "ch0001_s01.yaml"
+            event = yaml.safe_load(sf.read_text(encoding="utf-8"))
+            event["emotion"] = ["悲伤"]
+            sf.write_text(yaml.dump(event, allow_unicode=True), encoding="utf-8")
             old_tags = conn.execute(
-                "SELECT value FROM scene_tags WHERE scene_id='ch0001_s01' AND dimension='emotion'"
+                "SELECT value FROM event_tags WHERE event_id='ch0001_s01' AND dimension='emotion'"
             ).fetchall()
             assert old_tags[0][0] == "燃", "DB 还是旧值"
             ingest_novel(conn, mid)
             new_tags = conn.execute(
-                "SELECT value FROM scene_tags WHERE scene_id='ch0001_s01' AND dimension='emotion'"
+                "SELECT value FROM event_tags WHERE event_id='ch0001_s01' AND dimension='emotion'"
             ).fetchall()
             assert new_tags[0][0] == "悲伤", "重建后应为新值"
         finally:
@@ -565,61 +565,61 @@ class TestDataCorrection:
 
     def test_ro121_typo_tag_value(self, tmp_path):
         """TC-RO-121: 标签值拼写错误"""
-        scene = _make_scene({"emotion": ["燃燃"]})
+        event = _make_event({"emotion": ["燃燃"]})
         p = tmp_path / "test.yaml"
-        p.write_text(yaml.dump(scene, allow_unicode=True), encoding="utf-8")
+        p.write_text(yaml.dump(event, allow_unicode=True), encoding="utf-8")
         if TAGS_DICT:
-            errs = validate_scene(p, TAGS_DICT, None)
+            errs = validate_event(p, TAGS_DICT, None)
             assert any("标签越界" in e for e in errs)
 
     def test_ro123_scalar_as_list(self, tmp_path):
         """TC-RO-123: 单值字段写成列表"""
-        scene = _make_scene({"pacing": ["快"]})
+        event = _make_event({"pacing": ["快"]})
         p = tmp_path / "test.yaml"
-        p.write_text(yaml.dump(scene, allow_unicode=True), encoding="utf-8")
-        errs = validate_scene(p, TAGS_DICT, None)
+        p.write_text(yaml.dump(event, allow_unicode=True), encoding="utf-8")
+        errs = validate_event(p, TAGS_DICT, None)
         assert any("pacing" in e for e in errs)
 
     def test_ro124_list_as_scalar(self, tmp_path):
         """TC-RO-124: 列表字段写成单值"""
-        scene = _make_scene({"emotion": "燃"})
+        event = _make_event({"emotion": "燃"})
         p = tmp_path / "test.yaml"
-        p.write_text(yaml.dump(scene, allow_unicode=True), encoding="utf-8")
-        errs = validate_scene(p, TAGS_DICT, None)
+        p.write_text(yaml.dump(event, allow_unicode=True), encoding="utf-8")
+        errs = validate_event(p, TAGS_DICT, None)
         assert any("emotion" in e and "列表" in e for e in errs)
 
     def test_ro125_tension_zero(self, tmp_path):
         """TC-RO-125: tension = 0"""
-        scene = _make_scene({"tension": 0})
+        event = _make_event({"tension": 0})
         p = tmp_path / "test.yaml"
-        p.write_text(yaml.dump(scene, allow_unicode=True), encoding="utf-8")
-        errs = validate_scene(p, TAGS_DICT, None)
+        p.write_text(yaml.dump(event, allow_unicode=True), encoding="utf-8")
+        errs = validate_event(p, TAGS_DICT, None)
         assert any("tension" in e for e in errs)
 
     def test_ro126_tension_negative(self, tmp_path):
         """TC-RO-126: tension = -1"""
-        scene = _make_scene({"tension": -1})
+        event = _make_event({"tension": -1})
         p = tmp_path / "test.yaml"
-        p.write_text(yaml.dump(scene, allow_unicode=True), encoding="utf-8")
-        errs = validate_scene(p, TAGS_DICT, None)
+        p.write_text(yaml.dump(event, allow_unicode=True), encoding="utf-8")
+        errs = validate_event(p, TAGS_DICT, None)
         assert any("tension" in e for e in errs)
 
     def test_ro128_chapter_not_from_index(self, tmp_path):
         """TC-RO-128: chapter 与 chapter_index 不匹配"""
-        scene = _make_scene({"chapter": "第一章 开始"})
+        event = _make_event({"chapter": "第一章 开始"})
         p = tmp_path / "test.yaml"
-        p.write_text(yaml.dump(scene, allow_unicode=True), encoding="utf-8")
+        p.write_text(yaml.dump(event, allow_unicode=True), encoding="utf-8")
         chapter_titles = {"第1章 开始", "第2章 继续"}
-        errs = validate_scene(p, TAGS_DICT, chapter_titles)
+        errs = validate_event(p, TAGS_DICT, chapter_titles)
         assert any("章节名不匹配" in e for e in errs)
 
-    def test_ro129_duplicate_scene_ids(self, tmp_path):
-        """TC-RO-129: 多个场景 YAML 使用同一 id"""
-        data_dir, novel_dir, scenes_dir, mid = _setup_novel_env(tmp_path, 3)
-        sf1 = yaml.safe_load((scenes_dir / "ch0001_s01.yaml").read_text(encoding="utf-8"))
-        sf2 = yaml.safe_load((scenes_dir / "ch0002_s01.yaml").read_text(encoding="utf-8"))
+    def test_ro129_duplicate_event_ids(self, tmp_path):
+        """TC-RO-129: 多个事件 YAML 使用同一 id"""
+        data_dir, novel_dir, events_dir, mid = _setup_novel_env(tmp_path, 3)
+        sf1 = yaml.safe_load((events_dir / "ch0001_s01.yaml").read_text(encoding="utf-8"))
+        sf2 = yaml.safe_load((events_dir / "ch0002_s01.yaml").read_text(encoding="utf-8"))
         sf2["id"] = sf1["id"]
-        (scenes_dir / "ch0002_s01.yaml").write_text(yaml.dump(sf2, allow_unicode=True), encoding="utf-8")
+        (events_dir / "ch0002_s01.yaml").write_text(yaml.dump(sf2, allow_unicode=True), encoding="utf-8")
         db_path = data_dir / "material.db"
         conn = sqlite3.connect(str(db_path))
         create_schema(conn)
@@ -627,7 +627,7 @@ class TestDataCorrection:
         os.chdir(tmp_path)
         try:
             ingest_novel(conn, mid)
-            count = conn.execute("SELECT COUNT(*) FROM scenes WHERE material_id=?", (mid,)).fetchone()[0]
+            count = conn.execute("SELECT COUNT(*) FROM events WHERE material_id=?", (mid,)).fetchone()[0]
             # INSERT OR REPLACE means second overwrites first
             assert count < 3, "重复 ID 应导致覆盖，不应有3条"
         finally:
@@ -636,7 +636,7 @@ class TestDataCorrection:
 
     def test_ro140_direct_db_edit_inconsistency(self, tmp_path):
         """TC-RO-140: 直接修改 DB 后与 YAML 不一致"""
-        data_dir, _, scenes_dir, mid = _setup_novel_env(tmp_path)
+        data_dir, _, events_dir, mid = _setup_novel_env(tmp_path)
         db_path = data_dir / "material.db"
         conn = sqlite3.connect(str(db_path))
         create_schema(conn)
@@ -644,38 +644,38 @@ class TestDataCorrection:
         os.chdir(tmp_path)
         try:
             ingest_novel(conn, mid)
-            conn.execute("UPDATE scenes SET title='被篡改的标题' WHERE scene_id='ch0001_s01'")
+            conn.execute("UPDATE events SET title='被篡改的标题' WHERE event_id='ch0001_s01'")
             conn.commit()
-            db_title = conn.execute("SELECT title FROM scenes WHERE scene_id='ch0001_s01'").fetchone()[0]
+            db_title = conn.execute("SELECT title FROM events WHERE event_id='ch0001_s01'").fetchone()[0]
             assert db_title == "被篡改的标题"
-            yaml_data = yaml.safe_load((scenes_dir / "ch0001_s01.yaml").read_text(encoding="utf-8"))
+            yaml_data = yaml.safe_load((events_dir / "ch0001_s01.yaml").read_text(encoding="utf-8"))
             assert yaml_data["title"] != "被篡改的标题", "YAML 不应被 DB 修改影响"
             ingest_novel(conn, mid)
-            restored = conn.execute("SELECT title FROM scenes WHERE scene_id='ch0001_s01'").fetchone()[0]
+            restored = conn.execute("SELECT title FROM events WHERE event_id='ch0001_s01'").fetchone()[0]
             assert restored == yaml_data["title"], "重建后应恢复 YAML 中的值"
         finally:
             os.chdir(old_cwd)
             conn.close()
 
     def test_ro156_redo_batch(self, tmp_path):
-        """TC-RO-156: 删除某批次场景后重新计算"""
-        _, _, scenes_dir, _ = _setup_novel_env(tmp_path, 10)
+        """TC-RO-156: 删除某批次事件后重新计算"""
+        _, _, events_dir, _ = _setup_novel_env(tmp_path, 10)
         for i in range(6, 11):
-            (scenes_dir / f"ch{i:04d}_s01.yaml").unlink()
-        remaining = list(scenes_dir.glob("ch*.yaml"))
+            (events_dir / f"ch{i:04d}_s01.yaml").unlink()
+        remaining = list(events_dir.glob("ch*.yaml"))
         assert len(remaining) == 5
-        scenes = load_scenes(scenes_dir)
-        result = compute_batch_quality(scenes)
-        assert result["scenes_count"] == 5
+        events = load_events(events_dir)
+        result = compute_batch_quality(events)
+        assert result["events_count"] == 5
 
     def test_ro168_stats_vs_actual(self, tmp_path):
-        """TC-RO-168: 统计数据与实际场景数对比"""
-        _, novel_dir, scenes_dir, _ = _setup_novel_env(tmp_path, 10)
+        """TC-RO-168: 统计数据与实际事件数对比"""
+        _, novel_dir, events_dir, _ = _setup_novel_env(tmp_path, 10)
         (novel_dir / "stats.yaml").write_text(
-            yaml.dump({"total_scenes": 15}, allow_unicode=True), encoding="utf-8")
+            yaml.dump({"total_events": 15}, allow_unicode=True), encoding="utf-8")
         stats = yaml.safe_load((novel_dir / "stats.yaml").read_text(encoding="utf-8"))
-        actual = len(list(scenes_dir.glob("ch*.yaml")))
-        assert stats["total_scenes"] != actual, "stats 声称15个但实际10个——不一致"
+        actual = len(list(events_dir.glob("ch*.yaml")))
+        assert stats["total_events"] != actual, "stats 声称15个但实际10个——不一致"
 
 
 # ==============================================================================
@@ -730,7 +730,7 @@ class TestFrontendAPI:
 
     def test_ro191_empty_search(self):
         """TC-RO-191: 空搜索条件"""
-        r = self.client.get("/api/search/scenes")
+        r = self.client.get("/api/search/events")
         assert r.status_code == 200
 
     def test_ro192_very_long_search(self):
@@ -746,7 +746,7 @@ class TestFrontendAPI:
 
     def test_ro194_sql_in_search(self):
         """TC-RO-194: SQL 注入"""
-        r = self.client.get("/api/search/text", params={"query": "'; DROP TABLE scenes; --"})
+        r = self.client.get("/api/search/text", params={"query": "'; DROP TABLE events; --"})
         assert r.status_code == 200
 
     def test_ro199_nonexistent_character(self):
@@ -759,12 +759,12 @@ class TestFrontendAPI:
 
     def test_ro206_invalid_query_params(self):
         """TC-RO-206: 非法查询参数"""
-        r = self.client.get("/api/search/scenes", params={"tension_min": "abc"})
+        r = self.client.get("/api/search/events", params={"tension_min": "abc"})
         assert r.status_code in (200, 422)
 
     def test_ro207_empty_result(self):
         """TC-RO-207: 搜索返回空结果"""
-        r = self.client.get("/api/search/scenes", params={"scene_type": "不存在的类型XYZ"})
+        r = self.client.get("/api/search/events", params={"event_type": "不存在的类型XYZ"})
         assert r.status_code == 200
 
     def test_ro211_upload_txt(self):
@@ -796,7 +796,7 @@ class TestFrontendAPI:
         """TC-RO-268: 并发搜索请求"""
         import concurrent.futures
         def search():
-            return self.client.get("/api/search/scenes", params={"scene_type": "对决"})
+            return self.client.get("/api/search/events", params={"event_type": "对决"})
         with concurrent.futures.ThreadPoolExecutor(max_workers=10) as ex:
             futures = [ex.submit(search) for _ in range(20)]
             results = [f.result() for f in futures]
@@ -838,8 +838,8 @@ class TestScriptsCLI:
 
     def test_ro237_build_db_bad_yaml(self, tmp_path):
         """TC-RO-237: 有格式错误的 YAML 时 build_db 跳过继续"""
-        data_dir, novel_dir, scenes_dir, mid = _setup_novel_env(tmp_path, 5)
-        (scenes_dir / "ch0003_s01.yaml").write_text("{{invalid yaml!!", encoding="utf-8")
+        data_dir, novel_dir, events_dir, mid = _setup_novel_env(tmp_path, 5)
+        (events_dir / "ch0003_s01.yaml").write_text("{{invalid yaml!!", encoding="utf-8")
         db_path = data_dir / "material.db"
         conn = sqlite3.connect(str(db_path))
         create_schema(conn)
@@ -862,33 +862,33 @@ class TestScriptsCLI:
             conn = sqlite3.connect(str(db_path))
             create_schema(conn)
             ingest_novel(conn, mid)
-            first = conn.execute("SELECT COUNT(*) FROM scenes").fetchone()[0]
+            first = conn.execute("SELECT COUNT(*) FROM events").fetchone()[0]
             ingest_novel(conn, mid)
-            second = conn.execute("SELECT COUNT(*) FROM scenes").fetchone()[0]
+            second = conn.execute("SELECT COUNT(*) FROM events").fetchone()[0]
             assert first == second, "两次运行结果应相同"
         finally:
             os.chdir(old_cwd)
             conn.close()
 
-    def test_ro241_flatten_nested_scenes(self):
-        """TC-RO-241: 嵌套格式场景正确展平"""
+    def test_ro241_flatten_nested_events(self):
+        """TC-RO-241: 嵌套格式事件正确展平"""
         nested = {
-            "scene_id": "ch0001_s01",
-            "content": {"scene_type": ["日常"], "conflict": [], "stakes": []},
+            "event_id": "ch0001_s01",
+            "content": {"event_type": ["日常"], "conflict": [], "stakes": []},
             "people": {"relationship": [], "interaction": [], "power_dynamic": "平等",
                        "character_moment": [], "moral_spectrum": ["灰色"]},
         }
         flat = db_flatten(nested)
         assert flat.get("id") == "ch0001_s01"
-        assert flat.get("scene_type") == ["日常"]
+        assert flat.get("event_type") == ["日常"]
         assert flat.get("power_dynamic") == "平等"
 
-    def test_ro246_valid_scene_passes(self, tmp_path):
-        """TC-RO-246: 完全合规的场景通过校验"""
-        scene = _make_scene()
+    def test_ro246_valid_event_passes(self, tmp_path):
+        """TC-RO-246: 完全合规的事件通过校验"""
+        event = _make_event()
         p = tmp_path / "test.yaml"
-        p.write_text(yaml.dump(scene, allow_unicode=True), encoding="utf-8")
-        tags = {"scene_type": {"values": ["对决"]}, "emotion": {"values": ["燃"]},
+        p.write_text(yaml.dump(event, allow_unicode=True), encoding="utf-8")
+        tags = {"event_type": {"values": ["对决"]}, "emotion": {"values": ["燃"]},
                 "conflict": {"values": ["人与人"]}, "stakes": {"values": ["生死"]},
                 "relationship": {"values": ["对手"]}, "interaction": {"values": ["对抗"]},
                 "character_moment": {"values": ["觉醒"]}, "power_dynamic": {"values": ["以弱胜强"]},
@@ -899,51 +899,51 @@ class TestScriptsCLI:
                 "info_delivery": {"values": ["展示"]}, "setting": {"values": ["战场"]},
                 "scale": {"values": ["个人"]}, "time_weather": {"values": ["黎明"]}}
         td = {k: set(str(v) for v in info["values"]) for k, info in tags.items()}
-        errs = validate_scene(p, td, None)
-        assert errs == [], f"合规场景不应有错误: {errs}"
+        errs = validate_event(p, td, None)
+        assert errs == [], f"合规事件不应有错误: {errs}"
 
     def test_ro248_illegal_tag_reported(self, tmp_path):
         """TC-RO-248: 非法标签值被报告"""
-        scene = _make_scene({"emotion": ["完全虚构的非法情绪_XYZ"]})
+        event = _make_event({"emotion": ["完全虚构的非法情绪_XYZ"]})
         p = tmp_path / "test.yaml"
-        p.write_text(yaml.dump(scene, allow_unicode=True), encoding="utf-8")
+        p.write_text(yaml.dump(event, allow_unicode=True), encoding="utf-8")
         if TAGS_DICT:
-            errs = validate_scene(p, TAGS_DICT, None)
+            errs = validate_event(p, TAGS_DICT, None)
             illegal = [e for e in errs if "标签越界" in e and "emotion" in e]
             assert len(illegal) > 0
 
     def test_ro251_quality_audit_passes(self):
         """TC-RO-251: 标签多样性正常的批次审计通过"""
-        scenes = []
+        events = []
         types = ["对决", "日常", "对决", "日常", "对决"]
         emotions = ["燃", "悲伤", "燃", "悲伤", "燃"]
         conflicts = [["人与人"], [], ["人与人"], ["人与人"], []]
         for i in range(5):
-            scenes.append(_make_scene({
+            events.append(_make_event({
                 "id": f"ch{i+1:04d}_s01",
                 "title": f"独特标题_{i}",
-                "summary": f"完全不同的场景描述_{i}，包含独特情节，第{i}段",
-                "scene_type": [types[i]],
+                "summary": f"完全不同的事件描述_{i}，包含独特情节，第{i}段",
+                "event_type": [types[i]],
                 "emotion": [emotions[i]],
                 "conflict": conflicts[i],
                 "tension": (i % 5) + 1,
             }))
-        result = compute_batch_quality(scenes)
+        result = compute_batch_quality(events)
         assert result["status"] == "passed", f"应通过审计: {result.get('issues')}"
 
     def test_ro252_cloned_batch_fails(self):
         """TC-RO-252: 标签雷同批次审计失败"""
-        scenes = [_make_scene({"id": f"ch{i:04d}_s01",
+        events = [_make_event({"id": f"ch{i:04d}_s01",
                                "title": f"相同标题",
                                "summary": f"相同摘要"})
                   for i in range(1, 11)]
-        result = compute_batch_quality(scenes)
+        result = compute_batch_quality(events)
         assert result["status"] == "failed" or result["quality"]["tag_diversity"] <= 0.1
 
     def test_ro253_numbered_title_audit(self):
         """TC-RO-253: title 编号形式被检测"""
-        scenes = [_make_scene({"id": "ch0001_s01", "title": "场景1"})]
-        result = compute_batch_quality(scenes)
+        events = [_make_event({"id": "ch0001_s01", "title": "事件1"})]
+        result = compute_batch_quality(events)
         assert result["quality"]["bad_titles"] > 0
 
 
@@ -970,18 +970,18 @@ class TestEnvironment:
 
     def test_ro297_no_git_still_works(self, tmp_path):
         """TC-RO-297: 没有 git 不影响核心功能"""
-        scene = _make_scene()
+        event = _make_event()
         p = tmp_path / "test.yaml"
-        p.write_text(yaml.dump(scene, allow_unicode=True), encoding="utf-8")
+        p.write_text(yaml.dump(event, allow_unicode=True), encoding="utf-8")
         errs = validate_yaml_parseable(p)
         assert errs == []
 
     def test_ro299_pathlib_cross_platform(self, tmp_path):
         """TC-RO-299: pathlib 路径跨平台"""
-        p = tmp_path / "data" / "novels" / "test" / "scenes"
+        p = tmp_path / "data" / "novels" / "test" / "events"
         p.mkdir(parents=True)
         assert p.exists()
-        assert str(p).replace("\\", "/").endswith("data/novels/test/scenes")
+        assert str(p).replace("\\", "/").endswith("data/novels/test/events")
 
     def test_ro300_relative_paths(self, tmp_path):
         """TC-RO-300: 相对路径正常工作"""

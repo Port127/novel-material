@@ -2,7 +2,7 @@
 # 每部小说的整体多维标签
 # 路径: data/novels/{material_id}/tags.yaml
 # 注意：这是小说级标签，描述全书特征
-#       场景级标签在每个 scene.yaml 内部
+#       事件级标签在每个 event.yaml 内部
 
 material_id: nm_xxx
 

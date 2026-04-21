@@ -26,12 +26,12 @@ novel-pipeline（调度器）
 
 ## 流程路由
 
-| 模式 | 触发词 | 执行流水线 | 参数 |
-|------|--------|-----------|------|
-| `full` | 一键处理、完整流程、全自动 | ingest → analyze → scenes → finalize | `[路径]` |
-| `quick` | 快速处理、仅骨架 | ingest → analyze | `[路径]` |
-| `continue` | 继续、恢复、接着处理 | 从中断子流水线恢复 | `[material_id]` |
-| `stage` | 指定阶段名 | 仅执行指定子流水线 | `[material_id] [阶段名]` |
+|| 模式 | 触发词 | 执行流水线 | 参数 |
+||------|--------|-----------|------|
+|| `full` | 一键处理、完整流程、全自动 | ingest → analyze → events → finalize | `[路径]` |
+|| `quick` | 快速处理、仅骨架 | ingest → analyze | `[路径]` |
+|| `continue` | 继续、恢复、接着处理 | 从中断子流水线恢复 | `[material_id]` |
+|| `stage` | 指定阶段名 | 仅执行指定子流水线 | `[material_id] [阶段名]` |
 
 ## 执行步骤
 
@@ -41,7 +41,7 @@ novel-pipeline（调度器）
 - 含文件路径 + 含"一键/完整/全自动" → `full`
 - 含文件路径 + 含"快速/骨架" → `quick`
 - 含 material_id + 含"继续/恢复" → `continue`
-- 含 material_id + 含阶段名（入库/分析/场景/精调） → `stage`
+- 含 material_id + 含阶段名（入库/分析/事件/精调） → `stage`
 
 ### 2. 生成预览
 
@@ -55,11 +55,11 @@ novel-pipeline（调度器）
 将分 4 个阶段执行：
   ① pipeline-ingest    → 入库 + 格式清洗
   ② pipeline-analyze   → 大纲 + 世界观 + 人物 + 标签
-  ③ pipeline-scenes    → 全书场景拆分 + 索引构建
+  ③ pipeline-scenes    → 全书事件拆分 + 索引构建
   ④ pipeline-finalize  → 精调 + 统计报告
 
 ⚠️ 阶段 ①②④ 在当前对话内完成
-⚠️ 阶段 ③（场景拆分）耗时最长，大书可能需要多次对话
+⚠️ 阶段 ③（事件拆分）耗时最长，大书可能需要多次对话
    每 30 批会提醒开新对话，用 /novel-pipeline continue {id} 恢复
 
 确认开始？(yes/no)
@@ -69,16 +69,16 @@ novel-pipeline（调度器）
 
 读取 `meta.yaml` 中的 `pipeline` 字段，判断当前进度：
 
-| 条件 | 路由到 | 说明 |
-|------|--------|------|
-| status=raw，formatted 缺失或 false | pipeline-ingest（补格式化） | 原文未清洗 |
-| status=raw，formatted=true | pipeline-analyze | 清洗完成，开始分析 |
-| status=outlined | pipeline-analyze（从缺失步骤恢复） | 分析进行中 |
-| status=tagged | pipeline-scenes | 小说标签已完成，开始场景拆分 |
-| status=tagged + scenes/ 已有部分文件 | pipeline-scenes（从断点恢复） | 场景拆分被中断 |
-| status=complete，refined 缺失或 false | pipeline-finalize | 索引已建，开始精调 |
-| status=complete，refined=true，stats_generated 缺失 | pipeline-finalize（跳 refine） | 精调完成，补统计 |
-| status=refined | 输出"全部完成" | 所有阶段均已完成 |
+|| 条件 | 路由到 | 说明 |
+||------|--------|------|
+|| status=raw，formatted 缺失或 false | pipeline-ingest（补格式化） | 原文未清洗 |
+|| status=raw，formatted=true | pipeline-analyze | 清洗完成，开始分析 |
+|| status=outlined | pipeline-analyze（从缺失步骤恢复） | 分析进行中 |
+|| status=tagged | pipeline-scenes | 小说标签已完成，开始事件拆分 |
+|| status=tagged + events/ 已有部分文件 | pipeline-scenes（从断点恢复） | 事件拆分被中断 |
+|| status=complete，refined 缺失或 false | pipeline-finalize | 索引已建，开始精调 |
+|| status=complete，refined=true，stats_generated 缺失 | pipeline-finalize（跳 refine） | 精调完成，补统计 |
+|| status=refined | 输出"全部完成" | 所有阶段均已完成 |
 
 预览恢复计划后等待确认。
 
@@ -97,7 +97,7 @@ novel-pipeline（调度器）
    - 失败 → 停止，报告
 
 3. 读取并执行 `pipeline-scenes/SKILL.md`
-   - 产出：scenes/*.yaml, scenes_index.yaml, scenes_manifest.yaml
+   - 产出：events/*.yaml, events_index.yaml, events_manifest.yaml
    - **此阶段可能跨对话**——pipeline-scenes 会在适当时机提醒开新对话
    - 如果在此阶段中断，下次 `continue` 会路由到 pipeline-scenes 恢复
 
@@ -110,7 +110,7 @@ novel-pipeline（调度器）
 #### continue 模式执行
 
 只调用需要恢复的子流水线及其后续子流水线。例如：
-- 从 pipeline-scenes 恢复 → 执行 scenes → finalize
+- 从 pipeline-scenes 恢复 → 执行 events → finalize
 - 从 pipeline-finalize 恢复 → 仅执行 finalize
 
 ### 4. 最终报告
@@ -132,9 +132,9 @@ novel-pipeline（调度器）
   - worldbuilding.yaml     (世界观设定，已精调)
   - characters.yaml        (人物体系，已精调)
   - tags.yaml              (小说标签，已精调)
-  - scenes/*.yaml          ({N} 个场景)
-  - scenes_index.yaml      (倒排索引)
-  - scenes_manifest.yaml   (场景清单)
+  - events/*.yaml          ({N} 个事件)
+  - events_index.yaml      (倒排索引)
+  - events_manifest.yaml   (事件清单)
   - stats.yaml             (统计数据)
   - stats.md               (可视化报告)
   - stats.html             (交互报告+关系图谱)
@@ -144,7 +144,7 @@ novel-pipeline（调度器）
 后续操作：
   /material-search [关键词]             # 关键词检索
   /material-search-scene [需求描述]     # 多维标签检索
-  /material-search-context [写作上下文] # 写作场景上下文检索
+  /material-search-context [写作上下文] # 写作事件上下文检索
 ```
 
 ## 状态追踪
@@ -154,9 +154,9 @@ novel-pipeline（调度器）
 ```yaml
 pipeline:
   mode: full
-  current_stage: scenes
+  current_stage: events
   stages_completed: [material-add, source-format, outline, worldbuilding, characters, tags]
-  scenes_processed: [1-5, 6-10]
+  events_processed: [1-5, 6-10]
   formatted: true
   index_built: false
   refined: false
@@ -198,8 +198,8 @@ novel-pipeline:
   [4/4] novel-tags ✅ 都市/重生
 
   ━━━ ③ pipeline-scenes ━━━
-  [批次 1/214] 第 1-5 章 ✅ 15 场景 (diversity=0.87)
-  [批次 2/214] 第 6-10 章 ✅ 12 场景
+  [批次 1/214] 第 1-5 章 ✅ 15 事件 (diversity=0.87)
+  [批次 2/214] 第 6-10 章 ✅ 12 事件
   ...
   ⏸️ 已完成 30 批，建议开新对话：
      /novel-pipeline continue nm_novel_20260405_x1y2
@@ -214,7 +214,7 @@ novel-pipeline:
   📋 恢复预览
 
   素材：《某某小说》
-  当前进度：scenes 阶段，已处理 150/1070 章
+  当前进度：events 阶段，已处理 150/1070 章
 
   将恢复执行：
     ③ pipeline-scenes → 从第 151 章继续

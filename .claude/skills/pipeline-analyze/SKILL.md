@@ -92,7 +92,7 @@ pipeline:
 🏷️ 标签：{genre} / {tone}
 
 后续操作：
-  /pipeline-scenes {material_id}      # 拆分全书场景
+  /pipeline-scenes {material_id}      # 拆分全书事件
   /novel-pipeline full {material_id}  # 继续完整流程
 ```
 

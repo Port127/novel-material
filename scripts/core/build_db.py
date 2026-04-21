@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-build_db.py — 从场景 YAML 构建 SQLite 索引数据库
+build_db.py — 从事件 YAML 构建 SQLite 索引数据库
 
 YAML 文件仍是 source of truth，SQLite 是派生的查询加速层。
 可随时从 YAML 重建，无数据损失。
@@ -25,7 +25,7 @@ from datetime import datetime
 DB_PATH = Path("data/material.db")
 
 TAG_LIST_FIELDS = [
-    'scene_type', 'conflict', 'stakes',
+    'event_type', 'conflict', 'stakes',
     'relationship', 'interaction', 'character_moment',
     'emotion', 'reader_effect',
     'plot_function',
@@ -60,7 +60,7 @@ def _as_list(val):
 
 # Nested format (legacy) → flat field mapping
 _NESTED_MAP = {
-    'content': ['scene_type', 'conflict', 'stakes'],
+    'content': ['event_type', 'conflict', 'stakes'],
     'people': ['relationship', 'interaction', 'power_dynamic', 'character_moment', 'moral_spectrum'],
     'emotion': ['emotion', 'reader_effect'],
     'structure': ['plot_stage', 'plot_function', 'pacing'],
@@ -73,16 +73,16 @@ _NESTED_REMAP = {
 }
 
 
-def _flatten_scene(raw: dict) -> dict:
-    """Normalize nested scene format to flat format for uniform DB ingestion.
+def _flatten_event(raw: dict) -> dict:
+    """Normalize nested event format to flat format for uniform DB ingestion.
 
-    Handles both flat format (scene.schema.yaml Flat Output Contract)
+    Handles both flat format (event-unit.schema.yaml Flat Output Contract)
     and legacy nested format (content/people/emotion/structure/craft/setting groups).
     """
     flat = dict(raw)
 
-    if 'scene_id' in flat and 'id' not in flat:
-        flat['id'] = flat.pop('scene_id')
+    if 'event_id' in flat and 'id' not in flat:
+        flat['id'] = flat.pop('event_id')
 
     for group_key, fields in _NESTED_MAP.items():
         if group_key in flat and isinstance(flat[group_key], dict):
@@ -118,12 +118,12 @@ def create_schema(conn: sqlite3.Connection):
             name TEXT,
             author TEXT,
             status TEXT,
-            total_scenes INTEGER DEFAULT 0,
+            total_events INTEGER DEFAULT 0,
             built_at TEXT
         );
 
-        CREATE TABLE IF NOT EXISTS scenes (
-            scene_id TEXT NOT NULL,
+        CREATE TABLE IF NOT EXISTS events (
+            event_id TEXT NOT NULL,
             material_id TEXT NOT NULL,
             chapter TEXT,
             title TEXT,
@@ -135,17 +135,17 @@ def create_schema(conn: sqlite3.Connection):
             moral_spectrum TEXT,
             plot_stage TEXT,
             scale TEXT,
-            PRIMARY KEY (scene_id, material_id),
+            PRIMARY KEY (event_id, material_id),
             FOREIGN KEY (material_id) REFERENCES novels(material_id)
         );
 
-        CREATE TABLE IF NOT EXISTS scene_tags (
+        CREATE TABLE IF NOT EXISTS event_tags (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            scene_id TEXT NOT NULL,
+            event_id TEXT NOT NULL,
             material_id TEXT NOT NULL,
             dimension TEXT NOT NULL,
             value TEXT NOT NULL,
-            FOREIGN KEY (scene_id, material_id) REFERENCES scenes(scene_id, material_id)
+            FOREIGN KEY (event_id, material_id) REFERENCES events(event_id, material_id)
         );
 
         CREATE TABLE IF NOT EXISTS characters (
@@ -164,22 +164,22 @@ def create_schema(conn: sqlite3.Connection):
             FOREIGN KEY (material_id) REFERENCES novels(material_id)
         );
 
-        CREATE TABLE IF NOT EXISTS scene_characters (
-            scene_id TEXT NOT NULL,
+        CREATE TABLE IF NOT EXISTS event_characters (
+            event_id TEXT NOT NULL,
             material_id TEXT NOT NULL,
             character_name TEXT NOT NULL,
-            PRIMARY KEY (scene_id, material_id, character_name),
-            FOREIGN KEY (scene_id, material_id) REFERENCES scenes(scene_id, material_id)
+            PRIMARY KEY (event_id, material_id, character_name),
+            FOREIGN KEY (event_id, material_id) REFERENCES events(event_id, material_id)
         );
 
-        CREATE INDEX IF NOT EXISTS idx_scene_tags_dim_val ON scene_tags(dimension, value);
-        CREATE INDEX IF NOT EXISTS idx_scene_tags_material ON scene_tags(material_id);
-        CREATE INDEX IF NOT EXISTS idx_scene_tags_scene ON scene_tags(scene_id);
-        CREATE INDEX IF NOT EXISTS idx_scenes_material ON scenes(material_id);
-        CREATE INDEX IF NOT EXISTS idx_scenes_tension ON scenes(tension);
+        CREATE INDEX IF NOT EXISTS idx_event_tags_dim_val ON event_tags(dimension, value);
+        CREATE INDEX IF NOT EXISTS idx_event_tags_material ON event_tags(material_id);
+        CREATE INDEX IF NOT EXISTS idx_event_tags_event ON event_tags(event_id);
+        CREATE INDEX IF NOT EXISTS idx_events_material ON events(material_id);
+        CREATE INDEX IF NOT EXISTS idx_events_tension ON events(tension);
         CREATE INDEX IF NOT EXISTS idx_characters_material ON characters(material_id);
         CREATE INDEX IF NOT EXISTS idx_characters_name ON characters(name);
-        CREATE INDEX IF NOT EXISTS idx_scene_characters_name ON scene_characters(character_name);
+        CREATE INDEX IF NOT EXISTS idx_event_characters_name ON event_characters(character_name);
     """)
     conn.commit()
 
@@ -206,16 +206,16 @@ def load_novel_characters(base_dir: Path) -> list:
 def ingest_novel(conn: sqlite3.Connection, material_id: str):
     """Ingest one novel's data into SQLite."""
     base_dir = Path(f"data/novels/{material_id}")
-    scenes_dir = base_dir / "scenes"
+    events_dir = base_dir / "events"
 
     if not base_dir.exists():
         print(f"  SKIP: {base_dir} 不存在", file=sys.stderr)
         return 0
 
     # Clear existing data for this novel
-    conn.execute("DELETE FROM scene_tags WHERE material_id = ?", (material_id,))
-    conn.execute("DELETE FROM scene_characters WHERE material_id = ?", (material_id,))
-    conn.execute("DELETE FROM scenes WHERE material_id = ?", (material_id,))
+    conn.execute("DELETE FROM event_tags WHERE material_id = ?", (material_id,))
+    conn.execute("DELETE FROM event_characters WHERE material_id = ?", (material_id,))
+    conn.execute("DELETE FROM events WHERE material_id = ?", (material_id,))
     conn.execute("DELETE FROM characters WHERE material_id = ?", (material_id,))
     conn.execute("DELETE FROM novels WHERE material_id = ?", (material_id,))
 
@@ -225,74 +225,74 @@ def ingest_novel(conn: sqlite3.Connection, material_id: str):
     author = meta.get('author', '')
     status = meta.get('status', 'unknown')
 
-    # Load scenes
-    scene_count = 0
-    if scenes_dir.exists():
-        scene_files = sorted(scenes_dir.glob("ch*.yaml"))
+    # Load events
+    event_count = 0
+    if events_dir.exists():
+        event_files = sorted(events_dir.glob("ev*.yaml"))
 
-        for sf in scene_files:
+        for ef in event_files:
             try:
-                with open(sf, 'r', encoding='utf-8') as f:
-                    scene = yaml.safe_load(f)
+                with open(ef, 'r', encoding='utf-8') as f:
+                    event = yaml.safe_load(f)
             except yaml.YAMLError:
                 continue
 
-            if not scene:
+            if not event:
                 continue
 
-            scene = _flatten_scene(scene)
+            event = _flatten_event(event)
 
-            scene_id = scene.get('id', sf.stem)
-            chapter = scene.get('chapter', '')
-            title = scene.get('title', '')
-            summary = scene.get('summary', '')
-            tension = scene.get('tension', 0)
-            pacing = _str_or_first(scene.get('pacing', ''))
-            pov = _str_or_first(scene.get('pov', ''))
-            power_dynamic = _str_or_first(scene.get('power_dynamic', ''))
-            moral_spectrum = _str_or_first(scene.get('moral_spectrum', ''))
-            plot_stage = _str_or_first(scene.get('plot_stage', ''))
-            scale = _str_or_first(scene.get('scale', ''))
+            event_id = event.get('id', ef.stem)
+            chapter = event.get('chapter', '')
+            title = event.get('title', '')
+            summary = event.get('summary', '')
+            tension = event.get('tension', 0)
+            pacing = _str_or_first(event.get('pacing', ''))
+            pov = _str_or_first(event.get('pov', ''))
+            power_dynamic = _str_or_first(event.get('power_dynamic', ''))
+            moral_spectrum = _str_or_first(event.get('moral_spectrum', ''))
+            plot_stage = _str_or_first(event.get('plot_stage', ''))
+            scale = _str_or_first(event.get('scale', ''))
 
             conn.execute(
-                """INSERT OR REPLACE INTO scenes
-                   (scene_id, material_id, chapter, title, summary, tension,
+                """INSERT OR REPLACE INTO events
+                   (event_id, material_id, chapter, title, summary, tension,
                     pacing, pov, power_dynamic, moral_spectrum, plot_stage, scale)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (scene_id, material_id, chapter, title, summary, tension,
+                (event_id, material_id, chapter, title, summary, tension,
                  pacing, pov, power_dynamic, moral_spectrum, plot_stage, scale)
             )
 
-            # List tag fields → scene_tags
+            # List tag fields → event_tags
             for field in TAG_LIST_FIELDS:
-                for val in _as_list(scene.get(field)):
+                for val in _as_list(event.get(field)):
                     conn.execute(
-                        "INSERT INTO scene_tags (scene_id, material_id, dimension, value) VALUES (?, ?, ?, ?)",
-                        (scene_id, material_id, field, val)
+                        "INSERT INTO event_tags (event_id, material_id, dimension, value) VALUES (?, ?, ?, ?)",
+                        (event_id, material_id, field, val)
                     )
 
-            # Scalar tag fields → scene_tags
+            # Scalar tag fields → event_tags
             for field in TAG_SCALAR_FIELDS:
-                val = scene.get(field)
+                val = event.get(field)
                 if val:
                     conn.execute(
-                        "INSERT INTO scene_tags (scene_id, material_id, dimension, value) VALUES (?, ?, ?, ?)",
-                        (scene_id, material_id, field, str(val))
+                        "INSERT INTO event_tags (event_id, material_id, dimension, value) VALUES (?, ?, ?, ?)",
+                        (event_id, material_id, field, str(val))
                     )
 
             # Characters
-            for char_name in _as_list(scene.get('characters')):
+            for char_name in _as_list(event.get('characters')):
                 conn.execute(
-                    "INSERT OR IGNORE INTO scene_characters (scene_id, material_id, character_name) VALUES (?, ?, ?)",
-                    (scene_id, material_id, char_name)
+                    "INSERT OR IGNORE INTO event_characters (event_id, material_id, character_name) VALUES (?, ?, ?)",
+                    (event_id, material_id, char_name)
                 )
 
-            scene_count += 1
+            event_count += 1
 
     # Insert novel record
     conn.execute(
-        "INSERT INTO novels (material_id, name, author, status, total_scenes, built_at) VALUES (?, ?, ?, ?, ?, ?)",
-        (material_id, name, author, status, scene_count, datetime.now().isoformat())
+        "INSERT INTO novels (material_id, name, author, status, total_events, built_at) VALUES (?, ?, ?, ?, ?, ?)",
+        (material_id, name, author, status, event_count, datetime.now().isoformat())
     )
 
     # Load characters
@@ -324,7 +324,7 @@ def ingest_novel(conn: sqlite3.Connection, material_id: str):
         )
 
     conn.commit()
-    return scene_count
+    return event_count
 
 
 def build_all(conn: sqlite3.Connection):
@@ -352,20 +352,20 @@ def build_all(conn: sqlite3.Connection):
             if d.is_dir() and d.name.startswith('nm_') and d.name not in material_ids:
                 material_ids.append(d.name)
 
-    total_scenes = 0
+    total_events = 0
     for mid in material_ids:
         if not mid:
             continue
         print(f"  处理: {mid}")
         count = ingest_novel(conn, mid)
-        total_scenes += count
-        print(f"    场景: {count}")
+        total_events += count
+        print(f"    事件: {count}")
 
-    return len(material_ids), total_scenes
+    return len(material_ids), total_events
 
 
 def main():
-    parser = argparse.ArgumentParser(description='从场景 YAML 构建 SQLite 索引')
+    parser = argparse.ArgumentParser(description='从事件 YAML 构建 SQLite 索引')
     parser.add_argument('--material', help='仅重建指定素材', default=None)
     parser.add_argument('--incremental', help='增量更新指定素材', default=None)
     args = parser.parse_args()
@@ -380,7 +380,7 @@ def main():
         create_schema(conn)
         print(f"增量更新: {args.incremental}")
         count = ingest_novel(conn, args.incremental)
-        print(f"✅ 更新完成，场景: {count}")
+        print(f"✅ 更新完成，事件: {count}")
         conn.close()
         return
 
@@ -390,27 +390,27 @@ def main():
     if args.material:
         print(f"重建: {args.material}")
         count = ingest_novel(conn, args.material)
-        print(f"✅ 重建完成，场景: {count}")
+        print(f"✅ 重建完成，事件: {count}")
     else:
         print("全量重建数据库...")
-        novel_count, scene_count = build_all(conn)
+        novel_count, event_count = build_all(conn)
         print(f"\n✅ 全量重建完成")
         print(f"  小说: {novel_count}")
-        print(f"  场景: {scene_count}")
+        print(f"  事件: {event_count}")
 
     # Print DB stats
     cursor = conn.execute("SELECT COUNT(*) FROM novels")
     n_novels = cursor.fetchone()[0]
-    cursor = conn.execute("SELECT COUNT(*) FROM scenes")
-    n_scenes = cursor.fetchone()[0]
-    cursor = conn.execute("SELECT COUNT(*) FROM scene_tags")
+    cursor = conn.execute("SELECT COUNT(*) FROM events")
+    n_events = cursor.fetchone()[0]
+    cursor = conn.execute("SELECT COUNT(*) FROM event_tags")
     n_tags = cursor.fetchone()[0]
     cursor = conn.execute("SELECT COUNT(*) FROM characters")
     n_chars = cursor.fetchone()[0]
 
     print(f"\n📊 数据库统计:")
     print(f"  小说: {n_novels}")
-    print(f"  场景: {n_scenes}")
+    print(f"  事件: {n_events}")
     print(f"  标签记录: {n_tags}")
     print(f"  人物: {n_chars}")
     print(f"  文件: {DB_PATH}")

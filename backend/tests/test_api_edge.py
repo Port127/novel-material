@@ -8,7 +8,7 @@ Covers gaps NOT in test_api.py:
   - Upload with .md and .epub extensions
   - LLM test endpoint (/api/llm/test)
   - LLM proxy endpoint (/api/llm/proxy)
-  - Scene pagination edge cases (page=1 limit=1, large page)
+  - Event pagination edge cases (page=1 limit=1, large page)
   - Search with limit boundary values
   - Stats endpoint HTML content type
   - Dashboard stats field completeness
@@ -171,28 +171,28 @@ class TestLLMProxyEndpoint:
             assert resp.status_code == 200
 
 
-# ── Scene Pagination Edge Cases ──────────────────────────────────────
+# ── Event Pagination Edge Cases ──────────────────────────────────────
 
 
-class TestScenePagination:
+class TestEventPagination:
     def test_page_1_limit_1(self, client):
-        resp = client.get(f"/api/materials/{TEST_MATERIAL_ID}/scenes?page=1&limit=1")
+        resp = client.get(f"/api/materials/{TEST_MATERIAL_ID}/events?page=1&limit=1")
         assert resp.status_code == 200
         data = resp.json()
-        assert len(data["scenes"]) <= 1
+        assert len(data["events"]) <= 1
         assert data["page"] == 1
 
     def test_large_page_returns_empty(self, client):
-        resp = client.get(f"/api/materials/{TEST_MATERIAL_ID}/scenes?page=9999")
+        resp = client.get(f"/api/materials/{TEST_MATERIAL_ID}/events?page=9999")
         assert resp.status_code == 200
-        assert resp.json()["scenes"] == []
+        assert resp.json()["events"] == []
 
     def test_invalid_page_rejected(self, client):
-        resp = client.get(f"/api/materials/{TEST_MATERIAL_ID}/scenes?page=0")
+        resp = client.get(f"/api/materials/{TEST_MATERIAL_ID}/events?page=0")
         assert resp.status_code == 422
 
     def test_limit_too_large_rejected(self, client):
-        resp = client.get(f"/api/materials/{TEST_MATERIAL_ID}/scenes?limit=999")
+        resp = client.get(f"/api/materials/{TEST_MATERIAL_ID}/events?limit=999")
         assert resp.status_code == 422
 
 
@@ -200,17 +200,17 @@ class TestScenePagination:
 
 
 class TestSearchLimits:
-    def test_search_scenes_limit_1(self, client):
-        resp = client.get("/api/search/scenes?scene_type=对决&limit=1")
+    def test_search_events_limit_1(self, client):
+        resp = client.get("/api/search/events?event_type=对决&limit=1")
         assert resp.status_code == 200
         assert len(resp.json()["results"]) <= 1
 
-    def test_search_scenes_limit_100(self, client):
-        resp = client.get("/api/search/scenes?scene_type=对决&limit=100")
+    def test_search_events_limit_100(self, client):
+        resp = client.get("/api/search/events?event_type=对决&limit=100")
         assert resp.status_code == 200
 
-    def test_search_scenes_limit_over_max_rejected(self, client):
-        resp = client.get("/api/search/scenes?scene_type=对决&limit=101")
+    def test_search_events_limit_over_max_rejected(self, client):
+        resp = client.get("/api/search/events?event_type=对决&limit=101")
         assert resp.status_code == 422
 
     def test_search_characters_limit_boundary(self, client):
@@ -240,8 +240,8 @@ class TestDashboardStatsCompleteness:
         resp = client.get("/api/stats")
         assert resp.status_code == 200
         data = resp.json()
-        for key in ("novels", "scenes", "characters", "tag_records",
-                     "per_novel", "top_scene_types", "top_emotions",
+        for key in ("novels", "events", "characters", "tag_records",
+                     "per_novel", "top_event_types", "top_emotions",
                      "tension_distribution", "top_techniques"):
             assert key in data, f"Missing field: {key}"
 
@@ -251,7 +251,7 @@ class TestDashboardStatsCompleteness:
         for item in data["per_novel"]:
             assert "material_id" in item
             assert "name" in item
-            assert "scenes" in item
+            assert "events" in item
 
 
 # ── Tag Operations Sequence ──────────────────────────────────────────
@@ -260,22 +260,22 @@ class TestDashboardStatsCompleteness:
 class TestTagOperationsSequence:
     def test_add_then_merge(self, client):
         resp = client.post("/api/tags/add", json={
-            "dimension": "scene_type", "value": "临时类型",
+            "dimension": "event_type", "value": "临时类型",
         })
         assert resp.status_code == 200
 
         resp = client.get("/api/tags")
         tags = resp.json()
-        assert "临时类型" in tags["scene_type"]["values"]
+        assert "临时类型" in tags["event_type"]["values"]
 
         resp = client.post("/api/tags/merge", json={
-            "dimension": "scene_type", "source": "临时类型", "target": "对决",
+            "dimension": "event_type", "source": "临时类型", "target": "对决",
         })
         assert resp.status_code == 200
 
         resp = client.get("/api/tags")
         tags = resp.json()
-        assert "临时类型" not in tags["scene_type"]["values"]
+        assert "临时类型" not in tags["event_type"]["values"]
 
     def test_tag_usage_endpoint(self, client):
         resp = client.get("/api/tags/usage")
@@ -308,8 +308,8 @@ class TestMaterialEndpointsEdge:
         resp = client.get("/api/materials/nonexistent/stats/html")
         assert resp.status_code == 404
 
-    def test_scene_detail_not_found(self, client):
-        resp = client.get(f"/api/materials/{TEST_MATERIAL_ID}/scenes/nonexistent_scene")
+    def test_event_detail_not_found(self, client):
+        resp = client.get(f"/api/materials/{TEST_MATERIAL_ID}/events/nonexistent_event")
         assert resp.status_code == 404
 
 

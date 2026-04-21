@@ -96,7 +96,7 @@ export default function Settings() {
       <div className="rounded-xl bg-slate-900/80 border border-slate-800/60 p-6 space-y-5">
         <h2 className="text-sm font-medium text-slate-300">LLM API 配置</h2>
         <p className="text-xs text-slate-500">
-          配置第三方大模型 API 接入，用于 Pipeline 中的场景分析、标签生成等任务。保存后同步到后端。
+          配置第三方大模型 API 接入，用于 Pipeline 中的事件分析、标签生成等任务。保存后同步到后端。
         </p>
 
         <div>

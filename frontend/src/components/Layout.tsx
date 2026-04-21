@@ -10,7 +10,7 @@ const nav = [
   { to: '/', icon: LayoutDashboard, label: '总览', end: true },
   { to: '/materials', icon: Library, label: '素材库' },
   { to: '/upload', icon: Upload, label: '上传小说' },
-  { to: '/search/scenes', icon: Search, label: '场景搜索' },
+  { to: '/search/events', icon: Search, label: '事件搜索' },
   { to: '/search/characters', icon: Users, label: '人物搜索' },
   { to: '/tags', icon: Tags, label: '标签字典' },
   { to: '/settings', icon: Settings, label: '设置' },

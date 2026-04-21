@@ -3,12 +3,12 @@ Edge-case tests for backend/services/data_service.py.
 
 Covers gaps NOT in test_data_service.py:
   - _clean_query() helper
-  - search_scenes() with tension-only filters (no tags/character)
-  - search_scenes() with comma-separated multi-value in a single dimension
+  - search_events() with tension-only filters (no tags/character)
+  - search_events() with comma-separated multi-value in a single dimension
   - search_characters() with no conditions → returns all
   - merge_tag_values() DB update path + source removal
   - register_material() edge cases (no index.yaml)
-  - get_scene_detail() fallback from YAML to DB
+  - get_event_detail() fallback from YAML to DB
   - list_materials() without DB
   - get_material() without DB
 """
@@ -33,12 +33,12 @@ TEST_MATERIAL_ID = "nm_novel_20260101_test"
 class TestCleanQuery:
     def test_removes_none_values(self, patched_ds):
         ds = patched_ds
-        result = ds._clean_query({"scene_type": "对决", "emotion": None, "limit": 20})
-        assert result == {"scene_type": "对决"}
+        result = ds._clean_query({"event_type": "对决", "emotion": None, "limit": 20})
+        assert result == {"event_type": "对决"}
 
     def test_removes_limit(self, patched_ds):
         ds = patched_ds
-        result = ds._clean_query({"limit": 20, "scene_type": "x"})
+        result = ds._clean_query({"limit": 20, "event_type": "x"})
         assert "limit" not in result
 
     def test_joins_list_values(self, patched_ds):
@@ -62,28 +62,28 @@ class TestCleanQuery:
         assert result == {"character": "张三", "material": "mid"}
 
 
-# ── search_scenes edge cases ─────────────────────────────────────────
+# ── search_events edge cases ─────────────────────────────────────────
 
 
-class TestSearchScenesEdge:
+class TestSearchEventsEdge:
     def test_tension_only_filter(self, patched_ds):
         """Tension-only search (no tag or character filters) should still work."""
         ds = patched_ds
-        result = ds.search_scenes({"tension_min": 4})
+        result = ds.search_events({"tension_min": 4})
         assert result["total"] >= 0
         for r in result["results"]:
             assert r["tension"] >= 4
 
     def test_tension_range(self, patched_ds):
         ds = patched_ds
-        result = ds.search_scenes({"tension_min": 2, "tension_max": 3})
+        result = ds.search_events({"tension_min": 2, "tension_max": 3})
         for r in result["results"]:
             assert 2 <= r["tension"] <= 3
 
     def test_comma_separated_values(self, patched_ds):
         """A single dimension with comma-separated values should be split and OR'd."""
         ds = patched_ds
-        result = ds.search_scenes({"scene_type": "对决,回忆"})
+        result = ds.search_events({"event_type": "对决,回忆"})
         assert result["total"] >= 1
 
     def test_no_db_returns_empty(self, patched_ds, data_env):
@@ -91,15 +91,15 @@ class TestSearchScenesEdge:
         data_dir, db_path, _, _ = data_env
         db_path.unlink()
         ds.DB_PATH = db_path
-        result = ds.search_scenes({"scene_type": "对决"})
+        result = ds.search_events({"event_type": "对决"})
         assert result["total"] == 0
         assert result["relaxed"] is False
 
     def test_relaxation_flag(self, patched_ds):
         """When AND intersection fails, relaxation should be flagged."""
         ds = patched_ds
-        result = ds.search_scenes({
-            "scene_type": "回忆",
+        result = ds.search_events({
+            "event_type": "回忆",
             "conflict": "人与命运",
         })
         if result["total"] == 0:
@@ -154,24 +154,24 @@ class TestMergeTagValues:
         ds = patched_ds
         data_dir, db_path, _, _ = data_env
         tags = ds._read_yaml(data_dir / "tags.yaml")
-        assert "回忆" in tags["scene_type"]["values"]
+        assert "回忆" in tags["event_type"]["values"]
 
-        result = ds.merge_tag_values("scene_type", "回忆", "对决")
+        result = ds.merge_tag_values("event_type", "回忆", "对决")
         assert result["ok"] is True
         assert result["merged"] == "回忆"
         assert result["into"] == "对决"
 
         tags_after = ds._read_yaml(data_dir / "tags.yaml")
-        assert "回忆" not in tags_after["scene_type"]["values"]
+        assert "回忆" not in tags_after["event_type"]["values"]
 
     def test_merge_source_not_in_dict_still_ok(self, patched_ds, data_env):
         ds = patched_ds
-        result = ds.merge_tag_values("scene_type", "完全不存在", "对决")
+        result = ds.merge_tag_values("event_type", "完全不存在", "对决")
         assert result["ok"] is True
 
     def test_merge_target_not_found(self, patched_ds):
         ds = patched_ds
-        result = ds.merge_tag_values("scene_type", "对决", "不存在的目标")
+        result = ds.merge_tag_values("event_type", "对决", "不存在的目标")
         assert result["ok"] is False
 
     def test_merge_unknown_dimension(self, patched_ds):
@@ -210,24 +210,24 @@ class TestRegisterMaterial:
         assert idx["materials"][0]["id"] == "nm_fresh"
 
 
-# ── get_scene_detail ─────────────────────────────────────────────────
+# ── get_event_detail ─────────────────────────────────────────────────
 
 
-class TestGetSceneDetail:
+class TestGetEventDetail:
     def test_prefers_yaml_file(self, patched_ds, data_env):
         ds = patched_ds
-        detail = ds.get_scene_detail(TEST_MATERIAL_ID, "ch0001_s1")
+        detail = ds.get_event_detail(TEST_MATERIAL_ID, "ev0001")
         assert detail is not None
-        assert "id" in detail or "scene_id" in detail
+        assert "id" in detail or "event_id" in detail
 
     def test_falls_back_to_db(self, patched_ds, data_env):
         ds = patched_ds
-        detail = ds.get_scene_detail(TEST_MATERIAL_ID, f"{TEST_MATERIAL_ID}_ch001_s1")
+        detail = ds.get_event_detail(TEST_MATERIAL_ID, f"{TEST_MATERIAL_ID}_ch001_s1")
         assert detail is not None
 
     def test_not_found_in_both(self, patched_ds):
         ds = patched_ds
-        detail = ds.get_scene_detail("nonexistent", "nonexistent_s1")
+        detail = ds.get_event_detail("nonexistent", "nonexistent_e1")
         assert detail is None
 
 
@@ -242,7 +242,7 @@ class TestWithoutDB:
         ds.DB_PATH = db_path
         materials = ds.list_materials()
         assert len(materials) >= 1
-        assert materials[0]["scene_count"] == 0
+        assert materials[0]["event_count"] == 0
 
     def test_get_material_no_db(self, patched_ds, data_env):
         ds = patched_ds
@@ -251,7 +251,7 @@ class TestWithoutDB:
         ds.DB_PATH = db_path
         m = ds.get_material(TEST_MATERIAL_ID)
         assert m is not None
-        assert "scene_count" not in m or m.get("scene_count", 0) == 0
+        assert "event_count" not in m or m.get("event_count", 0) == 0
 
 
 # ── get_tag_usage ─────────────────────────────────────────────────────
@@ -262,9 +262,9 @@ class TestGetTagUsage:
         ds = patched_ds
         usage = ds.get_tag_usage()
         assert isinstance(usage, dict)
-        assert "scene_type" in usage
-        assert isinstance(usage["scene_type"], list)
-        assert all("value" in item and "count" in item for item in usage["scene_type"])
+        assert "event_type" in usage
+        assert isinstance(usage["event_type"], list)
+        assert all("value" in item and "count" in item for item in usage["event_type"])
 
     def test_no_db_returns_empty(self, patched_ds, data_env):
         ds = patched_ds
@@ -294,4 +294,4 @@ class TestGetDashboardStatsEdge:
         ds.DB_PATH = db_path
         stats = ds.get_dashboard_stats()
         assert stats["novels"] == 0
-        assert stats["scenes"] == 0
+        assert stats["events"] == 0

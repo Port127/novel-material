@@ -175,8 +175,8 @@ def run_stage(material_id: str, stage: str):
             _run_build_index(material_id)
         elif stage == "analyze":
             _run_analyze(material_id)
-        elif stage == "scenes":
-            _run_scenes(material_id)
+        elif stage == "events":
+            _run_events(material_id)
         elif stage == "finalize":
             _run_finalize(material_id)
         else:
@@ -223,7 +223,11 @@ def _run_format(material_id: str):
 
     meta = ds._read_yaml(nd / "meta.yaml") or {}
     meta["status"] = "formatted"
-    meta["formatted"] = True
+    # formatted 字段应在 pipeline 内，而非顶层
+    if "pipeline" not in meta:
+        meta["pipeline"] = {}
+    meta["pipeline"]["formatted"] = True
+    meta["pipeline"]["format_date"] = datetime.now().strftime("%Y-%m-%d")
     ds._write_yaml(nd / "meta.yaml", meta)
 
 
@@ -241,16 +245,16 @@ def _run_build_index(material_id: str):
         raise RuntimeError(f"Build index failed: {result.stderr[:500]}")
 
 
-def _run_scenes(material_id: str):
-    """Scene splitting requires Agent — provide guidance rather than auto-run."""
+def _run_events(material_id: str):
+    """Event splitting requires Agent — provide guidance rather than auto-run."""
     raise RuntimeError(
-        "场景拆分任务过于复杂（需分批处理 + 质量审计循环），"
+        "事件拆分任务过于复杂（需分批处理 + 质量审计循环），"
         "请通过 Agent 执行：/pipeline-scenes " + material_id
     )
 
 
 def _run_finalize(material_id: str):
-    """Generate stats report from existing scene data."""
+    """Generate stats report from existing event data."""
     cfg = get_llm_config()
     if not cfg.get("base_url") or not cfg.get("api_key"):
         raise RuntimeError("LLM 未配置。请先在设置页面配置 LLM API。")
@@ -259,40 +263,40 @@ def _run_finalize(material_id: str):
     meta = ds._read_yaml(nd / "meta.yaml") or {}
     novel_name = meta.get("name", material_id)
 
-    scenes_dir = nd / "scenes"
-    if not scenes_dir.exists() or not list(scenes_dir.glob("ch*.yaml")):
-        raise RuntimeError("尚无场景数据，请先执行场景拆分。")
+    events_dir = nd / "events"
+    if not events_dir.exists() or not list(events_dir.glob("ev*.yaml")):
+        raise RuntimeError("尚无事件数据，请先执行事件拆分。")
 
     _set_status(material_id, {"running": True, "current_stage": "finalize:stats"})
 
-    scene_summaries = []
-    scene_files = sorted(scenes_dir.glob("ch*.yaml"))[:200]
-    for sf in scene_files:
-        scene = ds._read_yaml(sf)
-        if not scene:
+    event_summaries = []
+    event_files = sorted(events_dir.glob("ev*.yaml"))[:200]
+    for ef in event_files:
+        event = ds._read_yaml(ef)
+        if not event:
             continue
-        scene_summaries.append(
-            f"- {scene.get('id','?')}: {scene.get('chapter','')} | {scene.get('title','')} "
-            f"| T{scene.get('tension',0)} | {','.join(scene.get('scene_type',[]))} "
-            f"| {','.join(scene.get('emotion',[]))}"
+        event_summaries.append(
+            f"- {event.get('id','?')}: {event.get('chapter','')} | {event.get('title','')} "
+            f"| T{event.get('tension',0)} | {','.join(event.get('event_type',[]))} "
+            f"| {','.join(event.get('emotion',[]))}"
         )
 
-    total_scenes = len(list(scenes_dir.glob("ch*.yaml")))
-    digest = "\n".join(scene_summaries)
+    total_events = len(list(events_dir.glob("ev*.yaml")))
+    digest = "\n".join(event_summaries)
 
-    system = """你是一位专业的小说数据分析师。根据场景摘要数据生成统计报告。
+    system = """你是一位专业的小说数据分析师。根据事件摘要数据生成统计报告。
 输出纯 YAML 格式，结构如下：
 
 material_id: <素材ID>
 basic:
   total_chapters: <章节数>
-  total_scenes: <场景数>
-  avg_scenes_per_chapter: <平均每章场景数>
+  total_events: <事件数>
+  avg_events_per_chapter: <平均每章事件数>
 pacing:
   avg_tension: <平均张力>
-  high_tension_scenes: <张力>=4的场景数>
+  high_tension_events: <张力>=4的事件数>
   tension_distribution: {1: 数量, 2: 数量, 3: 数量, 4: 数量, 5: 数量}
-scene_type_distribution:
+event_type_distribution:
   - type: <类型>
     count: <数量>
     ratio: <占比>
@@ -301,13 +305,13 @@ emotion_distribution:
     count: <数量>
 character_stats:
   - name: <人物名>
-    scene_count: <出场场景数>
+    event_count: <出场事件数>
 technique_stats:
   techniques_used: [技法列表]
 
 基于实际数据统计，不要编造。"""
 
-    user = f"小说《{novel_name}》(ID: {material_id}) 共 {total_scenes} 个场景。\n\n场景摘要：\n{digest}"
+    user = f"小说《{novel_name}》(ID: {material_id}) 共 {total_events} 个事件。\n\n事件摘要：\n{digest}"
     result = _call_llm(system, user, temperature=0.1)
     parsed = yaml.safe_load(_extract_yaml(result))
     if parsed and isinstance(parsed, dict):

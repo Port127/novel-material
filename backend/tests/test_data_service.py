@@ -9,7 +9,7 @@ def test_list_materials(patched_ds):
     result = patched_ds.list_materials()
     assert len(result) >= 1
     assert result[0]["id"] == MID
-    assert result[0]["scene_count"] == 3
+    assert result[0]["event_count"] == 3
 
 
 def test_get_material(patched_ds):
@@ -21,8 +21,8 @@ def test_get_material(patched_ds):
     assert m["has_characters"] is True
     assert m["has_tags"] is True
     assert m["has_stats"] is True
-    assert m["has_scenes"] is True
-    assert m["scene_count"] == 3
+    assert m["has_events"] is True
+    assert m["event_count"] == 3
     assert m["character_count"] == 2
 
 
@@ -58,7 +58,7 @@ def test_get_novel_tags(patched_ds):
 def test_get_stats(patched_ds):
     s = patched_ds.get_stats(MID)
     assert s is not None
-    assert s["total_scenes"] == 3
+    assert s["total_events"] == 3
 
 
 def test_get_stats_html(patched_ds):
@@ -71,58 +71,58 @@ def test_get_stats_html_missing(patched_ds):
     assert patched_ds.get_stats_html("nonexistent") is None
 
 
-# ── Scenes ─────────────────────────────────────────────────────
+# ── Events ─────────────────────────────────────────────────────
 
-def test_get_scenes_default(patched_ds):
-    result = patched_ds.get_scenes(MID)
+def test_get_events_default(patched_ds):
+    result = patched_ds.get_events(MID)
     assert result["total"] == 3
     assert result["page"] == 1
-    assert len(result["scenes"]) == 3
-    scene = result["scenes"][0]
-    assert "tags" in scene
-    assert "characters" in scene
+    assert len(result["events"]) == 3
+    event = result["events"][0]
+    assert "tags" in event
+    assert "characters" in event
 
 
-def test_get_scenes_pagination(patched_ds):
-    result = patched_ds.get_scenes(MID, page=1, limit=2)
-    assert len(result["scenes"]) == 2
-    result2 = patched_ds.get_scenes(MID, page=2, limit=2)
-    assert len(result2["scenes"]) == 1
+def test_get_events_pagination(patched_ds):
+    result = patched_ds.get_events(MID, page=1, limit=2)
+    assert len(result["events"]) == 2
+    result2 = patched_ds.get_events(MID, page=2, limit=2)
+    assert len(result2["events"]) == 1
 
 
-def test_get_scene_detail_from_yaml(patched_ds):
-    scene = patched_ds.get_scene_detail(MID, f"{MID}_ch001_s1")
-    assert scene is not None
+def test_get_event_detail_from_yaml(patched_ds):
+    event = patched_ds.get_event_detail(MID, f"{MID}_ch001_s1")
+    assert event is not None
 
 
-def test_get_scene_detail_not_found(patched_ds):
-    assert patched_ds.get_scene_detail(MID, "nonexistent_scene") is None
+def test_get_event_detail_not_found(patched_ds):
+    assert patched_ds.get_event_detail(MID, "nonexistent_event") is None
 
 
 # ── Search ─────────────────────────────────────────────────────
 
-def test_search_scenes_single_tag(patched_ds):
-    result = patched_ds.search_scenes({"scene_type": "对决", "limit": 10})
+def test_search_events_single_tag(patched_ds):
+    result = patched_ds.search_events({"event_type": "对决", "limit": 10})
     assert result["total"] >= 1
 
 
-def test_search_scenes_character(patched_ds):
-    result = patched_ds.search_scenes({"character": "张三", "limit": 10})
+def test_search_events_character(patched_ds):
+    result = patched_ds.search_events({"character": "张三", "limit": 10})
     assert result["total"] >= 1
 
 
-def test_search_scenes_material_filter(patched_ds):
-    result = patched_ds.search_scenes({"material": MID, "limit": 50})
+def test_search_events_material_filter(patched_ds):
+    result = patched_ds.search_events({"material": MID, "limit": 50})
     assert result["total"] == 3
 
 
-def test_search_scenes_no_match(patched_ds):
-    result = patched_ds.search_scenes({"scene_type": "不存在的类型", "limit": 10})
+def test_search_events_no_match(patched_ds):
+    result = patched_ds.search_events({"event_type": "不存在的类型", "limit": 10})
     assert result["total"] == 0
 
 
-def test_search_scenes_tension_filter(patched_ds):
-    result = patched_ds.search_scenes({"material": MID, "tension_min": 4, "limit": 10})
+def test_search_events_tension_filter(patched_ds):
+    result = patched_ds.search_events({"material": MID, "tension_min": 4, "limit": 10})
     for s in result["results"]:
         assert s["tension"] >= 4
 
@@ -154,11 +154,11 @@ def test_search_text_empty(patched_ds):
 def test_dashboard_stats(patched_ds):
     s = patched_ds.get_dashboard_stats()
     assert s["novels"] >= 1
-    assert s["scenes"] >= 1
+    assert s["events"] >= 1
     assert s["characters"] >= 1
     assert s["tag_records"] >= 1
     assert len(s["per_novel"]) >= 1
-    assert "top_scene_types" in s
+    assert "top_event_types" in s
     assert "tension_distribution" in s
 
 
@@ -166,20 +166,20 @@ def test_dashboard_stats(patched_ds):
 
 def test_get_tag_dict(patched_ds):
     tags = patched_ds.get_tag_dict()
-    assert "scene_type" in tags
-    assert "对决" in tags["scene_type"]["values"]
+    assert "event_type" in tags
+    assert "对决" in tags["event_type"]["values"]
 
 
 def test_add_tag_value(patched_ds):
-    result = patched_ds.add_tag_value("scene_type", "新场景类型")
+    result = patched_ds.add_tag_value("event_type", "新事件类型")
     assert result["ok"] is True
 
     tags = patched_ds.get_tag_dict()
-    assert "新场景类型" in tags["scene_type"]["values"]
+    assert "新事件类型" in tags["event_type"]["values"]
 
 
 def test_add_tag_value_duplicate(patched_ds):
-    result = patched_ds.add_tag_value("scene_type", "对决")
+    result = patched_ds.add_tag_value("event_type", "对决")
     assert result["ok"] is False
 
 
@@ -206,7 +206,7 @@ def test_merge_tag_target_missing(patched_ds):
 
 def test_get_tag_usage(patched_ds):
     usage = patched_ds.get_tag_usage()
-    assert "scene_type" in usage
+    assert "event_type" in usage
 
 
 # ── Register ───────────────────────────────────────────────────

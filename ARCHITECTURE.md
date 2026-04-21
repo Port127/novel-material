@@ -35,7 +35,7 @@
                | novel-worldbuilding       |  世界观设定
                | novel-characters          |  生成人物体系
                | novel-tags                |  小说级标签
-               | novel-scenes              |  场景拆分+多维标签
+               | novel-scenes              |  事件拆分+多维标签
                | build-index               |  构建索引
                | refine                    |  精调
                | novel-stats               |  统计报告+交互图表
@@ -77,9 +77,9 @@
                | novels/{id}/worldbuilding.yaml |  世界观设定（+精调）
                | novels/{id}/characters.yaml    |  人物（+精调）
                | novels/{id}/tags.yaml          |  标签（+精调）
-               | novels/{id}/scenes/*.yaml      |  场景
+               | novels/{id}/events/*.yaml      |  事件
                | novels/{id}/scenes_index.yaml  |  倒排索引
-               | novels/{id}/scenes_manifest.yaml| 场景清单
+               | novels/{id}/scenes_manifest.yaml| 事件清单
                | novels/{id}/stats.*            |  统计（yaml/md/html）
                +-------------------------------+
 
@@ -115,7 +115,7 @@
 |--------------|-----------|------|------|
 | `pipeline-ingest` | material-add → source-format | meta.yaml + source.txt | ~1分钟 |
 | `pipeline-analyze` | outline → worldbuilding → characters → tags | 4个分析文件 | ~5-10分钟 |
-| `pipeline-scenes` | novel-scenes(all) → build-index | scenes/*.yaml + 索引 | **可跨对话** |
+| `pipeline-scenes` | novel-scenes(all) → build-index | events/*.yaml + 索引 | **可跨对话** |
 | `pipeline-finalize` | refine → novel-stats | 精调文件 + stats.* | ~5分钟 |
 
 **设计要点**：`pipeline-scenes` 是最耗时阶段（大书需要几十到上百批次），专门设计为可跨对话恢复。每 30 批建议开新对话。
@@ -133,13 +133,13 @@
 | `novel-worldbuilding` | 世界观设定 | material_id | worldbuilding.yaml |
 | `novel-characters` | 生成人物体系 | material_id | characters.yaml |
 | `novel-tags` | 小说级标签 | material_id | tags.yaml |
-| `novel-scenes` | 场景拆分+标签 | material_id + 章节范围 | scenes/*.yaml |
+| `novel-scenes` | 事件拆分+标签 | material_id + 章节范围 | events/*.yaml |
 | `build-index` | 构建索引 + 聚合全局索引 | material_id | scenes_index/manifest + character_index + plot_index |
 | `refine` | 精调大纲/人物/标签/世界观 | material_id | 精调后的 outline/worldbuilding/characters/tags |
 | `novel-stats` | 统计报告+交互图表 | material_id | stats.yaml + stats.md + stats.html |
 | `material-search` | 关键词检索 | 关键词 | 匹配素材列表 |
-| `material-search-scene` | 多维标签检索 | 标签条件 | 匹配场景列表 |
-| `material-search-context` | 写作上下文检索 | 写作上下文 | 场景+人物+技法参考 |
+| `material-search-scene` | 多维标签检索 | 标签条件 | 匹配事件列表 |
+| `material-search-context` | 写作上下文检索 | 写作上下文 | 事件+人物+技法参考 |
 | `tag-add` | 新增标签值 | 维度 + 值 | tags.yaml 更新 |
 | `tag-merge` | 合并标签 | 旧值 + 新值 | 全局替换 |
 
@@ -163,7 +163,7 @@ scripts/
 ├── core/               # 预制脚本（版本控制）
 │   ├── search.py
 │   ├── build_db.py
-│   ├── build_scene_index.py
+│   ├── build_event_index.py
 │   ├── quality_audit.py
 │   ├── validate_yaml.py
 │   └── source_format.py
@@ -174,11 +174,11 @@ scripts/
 
 | 脚本 | 职责 |
 |------|------|
-| `scripts/core/search.py` | 多维检索接口（场景/人物/全文） |
+| `scripts/core/search.py` | 多维检索接口（事件/人物/全文） |
 | `scripts/core/build_db.py` | 从 YAML 构建 SQLite |
-| `scripts/core/build_scene_index.py` | 构建 YAML 倒排索引 |
+| `scripts/core/build_event_index.py` | 构建 YAML 倒排索引 |
 | `scripts/core/quality_audit.py` | 批次质量审计 |
-| `scripts/core/validate_yaml.py` | 场景 YAML 格式校验 |
+| `scripts/core/validate_yaml.py` | 事件 YAML 格式校验 |
 | `scripts/core/source_format.py` | 格式清洗 |
 
 ### L5 — Per-Novel Store
@@ -196,9 +196,9 @@ scripts/
 | `worldbuilding.yaml` | 世界观设定（力量体系+地理+势力+背景） | `novel-worldbuilding` + `refine` |
 | `characters.yaml` | 人物名册+关系网+弧线+原型+叙事功能 | `novel-characters` + `refine` |
 | `tags.yaml` | 小说级多维标签 | `novel-tags` + `refine` |
-| `scenes/*.yaml` | 场景（含6层20维标签+情节线索） | `novel-scenes` |
-| `scenes_index.yaml` | 倒排索引（标签→场景ID） | `build-index` |
-| `scenes_manifest.yaml` | 场景清单（压缩视图） | `build-index` |
+| `events/*.yaml` | 事件（含6层20维标签+情节线索） | `novel-scenes` |
+| `events_index.yaml` | 倒排索引（标签→事件ID） | `build-index` |
+| `events_manifest.yaml` | 事件清单（压缩视图） | `build-index` |
 | `stats.yaml` | 全书统计数据 | `novel-stats` |
 | `stats.md` | 可视化报告（Mermaid） | `novel-stats` |
 | `stats.html` | 交互报告（ECharts+关系图谱） | `novel-stats` |
@@ -213,8 +213,8 @@ scripts/
 backend/
 ├── main.py                   # FastAPI 入口 + 路由注册
 ├── routers/
-│   ├── materials.py          # 素材 CRUD + 详情（大纲/世界观/人物/标签/场景/统计）
-│   ├── search.py             # 场景搜索 + 人物搜索 + 全文搜索
+│   ├── materials.py          # 素材 CRUD + 详情（大纲/世界观/人物/标签/事件/统计）
+│   ├── search.py             # 事件搜索 + 人物搜索 + 全文搜索
 │   ├── tags.py               # 标签字典 + 新增 + 合并 + 使用频次
 │   └── pipeline.py           # Pipeline 状态/触发/重置 + LLM 配置 + 上传
 ├── services/
@@ -230,7 +230,7 @@ backend/
 | `ingest` | 入库检查 | 否 |
 | `format` | 格式清洗 | 否 |
 | `analyze` | 大纲→世界观→人物→标签 | 是 |
-| `scenes` | 场景拆分（需 Agent） | 是 |
+| `scenes` | 事件拆分（需 Agent） | 是 |
 | `build-index` | 构建 SQLite + YAML 索引 | 否 |
 | `finalize` | 统计报告 | 是 |
 
@@ -245,7 +245,7 @@ frontend/src/
 │   ├── Dashboard.tsx         # 总览仪表盘（统计卡片 + ECharts 图表）
 │   ├── MaterialList.tsx      # 素材库列表
 │   ├── MaterialDetail.tsx    # 素材详情（7 个 tab + Pipeline 控制面板）
-│   ├── SceneSearch.tsx       # 场景搜索（标签多选 + 全文搜索双模式）
+│   ├── EventSearch.tsx       # 事件搜索（标签多选 + 全文搜索双模式）
 │   ├── CharacterSearch.tsx   # 人物搜索
 │   ├── TagDictionary.tsx     # 标签字典管理（新增/合并/使用频次）
 │   ├── Upload.tsx            # 上传小说
@@ -267,22 +267,22 @@ frontend/src/
 | `outline.schema.yaml` | 大纲结构 |
 | `worldbuilding.schema.yaml` | 世界观设定结构 |
 | `characters.schema.yaml` | 人物体系结构 |
-| `scene.schema.yaml` | 场景结构（含完整标签体系+情节线索） |
+| `event-unit.schema.yaml` | 事件结构（含完整标签体系+情节线索） |
 | `novel-tags.schema.yaml` | 小说级标签结构 |
 | `format-report.schema.yaml` | 格式清洗报告结构 |
-| `scenes-index.schema.yaml` | 倒排索引结构 |
-| `scenes-manifest.schema.yaml` | 场景清单结构 |
+| `events-index.schema.yaml` | 倒排索引结构 |
+| `events-manifest.schema.yaml` | 事件清单结构 |
 | `stats.schema.yaml` | 统计数据结构 |
 | `character-index.schema.yaml` | 全局人物索引结构 |
 | `plot-index.schema.yaml` | 全局剧情索引结构 |
 
-## Tag System — 6 层 20 维（场景级）+ 7 维（小说级）
+## Tag System — 6 层 20 维（事件级）+ 7 维（小说级）
 
-场景级标签体系（每个 scene.yaml 内）：
+事件级标签体系（每个 scene.yaml 内）：
 
 | 层 | 维度 | 用途 |
 |----|------|------|
-| A. 内容层 | scene_type, conflict, stakes | 发生了什么 |
+| A. 内容层 | event_type, conflict, stakes | 发生了什么 |
 | B. 人物层 | relationship, interaction, power_dynamic, character_moment, moral_spectrum | 谁和谁 |
 | C. 情感层 | emotion, tension, reader_effect | 什么感受 |
 | D. 结构层 | plot_stage, plot_function, pacing | 故事位置 |
@@ -291,7 +291,7 @@ frontend/src/
 
 小说级标签（仅用于 novel-tags.yaml）：genre, tone, narrative_structure, time_handling, prose_style, writing_strength, tropes
 
-合法值定义在 `data/tags.yaml`（20 维场景标签 + 7 维小说标签，共 418 值）。标签判断依据见 `docs/TAG_GUIDE.md`。
+合法值定义在 `data/tags.yaml`（20 维事件标签 + 7 维小说标签，共 418 值）。标签判断依据见 `docs/TAG_GUIDE.md`。
 
 ## Processing Pipeline
 
@@ -315,9 +315,9 @@ frontend/src/
 └────────────────────────────────────────────────────────────┘
          ↓
 ┌─ pipeline-scenes（可跨对话）──────────────────────────────┐
-│  novel-scenes          complete: 逐章拆分场景+打标签      │
+│  novel-scenes          complete: 逐章拆分事件+打标签      │
 │         ↓              （自动循环分批，每30批建议分段）     │
-│  build-index           complete: 构建倒排索引+场景清单    │
+│  build-index           complete: 构建倒排索引+事件清单    │
 └────────────────────────────────────────────────────────────┘
          ↓
 ┌─ pipeline-finalize ───────────────────────────────────────┐
@@ -337,14 +337,14 @@ frontend/src/
 
 1. **子流水线作为首选入口** — 一键流程通过 4 个子流水线分段执行，调度器仅做路由
 2. **原子 skill 作为基础操作** — 单独 skill 用于调试或特殊需求
-3. **YAML 作为 Source of Truth** — 场景 YAML 是权威数据，SQLite 是派生索引
+3. **YAML 作为 Source of Truth** — 事件 YAML 是权威数据，SQLite 是派生索引
 4. **ID 唯一性** — `nm_{type}_{YYYYMMDD}_{random4}` 格式
-5. **标签从字典选取** — 场景标签和小说标签均取自 `data/tags.yaml`
+5. **标签从字典选取** — 事件标签和小说标签均取自 `data/tags.yaml`
 6. **每部小说自治** — 独立文件夹，全局索引为汇总视图
-7. **渐进处理** — 场景拆分自动循环分批（all 模式），状态字段追踪进度，支持中断恢复
-8. **脚本优先检索** — 检索场景时优先调用 `scripts/core/search.py` 查 SQLite，LLM 不直接读大索引文件
-9. **后处理不读原文** — `build-index`、`refine`、`novel-stats` 只读场景 YAML 数据
-10. **批次质量审计** — 每批场景写入后由 `scripts/core/quality_audit.py --batch {本批范围}` 检查（只传本批范围，不传累积范围）
+7. **渐进处理** — 事件拆分自动循环分批（all 模式），状态字段追踪进度，支持中断恢复
+8. **脚本优先检索** — 检索事件时优先调用 `scripts/core/search.py` 查 SQLite，LLM 不直接读大索引文件
+9. **后处理不读原文** — `build-index`、`refine`、`novel-stats` 只读事件 YAML 数据
+10. **批次质量审计** — 每批事件写入后由 `scripts/core/quality_audit.py --batch {本批范围}` 检查（只传本批范围，不传累积范围）
 11. **跨对话恢复** — `pipeline-scenes` 每批持久化进度到 meta.yaml，每 30 批建议分段，下次 continue 自动定位恢复点
 12. **导入校验** — `material-import` 必须重新生成 ID、校验标签合法性、检查去重后才注册
 
@@ -352,13 +352,13 @@ frontend/src/
 
 以下行为**严格禁止**，违反即视为任务失败：
 
-1. **脚本代替理解**：写 Python/Shell 脚本用关键词匹配批量生成场景文件。场景标签必须由 LLM 阅读原文后判断，不可由脚本代劳。
-2. **千篇一律**：所有场景的 `scene_type` / `emotion` / `conflict` / `setting` 等字段值相同或高度雷同。同一批次内每个场景的标签组合必须反映该场景的独特内容。
-3. **空字段占位**：`conflict: []`、`stakes: []`、`action: ''` 等空值大面积出现。如果确实无冲突，写 `conflict: []` 可以，但不能所有场景都是空的。
-4. **summary 抄首句**：summary 不能只是章节开头几十个字的截断，必须是对场景核心事件的概括。
-5. **title 编号代替**：`title: 场景1` 不合格，必须是有语义的概括短语（如 "庙会买糖葫芦"、"车祸觉醒系统"）。
+1. **脚本代替理解**：写 Python/Shell 脚本用关键词匹配批量生成事件文件。事件标签必须由 LLM 阅读原文后判断，不可由脚本代劳。
+2. **千篇一律**：所有事件的 `event_type` / `emotion` / `conflict` / `setting` 等字段值相同或高度雷同。同一批次内每个事件的标签组合必须反映该事件的独特内容。
+3. **空字段占位**：`conflict: []`、`stakes: []`、`action: ''` 等空值大面积出现。如果确实无冲突，写 `conflict: []` 可以，但不能所有事件都是空的。
+4. **summary 抄首句**：summary 不能只是章节开头几十个字的截断，必须是对事件核心事件的概括。
+5. **title 编号代替**：`title: 事件1` 不合格，必须是有语义的概括短语（如 "庙会买糖葫芦"、"车祸觉醒系统"）。
 
-**合规检查**：完成一批后，抽查该批内任意 2 个场景文件，确认标签组合互不相同。如果相同，必须重做该批。
+**合规检查**：完成一批后，抽查该批内任意 2 个事件文件，确认标签组合互不相同。如果相同，必须重做该批。
 
 ## Cross-project Integration
 
@@ -368,7 +368,7 @@ frontend/src/
 
 **推荐方式（脚本调用）**：
 ```bash
-python ../novel-material/scripts/core/search.py scene --emotion 悲伤 --interaction 告别 --limit 5
+python ../novel-material/scripts/core/search.py event --emotion 悲伤 --interaction 告别 --limit 5
 python ../novel-material/scripts/core/search.py character --archetype 导师
 python ../novel-material/scripts/core/search.py text --query 告别
 ```
@@ -408,33 +408,33 @@ python ../novel-material/scripts/core/search.py text --query 告别
 | 长板参考 | `writing_strength`（人物塑造/对话/氛围营造/...） |
 | 套路参考 | `tropes`（废柴逆袭/扮猪吃虎/重生复仇/...） |
 
-检索场景时可同时用小说级标签缩小范围（如"找一个冷叙述风格的催泪场景"→ 先筛 `prose_style: 冷叙述` 的小说，再在其中检索 `reader_effect: 催泪`）。
+检索事件时可同时用小说级标签缩小范围（如"找一个冷叙述风格的催泪事件"→ 先筛 `prose_style: 冷叙述` 的小说，再在其中检索 `reader_effect: 催泪`）。
 
 ## Architecture Decision Records
 
 ### ADR-1：YAML 为 Source of Truth，SQLite 为派生层
 
-**决策**：场景 YAML 文件是权威数据源，`data/material.db`（SQLite）仅作为查询加速层，可随时从 YAML 重建。
+**决策**：事件 YAML 文件是权威数据源，`data/material.db`（SQLite）仅作为查询加速层，可随时从 YAML 重建。
 
-**动机**：场景标签由 LLM 逐批阅读原文生成并写入 YAML，YAML 天然可 diff、可版本控制、可人工审查。如果让 SQLite 成为主存储，LLM 写入和人工校验都会变复杂。
+**动机**：事件标签由 LLM 逐批阅读原文生成并写入 YAML，YAML 天然可 diff、可版本控制、可人工审查。如果让 SQLite 成为主存储，LLM 写入和人工校验都会变复杂。
 
-**代价**：每次场景修改后需要重建 SQLite（`python scripts/core/build_db.py`）。对当前规模（数千场景）重建耗时 < 5 秒，可接受。
+**代价**：每次事件修改后需要重建 SQLite（`python scripts/core/build_db.py`）。对当前规模（数千事件）重建耗时 < 5 秒，可接受。
 
 ### ADR-2：嵌套 → 扁平 schema 迁移（2026-04）
 
-**决策**：场景 YAML 从嵌套结构（content/people/emotion/structure/craft/setting 分组）迁移为扁平结构（所有标签维度平铺在顶层）。`scene.schema.yaml` 的 Flat Output Contract 定义了扁平格式。
+**决策**：事件 YAML 从嵌套结构（content/people/emotion/structure/craft/setting 分组）迁移为扁平结构（所有标签维度平铺在顶层）。`scene.schema.yaml` 的 Flat Output Contract 定义了扁平格式。
 
 **动机**：嵌套结构导致 `build_db.py` 和 `validate_yaml.py` 需要知道每个字段在哪个分组下，新增维度时要同步修改多处。扁平结构简化了脚本逻辑和 LLM 输出格式。
 
 **代价**：存量数据可能存在嵌套格式。`build_db.py` 内置 `_flatten_scene()` 函数兼容两种格式，确保旧数据仍可入库。未来重跑 pipeline 时会自然迁移为扁平格式。
 
-### ADR-3：场景标签必须 LLM 生成，禁止脚本批量生成（Anti-Pattern 根因）
+### ADR-3：事件标签必须 LLM 生成，禁止脚本批量生成（Anti-Pattern 根因）
 
-**决策**：场景的多维标签必须由 LLM 逐批阅读原文后判断生成，禁止编写脚本通过关键词匹配批量填充。
+**决策**：事件的多维标签必须由 LLM 逐批阅读原文后判断生成，禁止编写脚本通过关键词匹配批量填充。
 
-**动机**：早期尝试中，脚本批量生成的标签千篇一律（所有场景 `emotion: [平静]`、`conflict: []`），完全丧失检索区分度。关键词匹配无法判断场景的深层语义（如"表面平静实则暗流涌动"应标 `tension: 3` 而非 `tension: 1`）。
+**动机**：早期尝试中，脚本批量生成的标签千篇一律（所有事件 `emotion: [平静]`、`conflict: []`），完全丧失检索区分度。关键词匹配无法判断事件的深层语义（如"表面平静实则暗流涌动"应标 `tension: 3` 而非 `tension: 1`）。
 
-**代价**：场景拆分是最耗时的阶段，1000 章的小说需要 100+ 批次、可能跨多次对话。通过 `pipeline-scenes` 的跨对话恢复机制缓解。
+**代价**：事件拆分是最耗时的阶段，1000 章的小说需要 100+ 批次、可能跨多次对话。通过 `pipeline-scenes` 的跨对话恢复机制缓解。
 
 ### ADR-4：scripts/ 拆分 core vs generated（2026-04）
 
@@ -448,8 +448,8 @@ python ../novel-material/scripts/core/search.py text --query 告别
 
 **决策**：新增 FastAPI 后端 + React 前端，提供 Web UI 管理素材、搜索、触发 Pipeline。Agent CLI 保持为主要处理入口。
 
-**动机**：CLI/Agent 适合批量处理和自动化，但日常浏览素材、搜索场景、查看统计图表等操作在 Web UI 中更直观。Web UI 读取相同的 YAML + SQLite 数据，不引入额外数据源。
+**动机**：CLI/Agent 适合批量处理和自动化，但日常浏览素材、搜索事件、查看统计图表等操作在 Web UI 中更直观。Web UI 读取相同的 YAML + SQLite 数据，不引入额外数据源。
 
 **代价**：新增 `frontend/` 和 `backend/` 两个目录。后端依赖 FastAPI/Uvicorn，前端依赖 React/Vite。Web UI 是可选组件——不启动 Web 服务时，所有 Agent skill 和 CLI 脚本照常工作。
 
-**边界**：场景拆分（`scenes` 阶段）因复杂度过高（需分批 + 质量审计循环），Web UI 仅提示用户通过 Agent 执行，不在浏览器内自动运行。
+**边界**：事件拆分（`scenes` 阶段）因复杂度过高（需分批 + 质量审计循环），Web UI 仅提示用户通过 Agent 执行，不在浏览器内自动运行。

@@ -100,19 +100,19 @@ def test_run_ingest(patched_ps, data_env):
     patched_ps._run_ingest(MID)
 
 
-def test_run_stage_scenes_requires_agent(patched_ps, data_env):
-    patched_ps.run_stage(MID, "scenes")
+def test_run_stage_events_requires_agent(patched_ps, data_env):
+    patched_ps.run_stage(MID, "events")
     st = patched_ps.get_status(MID)
     assert st["running"] is False
     assert "Agent" in st["last_error"]
 
 
-def test_search_scenes_multi_value(patched_ds):
+def test_search_events_multi_value(patched_ds):
     """Multi-value comma-separated tags should match any value (OR within dim)."""
-    result = patched_ds.search_scenes({"scene_type": "对决,回忆", "limit": 10})
+    result = patched_ds.search_events({"event_type": "对决,回忆", "limit": 10})
     assert result["total"] >= 2
 
 
-def test_search_scenes_single_still_works(patched_ds):
-    result = patched_ds.search_scenes({"scene_type": "对决", "limit": 10})
+def test_search_events_single_still_works(patched_ds):
+    result = patched_ds.search_events({"event_type": "对决", "limit": 10})
     assert result["total"] >= 1

@@ -9,7 +9,7 @@ import {
   Play, Loader2, CheckCircle2, AlertCircle, RefreshCw,
 } from 'lucide-react'
 import ReactECharts from 'echarts-for-react'
-import type { SceneItem } from '@/types'
+import type { EventItem } from '@/types'
 
 const tabs = [
   { id: 'overview', label: '概览' },
@@ -17,7 +17,7 @@ const tabs = [
   { id: 'worldbuilding', label: '世界观' },
   { id: 'characters', label: '人物' },
   { id: 'tags', label: '标签' },
-  { id: 'scenes', label: '场景' },
+  { id: 'events', label: '事件' },
   { id: 'stats', label: '统计' },
 ]
 
@@ -68,9 +68,9 @@ export default function MaterialDetail() {
           <div className="flex items-center gap-3 mt-1 flex-wrap">
             <span className="text-sm text-slate-500">{meta.author}</span>
             <span className={cn('text-xs px-2 py-0.5 rounded-full', status.color)}>{status.label}</span>
-            {meta.scene_count > 0 && (
+            {meta.event_count > 0 && (
               <span className="text-xs text-slate-500 flex items-center gap-1">
-                <Film className="w-3 h-3" /> {meta.scene_count} 场景
+                <Film className="w-3 h-3" /> {meta.event_count} 事件
               </span>
             )}
             {(meta.character_count ?? 0) > 0 && (
@@ -105,7 +105,7 @@ export default function MaterialDetail() {
         {tab === 'worldbuilding' && <WorldbuildingTab id={id!} />}
         {tab === 'characters' && <CharactersTab id={id!} />}
         {tab === 'tags' && <NovelTagsTab id={id!} />}
-        {tab === 'scenes' && <ScenesTab id={id!} />}
+        {tab === 'events' && <EventsTab id={id!} />}
         {tab === 'stats' && <StatsTab id={id!} />}
       </div>
     </div>
@@ -174,7 +174,7 @@ function OverviewTab({ meta }: { meta: Record<string, unknown> }) {
     { id: 'ingest', label: '入库检查', needsLlm: false },
     { id: 'format', label: '格式清洗', needsLlm: false },
     { id: 'analyze', label: '分析(LLM)', needsLlm: true },
-    { id: 'scenes', label: '场景拆分', needsLlm: true, hint: '需 Agent' },
+    { id: 'events', label: '事件拆分', needsLlm: true, hint: '需 Agent' },
     { id: 'build-index', label: '构建索引', needsLlm: false },
     { id: 'finalize', label: '统计报告', needsLlm: true },
   ]
@@ -259,7 +259,7 @@ function OverviewTab({ meta }: { meta: Record<string, unknown> }) {
             ['世界观', meta.has_worldbuilding],
             ['人物', meta.has_characters],
             ['标签', meta.has_tags],
-            ['场景', meta.has_scenes],
+            ['事件', meta.has_events],
             ['统计', meta.has_stats],
           ] as [string, unknown][]).map(([label, ok]) => (
             <div key={label} className="flex items-center gap-2 text-sm">
@@ -288,7 +288,7 @@ function TensionOverview({ materialId }: { materialId: string }) {
   const entries = Object.entries(tensionDist).map(([k, v]) => ({ t: Number(k), c: v })).sort((a, b) => a.t - b.t)
   const total = entries.reduce((a, e) => a + e.c, 0)
 
-  if (!total && !basic.total_scenes) return null
+  if (!total && !basic.total_events) return null
 
   return (
     <div className="rounded-xl bg-slate-900/80 border border-slate-800/60 p-5">
@@ -300,10 +300,10 @@ function TensionOverview({ materialId }: { materialId: string }) {
             <p className="text-xs text-slate-500">总章节</p>
           </div>
         )}
-        {basic.total_scenes !== undefined && (
+        {basic.total_events !== undefined && (
           <div className="text-center">
-            <p className="text-lg font-bold">{basic.total_scenes}</p>
-            <p className="text-xs text-slate-500">总场景</p>
+            <p className="text-lg font-bold">{basic.total_events}</p>
+            <p className="text-xs text-slate-500">总事件</p>
           </div>
         )}
         {pacing.avg_tension !== undefined && (
@@ -312,10 +312,10 @@ function TensionOverview({ materialId }: { materialId: string }) {
             <p className="text-xs text-slate-500">平均张力</p>
           </div>
         )}
-        {pacing.high_tension_scenes !== undefined && (
+        {pacing.high_tension_events !== undefined && (
           <div className="text-center">
-            <p className="text-lg font-bold text-rose-400">{String(pacing.high_tension_scenes)}</p>
-            <p className="text-xs text-slate-500">高张力场景</p>
+            <p className="text-lg font-bold text-rose-400">{String(pacing.high_tension_events)}</p>
+            <p className="text-xs text-slate-500">高张力事件</p>
           </div>
         )}
       </div>
@@ -735,7 +735,7 @@ function renderWbSection(title: string, value: unknown) {
 function normalizeStats(raw: Record<string, unknown>) {
   const basic = (raw.basic ?? raw.basic_stats ?? {}) as Record<string, number>
 
-  const sceneDist = (raw.scene_type_distribution ?? []) as { type: string; count: number; ratio: number }[]
+  const eventDist = (raw.event_type_distribution ?? []) as { type: string; count: number; ratio: number }[]
   const emotionDist = (raw.emotion_distribution ?? []) as { emotion: string; count: number }[]
 
   const oldPacing = (raw.pacing ?? {}) as Record<string, unknown>
@@ -743,7 +743,7 @@ function normalizeStats(raw: Record<string, unknown>) {
   const pacing = {
     tension_distribution: oldPacing.tension_distribution as Record<string, number> | undefined,
     avg_tension: oldPacing.avg_tension ?? tensionRaw?.avg_tension,
-    high_tension_scenes: oldPacing.high_tension_scenes ?? tensionRaw?.high_tension_count,
+    high_tension_events: oldPacing.high_tension_events ?? tensionRaw?.high_tension_count,
   }
 
   let top10: Record<string, number> = {}
@@ -753,7 +753,7 @@ function normalizeStats(raw: Record<string, unknown>) {
   } else if (Array.isArray(cs)) {
     for (const c of cs.slice(0, 10)) {
       const item = c as Record<string, unknown>
-      if (item.name) top10[String(item.name)] = Number(item.scene_count ?? 0)
+      if (item.name) top10[String(item.name)] = Number(item.event_count ?? 0)
     }
   }
 
@@ -765,10 +765,10 @@ function normalizeStats(raw: Record<string, unknown>) {
   const oldTech = (raw.technique_stats ?? {}) as Record<string, unknown>
   const techniques = oldTech.techniques_used as string[] | undefined
 
-  const pacingAnalysis = raw.pacing_analysis as { total_acts?: number; act_structure?: { act: string; chapters: string; scene_count: number; avg_tension: number }[] } | undefined
+  const pacingAnalysis = raw.pacing_analysis as { total_acts?: number; act_structure?: { act: string; chapters: string; event_count: number; avg_tension: number }[] } | undefined
   const structureAssess = raw.structure_assessment as Record<string, string> | undefined
 
-  return { basic, sceneDist, emotionDist, pacing, top10, foreshadow, turningPoints, techniques, pacingAnalysis, structureAssess }
+  return { basic, eventDist, emotionDist, pacing, top10, foreshadow, turningPoints, techniques, pacingAnalysis, structureAssess }
 }
 
 function StatsTab({ id }: { id: string }) {
@@ -780,7 +780,7 @@ function StatsTab({ id }: { id: string }) {
   if (isLoading) return <Skeleton />
   if (isError || !data) return <p className="text-sm text-slate-500">暂无统计数据</p>
 
-  const { basic, sceneDist, emotionDist, pacing, top10, foreshadow, turningPoints, techniques, pacingAnalysis, structureAssess } = normalizeStats(data as Record<string, unknown>)
+  const { basic, eventDist, emotionDist, pacing, top10, foreshadow, turningPoints, techniques, pacingAnalysis, structureAssess } = normalizeStats(data as Record<string, unknown>)
 
   const tensionDist = pacing.tension_distribution ?? {}
   const tensionData = Object.entries(tensionDist).map(([k, v]) => ({ tension: Number(k), count: v })).sort((a, b) => a.tension - b.tension)
@@ -793,13 +793,13 @@ function StatsTab({ id }: { id: string }) {
     grid: { top: 20, bottom: 30, left: 45, right: 15 },
   } : null
 
-  const distOption = sceneDist.length > 0 ? {
+  const distOption = eventDist.length > 0 ? {
     tooltip: { trigger: 'item' as const },
     series: [{
       type: 'pie', radius: ['35%', '65%'], avoidLabelOverlap: true,
       itemStyle: { borderRadius: 6, borderColor: '#020617', borderWidth: 2 },
       label: { color: '#94a3b8', fontSize: 11 },
-      data: sceneDist.slice(0, 12).map(s => ({ name: s.type, value: s.count })),
+      data: eventDist.slice(0, 12).map(s => ({ name: s.type, value: s.count })),
     }],
   } : null
 
@@ -808,8 +808,8 @@ function StatsTab({ id }: { id: string }) {
       {/* Basic numbers */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <StatCard value={basic.total_chapters} label="总章节" />
-        <StatCard value={basic.total_scenes} label="总场景" />
-        <StatCard value={basic.avg_scenes_per_chapter?.toFixed(2)} label="场景/章" />
+        <StatCard value={basic.total_events} label="总事件" />
+        <StatCard value={basic.avg_events_per_chapter?.toFixed(2)} label="事件/章" />
         {pacing.avg_tension !== undefined && <StatCard value={Number(pacing.avg_tension).toFixed(1)} label="平均张力" />}
       </div>
 
@@ -818,18 +818,18 @@ function StatsTab({ id }: { id: string }) {
         <div className="rounded-xl bg-slate-900/80 border border-slate-800/60 p-5">
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-sm font-medium text-slate-400">张力分布</h3>
-            {pacing.high_tension_scenes !== undefined && (
-              <span className="text-xs text-amber-400">高张力场景: {String(pacing.high_tension_scenes)}</span>
+            {pacing.high_tension_events !== undefined && (
+              <span className="text-xs text-amber-400">高张力事件: {String(pacing.high_tension_events)}</span>
             )}
           </div>
           <ReactECharts option={tensionOption} style={{ height: 200 }} theme="dark" />
         </div>
       )}
 
-      {/* Scene type distribution */}
+      {/* Event type distribution */}
       {distOption && (
         <div className="rounded-xl bg-slate-900/80 border border-slate-800/60 p-5">
-          <h3 className="text-sm font-medium text-slate-400 mb-2">场景类型分布</h3>
+          <h3 className="text-sm font-medium text-slate-400 mb-2">事件类型分布</h3>
           <ReactECharts option={distOption} style={{ height: 280 }} theme="dark" />
         </div>
       )}
@@ -898,8 +898,8 @@ function StatsTab({ id }: { id: string }) {
         <div className="rounded-xl bg-slate-900/80 border border-slate-800/60 p-5">
           <h3 className="text-sm font-medium text-slate-400 mb-2">钩子统计</h3>
           <div className="flex gap-6 text-sm flex-wrap">
-            {foreshadow.plant_scenes !== undefined && <span className="text-slate-400">埋设: <strong className="text-amber-400">{String(foreshadow.plant_scenes)}</strong></span>}
-            {foreshadow.payoff_scenes !== undefined && <span className="text-slate-400">回收: <strong className="text-emerald-400">{String(foreshadow.payoff_scenes)}</strong></span>}
+            {foreshadow.plant_events !== undefined && <span className="text-slate-400">埋设: <strong className="text-amber-400">{String(foreshadow.plant_events)}</strong></span>}
+            {foreshadow.payoff_events !== undefined && <span className="text-slate-400">回收: <strong className="text-emerald-400">{String(foreshadow.payoff_events)}</strong></span>}
             {foreshadow.total_foreshadowing !== undefined && <span className="text-slate-400">总数: <strong className="text-amber-400">{String(foreshadow.total_foreshadowing)}</strong></span>}
             {foreshadow.high_confidence !== undefined && <span className="text-slate-400">高置信: <strong className="text-emerald-400">{String(foreshadow.high_confidence)}</strong></span>}
             {foreshadow.medium_confidence !== undefined && <span className="text-slate-400">中置信: <strong className="text-blue-400">{String(foreshadow.medium_confidence)}</strong></span>}
@@ -926,7 +926,7 @@ function StatsTab({ id }: { id: string }) {
               <div key={i} className="flex items-center gap-3 text-xs bg-slate-800/40 rounded-lg p-2.5">
                 <span className="text-slate-300 font-medium shrink-0 w-40 truncate">{act.act}</span>
                 <span className="text-slate-500 shrink-0">Ch.{act.chapters}</span>
-                <span className="text-slate-500 shrink-0">{act.scene_count} 场景</span>
+                <span className="text-slate-500 shrink-0">{act.event_count} 事件</span>
                 <span className="text-amber-400 shrink-0">T{act.avg_tension}</span>
               </div>
             ))}
@@ -949,12 +949,12 @@ function StatsTab({ id }: { id: string }) {
         </div>
       )}
 
-      {/* Scene type detail bars */}
-      {sceneDist.length > 0 && (
+      {/* Event type detail bars */}
+      {eventDist.length > 0 && (
         <div className="rounded-xl bg-slate-900/80 border border-slate-800/60 p-5">
-          <h3 className="text-sm font-medium text-slate-400 mb-3">场景类型明细</h3>
+          <h3 className="text-sm font-medium text-slate-400 mb-3">事件类型明细</h3>
           <div className="space-y-1.5">
-            {sceneDist.map(s => (
+            {eventDist.map(s => (
               <div key={s.type} className="flex items-center gap-2 text-xs">
                 <span className="w-20 text-slate-400 text-right shrink-0">{s.type}</span>
                 <div className="flex-1 h-2 bg-slate-800 rounded-full overflow-hidden">
@@ -981,27 +981,27 @@ function StatCard({ value, label }: { value: unknown; label: string }) {
   )
 }
 
-/* ── Scenes ───────────────────────────────────────────── */
+/* ── Events ───────────────────────────────────────────── */
 
-function ScenesTab({ id }: { id: string }) {
+function EventsTab({ id }: { id: string }) {
   const [page, setPage] = useState(1)
   const limit = 30
 
   const { data, isLoading } = useQuery({
-    queryKey: ['scenes', id, page],
-    queryFn: () => api.getScenes(id, page, limit),
+    queryKey: ['events', id, page],
+    queryFn: () => api.getEvents(id, page, limit),
   })
 
   if (isLoading) return <Skeleton />
-  if (!data || data.scenes.length === 0) return <p className="text-sm text-slate-500">暂无场景数据</p>
+  if (!data || data.events.length === 0) return <p className="text-sm text-slate-500">暂无事件数据</p>
 
   const totalPages = Math.ceil(data.total / limit)
 
   return (
     <div className="space-y-3">
-      <p className="text-xs text-slate-500">共 {data.total} 个场景，第 {page}/{totalPages} 页</p>
+      <p className="text-xs text-slate-500">共 {data.total} 个事件，第 {page}/{totalPages} 页</p>
       <div className="space-y-2">
-        {data.scenes.map((s: SceneItem) => <SceneRow key={s.scene_id} scene={s} />)}
+        {data.events.map((e: EventItem) => <EventRow key={e.event_id} event={e} />)}
       </div>
       {totalPages > 1 && (
         <div className="flex items-center justify-center gap-2 pt-2">
@@ -1018,29 +1018,29 @@ function ScenesTab({ id }: { id: string }) {
   )
 }
 
-function SceneRow({ scene }: { scene: SceneItem }) {
+function EventRow({ event }: { event: EventItem }) {
   const [open, setOpen] = useState(false)
   return (
     <div className="rounded-lg bg-slate-900/80 border border-slate-800/60 overflow-hidden">
       <button onClick={() => setOpen(!open)} className="w-full text-left p-3 hover:bg-white/[0.02] transition-colors">
         <div className="flex items-center gap-2 mb-1">
-          <span className="text-xs text-slate-600 font-mono shrink-0">{scene.scene_id}</span>
-          <span className="text-sm font-medium truncate">{scene.title}</span>
-          <span className="ml-auto text-xs px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 shrink-0">T{scene.tension}</span>
+          <span className="text-xs text-slate-600 font-mono shrink-0">{event.event_id}</span>
+          <span className="text-sm font-medium truncate">{event.title}</span>
+          <span className="ml-auto text-xs px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 shrink-0">T{event.tension}</span>
         </div>
-        <p className="text-xs text-slate-500 truncate">{scene.chapter}</p>
+        <p className="text-xs text-slate-500 truncate">{event.chapter}</p>
       </button>
       {open && (
         <div className="px-3 pb-3 space-y-2 animate-fade-in border-t border-slate-800/40 pt-2">
-          <p className="text-xs text-slate-400 leading-relaxed">{scene.summary}</p>
-          {scene.characters && scene.characters.length > 0 && (
+          <p className="text-xs text-slate-400 leading-relaxed">{event.summary}</p>
+          {event.characters && event.characters.length > 0 && (
             <div className="flex flex-wrap gap-1">
-              {scene.characters.map(c => <span key={c} className="text-xs px-1.5 py-0.5 rounded bg-violet-500/10 text-violet-400">{c}</span>)}
+              {event.characters.map(c => <span key={c} className="text-xs px-1.5 py-0.5 rounded bg-violet-500/10 text-violet-400">{c}</span>)}
             </div>
           )}
-          {scene.tags && Object.keys(scene.tags).length > 0 && (
+          {event.tags && Object.keys(event.tags).length > 0 && (
             <div className="flex flex-wrap gap-1">
-              {Object.entries(scene.tags).flatMap(([dim, vals]) =>
+              {Object.entries(event.tags).flatMap(([dim, vals]) =>
                 (vals as string[]).map(v => {
                   const c = TAG_COLORS[dim]
                   return <span key={`${dim}-${v}`} className={cn('text-xs px-1.5 py-0.5 rounded', c?.bg ?? 'bg-slate-700', c?.text ?? 'text-slate-400')}>{v}</span>

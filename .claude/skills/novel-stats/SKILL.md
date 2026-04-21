@@ -1,22 +1,22 @@
 ---
 name: novel-stats
 description: 生成全书统计报告（情节/转折/节奏/钩子/人物等，含图表）
-when_to_use: 场景全部完成后，生成全书统计分析和可视化报告
+when_to_use: 事件全部完成后，生成全书统计分析和可视化报告
 argument-hint: "[material_id]"
 arguments: material_id
 ---
 
 # 任务
 
-读取所有场景数据，生成全书统计报告，包含表格和图表。
+读取所有事件数据，生成全书统计报告，包含表格和图表。
 
-**不读原文，只读 scene YAML / manifest / index 数据。**
+**不读原文，只读 event YAML / manifest / index 数据。**
 
 ## 前置检查
 
-1. 读取 `data/novels/{material_id}/meta.yaml`，确认 scenes 已完成
-2. 优先读取 `scenes_manifest.yaml`（如存在）
-3. 如需详细数据，分批读取 scene YAML 文件
+1. 读取 `data/novels/{material_id}/meta.yaml`，确认 events 已完成
+2. 优先读取 `events_manifest.yaml`（如存在）
+3. 如需详细数据，分批读取 event YAML 文件
 
 ## 输出文件
 
@@ -26,32 +26,32 @@ arguments: material_id
 
 ## 执行步骤
 
-### 1. 采集场景标签数据
+### 1. 采集事件标签数据
 
-从 manifest 或 scene 文件中提取所有标签字段，汇总到内存中。
+从 manifest 或 event 文件中提取所有标签字段，汇总到内存中。
 
 ### 2. 基础统计
 
-| 统计项 | 数据源 | 计算方式 |
-|--------|--------|----------|
-| 总章节数 | meta.yaml | 直接读取 |
-| 总场景数 | scenes 文件数 | 计数 |
-| 平均每章场景数 | 总场景/总章节 | 除法 |
-| 场景字数分布 | text_range | 行号差值 |
+|| 统计项 | 数据源 | 计算方式 |
+||--------|--------|----------|
+|| 总章节数 | meta.yaml | 直接读取 |
+|| 总事件数 | events 文件数 | 计数 |
+|| 平均每章事件数 | 总事件/总章节 | 除法 |
+|| 事件字数分布 | text_range | 行号差值 |
 
 ### 3. 标签分布统计
 
 统计各标签维度中每个值的出现次数和占比，按频率排序：
 
-| 分类 | 维度 |
-|------|------|
-| 情节 | scene_type, conflict, stakes |
-| 技法 | technique, dialogue_type, pov, info_delivery |
+|| 分类 | 维度 |
+||------|------|
+|| 情节 | event_type, conflict, stakes |
+|| 技法 | technique, dialogue_type, pov, info_delivery |
 
 输出命名为 `{dimension}_distribution`，格式示例：
 
 ```yaml
-scene_type_distribution:
+event_type_distribution:
   - type: 日常
     count: 203
     ratio: 0.224
@@ -66,15 +66,15 @@ scene_type_distribution:
 
 #### 4a. 转折点列表
 
-提取所有 `plot_function` 含 `转折` / `反转` 的场景：
+提取所有 `plot_function` 含 `转折` / `反转` 的事件：
 
 ```yaml
 turning_points:
-  - scene: ch89_s01
+  - event: ev_main_005
     chapter: 89
-    title: "场景标题"
+    title: "事件标题"
     type: 转折
-  - scene: ch302_s01
+  - event: ev_main_015
     chapter: 302
     type: 反转
 ```
@@ -94,7 +94,7 @@ turning_rhythm:
 
 ### 5. 紧张度曲线
 
-按章聚合 `tension` 值（章内多场景取均值），生成全书紧张度曲线数据。
+按章聚合 `tension_peak` 值（章内多事件取均值），生成全书紧张度曲线数据。
 
 ```yaml
 tension_curve:
@@ -192,23 +192,22 @@ character_stats:
   total_named: 85         # 有名字的角色总数
   top_appearances:
     - name: 陈汉升
-      scenes: 780
+      events: 780
       ratio: 0.86
     - name: 萧容鱼
-      scenes: 234
+      events: 234
       ratio: 0.26
-  character_moment_distribution:
+  moment_distribution:
     性格展示: 320
     道德抉择: 45
     成长顿悟: 28
-    内心独白: 156
 ```
 
 ### 9. 情感统计
 
 ```yaml
 emotion_stats:
-  dominant_emotions: [紧张, 温馨, 平静]
+  dominant: [紧张, 温馨, 平静]
   reader_effect_distribution:
     会心一笑: 189
     揪心: 78
@@ -226,7 +225,7 @@ relationship_graph:
     - name: "角色名"
       role: protagonist
       faction: "所属阵营"
-      scenes: 780
+      events: 780
   edges:
     - from: "角色A"
       to: "角色B"
@@ -235,7 +234,7 @@ relationship_graph:
 ```
 
 - **nodes**: 从 `characters.yaml` 的 `roster` 提取，附加出场统计
-- **edges**: 从 `characters.yaml` 的 `relations` 提取，weight 为共同出场场景数
+- **edges**: 从 `characters.yaml` 的 `relations` 提取，weight 为共同出场事件数
 - 阵营信息从 `factions` 提取，用于图谱节点着色
 
 ### 11. 生成可视化报告 stats.md（轻量版）
@@ -246,16 +245,16 @@ relationship_graph:
 # 《{书名}》统计报告
 
 ## 基础数据
-| 项目 | 数值 |
-|------|------|
-| 总章节 | 1070 |
-| 总场景 | 907 |
-| ... | ... |
+|| 项目 | 数值 |
+||------|------|
+|| 总章节 | 1070 |
+|| 总事件 | 45 |
+|| ... | ... |
 
 ## 紧张度曲线
 (Mermaid xychart-beta 折线图)
 
-## 场景类型分布
+## 事件类型分布
 (Mermaid pie 饼图)
 
 ## 转折节奏
@@ -281,7 +280,7 @@ relationship_graph:
 
 **必须包含的图表**：
 1. **紧张度曲线** — 折线图（支持缩放、tooltip 显示章节详情）
-2. **场景类型分布** — 饼图/环形图
+2. **事件类型分布** — 饼图/环形图
 3. **冲突类型分布** — 柱状图
 4. **转折节奏** — 散点图（x=章节号，y=转折类型）
 5. **人物出场频率 Top 15** — 横向柱状图
@@ -319,11 +318,11 @@ pipeline:
 ```
 ✅ 统计报告生成完成
 
-📚 素材：{name}
+📚 索材：{name}
 
 📊 核心指标：
-  场景总数：907
-  转折点：45 个（平均每 23.7 章一个）
+  事件总数：45
+  转折点：{n} 个（平均每 23.7 章一个）
   钩子网络：45 总 / 38 已验证 / 7 待回收（验证率 84%）
   主导情感：紧张、温馨、平静
   紧张度范围：1.5 - 4.8
@@ -335,17 +334,17 @@ pipeline:
 
 ## 注意事项
 
-- 不读原文，只依赖场景标签数据
+- 不读原文，只依赖事件标签数据
 - 优先使用 manifest/index 减少 token 消耗
 - 统计数据必须基于实际标签，不编造
 - Mermaid 图表注意数据量控制（紧张度曲线可按10章采样）
 - stats.yaml 保留完整数据，stats.md 做适当精简
 - stats.html 使用 ECharts CDN（https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js）
-- 人物关系图谱数据来源：characters.yaml（roster + relations + factions）+ 场景出场统计
+- 人物关系图谱数据来源：characters.yaml（roster + relations + factions）+ 事件出场统计
 - 钩子统计统一处理反转铆合：从 outline.yaml 的 hooks_network 字段读取，反转铆合即传统"伏笔"
 - 钩子网络可视化：按铆合形式分布饼图 + 埋设回收跨度表格
 
 ## References
 
-- [scenes-manifest.schema.yaml](../../../docs/schemas/scenes-manifest.schema.yaml)
+- [event-unit.schema.yaml](../../../docs/schemas/event-unit.schema.yaml)
 - [AGENTS.md](../../../AGENTS.md)

@@ -11,11 +11,11 @@ generated_at: "2026-04-05T12:00:00Z"
 # 基础数据
 basics:
   total_chapters: 1070
-  total_scenes: 907
-  avg_scenes_per_chapter: 0.85
+  total_events: 907
+  avg_events_per_chapter: 0.85
 
-# 场景类型分布
-scene_type_distribution:
+# 事件类型分布
+event_type_distribution:
   - type: 日常
     count: 203
     ratio: 0.224
@@ -32,10 +32,10 @@ conflict_distribution:
 # 转折统计
 turning_points:
   total: 45
-  scenes:
-    - scene: ch89_s01
+  events:
+    - event: ev_main_005
       chapter: 89
-      title: "场景标题"
+      title: "事件标题"
       type: 转折
   rhythm:
     avg_interval: 23.7
@@ -119,10 +119,10 @@ character_stats:
   total_named: 85
   top_appearances:
     - name: 陈汉升
-      scenes: 780
+      events: 780
       ratio: 0.86
     - name: 萧容鱼
-      scenes: 234
+      events: 234
       ratio: 0.26
   moment_distribution:
     性格展示: 320
@@ -155,9 +155,9 @@ relationship_graph:
     - name: "角色名"
       role: protagonist           # protagonist/antagonist/supporting/minor
       faction: "所属阵营"
-      scenes: 780                 # 出场场景数
+      events: 780                 # 出场事件数
   edges:
     - from: "角色A"
       to: "角色B"
       type: "关系类型"
-      weight: 3                   # 关系强度（互动场景数）
+      weight: 3                   # 关系强度（互动事件数）

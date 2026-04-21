@@ -1,6 +1,6 @@
 import type {
   Material, MaterialDetail, DashboardStats,
-  ScenesResponse, SceneItem, SceneSearchResponse,
+  EventsResponse, EventItem, EventSearchResponse,
   CharacterSearchResponse, TextSearchResponse,
   TagDictionary, TagUsage, PipelineStatusResponse,
 } from '@/types'
@@ -41,14 +41,13 @@ export const api = {
   getWorldbuilding: (id: string) => get<Record<string, unknown>>(`/materials/${id}/worldbuilding`),
   getCharacters: (id: string) => get<Record<string, unknown>>(`/materials/${id}/characters`),
   getNovelTags: (id: string) => get<Record<string, unknown>>(`/materials/${id}/tags`),
-  getScenes: (id: string, page = 1, limit = 50) =>
-    get<ScenesResponse>(`/materials/${id}/scenes`, { page, limit }),
-  getScene: (id: string, sceneId: string) =>
-    get<SceneItem>(`/materials/${id}/scenes/${sceneId}`),
+  getEvents: (id: string, page = 1, limit = 50) =>
+    get<EventsResponse>(`/materials/${id}/events`, { page, limit }),
+  getEvent: (id: string, eventId: string) =>
+    get<EventItem>(`/materials/${id}/events/${eventId}`),
   getMaterialStats: (id: string) => get<Record<string, unknown>>(`/materials/${id}/stats`),
-
-  searchScenes: (filters: Record<string, string | number | undefined>) =>
-    get<SceneSearchResponse>('/search/scenes', filters),
+  searchEvents: (filters: Record<string, string | number | undefined>) =>
+    get<EventSearchResponse>('/search/events', filters),
   searchCharacters: (filters: Record<string, string | number | undefined>) =>
     get<CharacterSearchResponse>('/search/characters', filters),
   searchText: (query: string, limit = 20) =>

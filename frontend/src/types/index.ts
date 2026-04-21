@@ -6,7 +6,7 @@ export interface Material {
   folder: string
   status: string
   added: string
-  scene_count: number
+  event_count: number
   pipeline?: PipelineStatus
 }
 
@@ -15,8 +15,8 @@ export interface PipelineStatus {
   current_stage?: string
   stages_completed?: string[]
   chapters?: number
-  scenes_processed?: string[]
-  scenes_total_chapters?: number
+  events_processed?: string[]
+  events_total_chapters?: number
   index_built?: boolean
   refined?: boolean
   stats_generated?: boolean
@@ -30,24 +30,24 @@ export interface MaterialDetail extends Material {
   has_characters?: boolean
   has_tags?: boolean
   has_stats?: boolean
-  has_scenes?: boolean
+  has_events?: boolean
   formatted?: boolean
 }
 
 export interface DashboardStats {
   novels: number
-  scenes: number
+  events: number
   characters: number
   tag_records: number
-  per_novel: { material_id: string; name: string; scenes: number }[]
-  top_scene_types: { value: string; count: number }[]
+  per_novel: { material_id: string; name: string; events: number }[]
+  top_event_types: { value: string; count: number }[]
   top_emotions: { value: string; count: number }[]
   tension_distribution: { tension: number; count: number }[]
   top_techniques: { value: string; count: number }[]
 }
 
-export interface SceneItem {
-  scene_id: string
+export interface EventItem {
+  event_id: string
   material_id?: string
   novel?: string
   chapter: string
@@ -66,17 +66,17 @@ export interface SceneItem {
   score?: number
 }
 
-export interface ScenesResponse {
+export interface EventsResponse {
   total: number
   page: number
   limit: number
-  scenes: SceneItem[]
+  events: EventItem[]
 }
 
-export interface SceneSearchResponse {
+export interface EventSearchResponse {
   query: Record<string, string>
   total: number
-  results: SceneItem[]
+  results: EventItem[]
   relaxed: boolean
 }
 
@@ -101,7 +101,7 @@ export interface CharacterSearchResponse {
 export interface TextSearchResponse {
   query: string
   total: number
-  results: SceneItem[]
+  results: EventItem[]
 }
 
 export interface TagDimension {

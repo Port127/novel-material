@@ -3,7 +3,7 @@
 # 路径: data/novels/{material_id}/meta.yaml
 #
 # 此文件随 pipeline 推进逐步扩充，早期阶段只有基础字段，
-# 后续阶段的脚本和 skill 会追加 pipeline、scene_batches 等。
+# 后续阶段的脚本和 skill 会追加 pipeline、event_batches 等。
 
 # ====================================================================
 # 基础字段（material-add 创建时即写入）
@@ -18,17 +18,13 @@ added: YYYY-MM-DD
 
 # 状态流：raw → outlined → tagged → complete → refined
 #
-#   raw       仅有原文入库（source-format 完成后 formatted: true，但 status 仍为 raw）
+#   raw       仅有原文入库（source-format 完成后 pipeline.formatted: true，但 status 仍为 raw）
 #   outlined  pipeline-analyze 进行中或完成（outline + worldbuilding + characters）
-#   tagged    pipeline-analyze 完成（小说级标签已生成）。注意：场景尚未拆分
-#   complete  pipeline-scenes 完成（场景全部拆分 + 索引已构建）
+#   tagged    pipeline-analyze 完成（小说级标签已生成）。注意：事件尚未拆分
+#   complete  pipeline-scenes 完成（事件全部拆分 + 索引已构建）
 #   refined   pipeline-finalize 完成（精调 + 统计报告已生成）
 #
 status: raw
-
-# source-format 完成后追加
-formatted: true              # 格式清洗是否完成
-format_date: YYYY-MM-DD      # 清洗日期
 
 # ====================================================================
 # pipeline 进度追踪（各阶段逐步追加字段）
@@ -39,7 +35,7 @@ pipeline:
   mode: full                 # full | quick | ingest | import
 
   # 当前正在执行的阶段
-  current_stage: scenes      # ingest | analyze | scenes | finalize | complete
+  current_stage: events      # ingest | analyze | events | finalize | complete
 
   # 已完成的阶段列表（有序追加）
   stages_completed:
@@ -49,7 +45,7 @@ pipeline:
     - worldbuilding
     - characters
     - tags
-    # - scenes, build-index, refine, novel-stats
+    # - events, build-index, refine, novel-stats
 
   # ── ingest 阶段 ──
   formatted: true            # 格式清洗完成
@@ -62,16 +58,16 @@ pipeline:
   characters_at: YYYY-MM-DD
   tags_at: YYYY-MM-DD
 
-  # ── scenes 阶段 ──
-  scenes_processed:          # 已处理的章节批次范围（有序追加）
+  # ── events 阶段 ──
+  events_processed:          # 已处理的章节批次范围（有序追加）
     - "1-5"
     - "6-10"
-  scenes_total_chapters: 1070
+  events_total_chapters: 1070
 
   # ── build-index 阶段 ──
   index_built: false         # 索引是否已构建
   index_at: "2026-04-05T12:00:00Z"
-  manifest_scenes: 907       # 场景清单中的场景总数
+  manifest_events: 907       # 事件清单中的事件总数
 
   # ── refine 阶段 ──
   refined: false
@@ -89,9 +85,9 @@ pipeline:
 # 批次质量数据（quality_audit.py 写入）
 # ====================================================================
 
-scene_batches:
+event_batches:
   - range: "1-5"
-    total: 12                # 本批场景数
+    total: 12                # 本批事件数
     tag_diversity: 0.85      # 标签组合唯一率（< 0.5 判定失败）
     empty_field_rate: 0.12   # 空字段占比（> 0.3 判定失败）
     avg_tension: 2.4
@@ -111,5 +107,5 @@ quality_drift:               # 全书审计时生成，对比前后期批次
 # import_source: /path/to/original_folder
 # pipeline:
 #   mode: import
-#   stages_completed: [outline, worldbuilding, characters, tags, scenes, build-index]
+#   stages_completed: [outline, worldbuilding, characters, tags, events, build-index]
 #   formatted: true

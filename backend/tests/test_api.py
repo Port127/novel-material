@@ -24,7 +24,7 @@ def test_list_materials(client):
     assert len(data) >= 1
     m = data[0]
     assert m["id"] == MID
-    assert "scene_count" in m
+    assert "event_count" in m
 
 
 def test_get_material(client):
@@ -36,7 +36,7 @@ def test_get_material(client):
     assert d["has_characters"] is True
     assert d["has_tags"] is True
     assert d["has_stats"] is True
-    assert d["has_scenes"] is True
+    assert d["has_events"] is True
 
 
 def test_get_material_not_found(client):
@@ -73,30 +73,30 @@ def test_get_novel_tags(client):
     assert r.json()["material_id"] == MID
 
 
-def test_get_scenes_paginated(client):
-    r = client.get(f"/api/materials/{MID}/scenes?page=1&limit=2")
+def test_get_events_paginated(client):
+    r = client.get(f"/api/materials/{MID}/events?page=1&limit=2")
     assert r.status_code == 200
     d = r.json()
     assert d["total"] == 3
     assert d["page"] == 1
-    assert len(d["scenes"]) == 2
+    assert len(d["events"]) == 2
 
 
-def test_get_scene_detail(client):
-    sid = f"{MID}_ch001_s1"
-    r = client.get(f"/api/materials/{MID}/scenes/{sid}")
+def test_get_event_detail(client):
+    eid = f"{MID}_ch001_s1"
+    r = client.get(f"/api/materials/{MID}/events/{eid}")
     assert r.status_code == 200
 
 
-def test_get_scene_not_found(client):
-    r = client.get(f"/api/materials/{MID}/scenes/nonexistent")
+def test_get_event_not_found(client):
+    r = client.get(f"/api/materials/{MID}/events/nonexistent")
     assert r.status_code == 404
 
 
 def test_get_stats(client):
     r = client.get(f"/api/materials/{MID}/stats")
     assert r.status_code == 200
-    assert "total_scenes" in r.json()
+    assert "total_events" in r.json()
 
 
 def test_get_stats_html(client):
@@ -107,48 +107,48 @@ def test_get_stats_html(client):
 
 # ── Search ────────────────────────────────────────────────────
 
-def test_search_scenes_by_type(client):
-    r = client.get("/api/search/scenes?scene_type=对决")
+def test_search_events_by_type(client):
+    r = client.get("/api/search/events?event_type=对决")
     assert r.status_code == 200
     d = r.json()
     assert d["total"] >= 1
     for s in d["results"]:
-        assert "对决" in s["tags"].get("scene_type", [])
+        assert "对决" in s["tags"].get("event_type", [])
 
 
-def test_search_scenes_by_emotion(client):
-    r = client.get("/api/search/scenes?emotion=燃")
+def test_search_events_by_emotion(client):
+    r = client.get("/api/search/events?emotion=燃")
     assert r.status_code == 200
     assert r.json()["total"] >= 1
 
 
-def test_search_scenes_by_character(client):
-    r = client.get("/api/search/scenes?character=张三")
+def test_search_events_by_character(client):
+    r = client.get("/api/search/events?character=张三")
     assert r.status_code == 200
     assert r.json()["total"] >= 1
 
 
-def test_search_scenes_by_material(client):
-    r = client.get(f"/api/search/scenes?material={MID}")
+def test_search_events_by_material(client):
+    r = client.get(f"/api/search/events?material={MID}")
     assert r.status_code == 200
     assert r.json()["total"] == 3
 
 
-def test_search_scenes_multi_filter(client):
-    r = client.get("/api/search/scenes?scene_type=对决&emotion=燃")
+def test_search_events_multi_filter(client):
+    r = client.get("/api/search/events?event_type=对决&emotion=燃")
     assert r.status_code == 200
     assert r.json()["total"] >= 1
 
 
-def test_search_scenes_tension_range(client):
-    r = client.get(f"/api/search/scenes?material={MID}&tension_min=4")
+def test_search_events_tension_range(client):
+    r = client.get(f"/api/search/events?material={MID}&tension_min=4")
     assert r.status_code == 200
     for s in r.json()["results"]:
         assert s["tension"] >= 4
 
 
-def test_search_scenes_relaxation(client):
-    r = client.get("/api/search/scenes?scene_type=对决&emotion=温暖&conflict=人与自然")
+def test_search_events_relaxation(client):
+    r = client.get("/api/search/events?event_type=对决&emotion=温暖&conflict=人与自然")
     assert r.status_code == 200
     d = r.json()
     assert isinstance(d["relaxed"], bool)
@@ -198,10 +198,10 @@ def test_dashboard_stats(client):
     assert r.status_code == 200
     d = r.json()
     assert d["novels"] >= 1
-    assert d["scenes"] >= 1
+    assert d["events"] >= 1
     assert d["characters"] >= 1
     assert "per_novel" in d
-    assert "top_scene_types" in d
+    assert "top_event_types" in d
     assert "tension_distribution" in d
 
 
@@ -211,28 +211,28 @@ def test_get_tag_dict(client):
     r = client.get("/api/tags")
     assert r.status_code == 200
     d = r.json()
-    assert "scene_type" in d
-    assert "对决" in d["scene_type"]["values"]
+    assert "event_type" in d
+    assert "对决" in d["event_type"]["values"]
 
 
 def test_get_tag_usage(client):
     r = client.get("/api/tags/usage")
     assert r.status_code == 200
     d = r.json()
-    assert "scene_type" in d
+    assert "event_type" in d
 
 
 def test_add_tag(client):
-    r = client.post("/api/tags/add", json={"dimension": "scene_type", "value": "新标签"})
+    r = client.post("/api/tags/add", json={"dimension": "event_type", "value": "新标签"})
     assert r.status_code == 200
     assert r.json()["ok"] is True
 
     r2 = client.get("/api/tags")
-    assert "新标签" in r2.json()["scene_type"]["values"]
+    assert "新标签" in r2.json()["event_type"]["values"]
 
 
 def test_add_tag_duplicate(client):
-    r = client.post("/api/tags/add", json={"dimension": "scene_type", "value": "对决"})
+    r = client.post("/api/tags/add", json={"dimension": "event_type", "value": "对决"})
     assert r.status_code == 400
 
 

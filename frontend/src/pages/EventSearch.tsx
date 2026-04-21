@@ -4,11 +4,11 @@ import { Link } from 'react-router-dom'
 import { api } from '@/api/client'
 import { cn, TAG_COLORS, TAG_LAYERS } from '@/lib/utils'
 import { Search, X, ChevronDown, ChevronUp, Type, Tags, Check, ExternalLink } from 'lucide-react'
-import type { TagDictionary, SceneItem } from '@/types'
+import type { TagDictionary, EventItem } from '@/types'
 
 type Mode = 'tags' | 'text'
 
-export default function SceneSearch() {
+export default function EventSearch() {
   const [mode, setMode] = useState<Mode>('tags')
 
   return (
@@ -49,7 +49,7 @@ function TextSearchPanel() {
       <div className="flex gap-2 max-w-2xl">
         <input value={query} onChange={e => setQuery(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && handleSubmit()}
-          placeholder="输入关键词搜索场景标题和摘要..."
+          placeholder="输入关键词搜索事件标题和摘要..."
           className="flex-1 text-sm bg-slate-900 border border-slate-800 rounded-lg px-4 py-2.5 focus:outline-none focus:border-amber-500/50" />
         <button onClick={handleSubmit} disabled={!query.trim()}
           className={cn('px-5 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors',
@@ -65,8 +65,8 @@ function TextSearchPanel() {
         <LoadingSkeleton />
       ) : data && data.total > 0 ? (
         <div className="space-y-3">
-          <p className="text-sm text-slate-500">找到 {data.total} 个场景</p>
-          {data.results.map((s: SceneItem) => <SceneResultCard key={s.scene_id} scene={s} />)}
+          <p className="text-sm text-slate-500">找到 {data.total} 个事件</p>
+          {data.results.map((s: EventItem) => <EventResultCard key={s.event_id} event={s} />)}
         </div>
       ) : (
         <p className="text-center text-sm text-slate-600 py-20">未找到匹配结果</p>
@@ -98,8 +98,8 @@ function TagSearchPanel() {
   const hasFilters = Object.keys(activeFilters).length > 0
 
   const { data: results, isLoading, isFetching } = useQuery({
-    queryKey: ['searchScenes', activeFilters],
-    queryFn: () => api.searchScenes(activeFilters),
+    queryKey: ['searchEvents', activeFilters],
+    queryFn: () => api.searchEvents(activeFilters),
     enabled: submitted && hasFilters,
   })
 
@@ -222,14 +222,14 @@ function TagSearchPanel() {
         ) : results && results.total > 0 ? (
           <div className="space-y-3">
             <div className="flex items-center gap-2 text-sm text-slate-500">
-              <span>找到 {results.total} 个场景</span>
+              <span>找到 {results.total} 个事件</span>
               {results.relaxed && <span className="text-xs px-2 py-0.5 rounded bg-amber-500/15 text-amber-400">已放宽条件</span>}
             </div>
-            {results.results.map((s: SceneItem) => <SceneResultCard key={s.scene_id} scene={s} />)}
+            {results.results.map((s: EventItem) => <EventResultCard key={s.event_id} event={s} />)}
           </div>
         ) : (
           <div className="flex flex-col items-center justify-center h-full text-slate-600">
-            <p className="text-sm">未找到匹配的场景</p>
+            <p className="text-sm">未找到匹配的事件</p>
           </div>
         )}
       </div>
@@ -239,37 +239,37 @@ function TagSearchPanel() {
 
 /* ── Shared ───────────────────────────────────────────── */
 
-function SceneResultCard({ scene }: { scene: SceneItem }) {
-  const materialId = scene.scene_id?.split('_sc')[0]?.replace('_sc', '') ?? scene.material_id
+function EventResultCard({ event }: { event: EventItem }) {
+  const materialId = event.event_id?.split('_ev')[0]?.replace('_ev', '') ?? event.material_id
   return (
     <div className="rounded-xl bg-slate-900/80 border border-slate-800/60 p-4 animate-slide-up">
       <div className="flex items-center gap-2 mb-2">
-        <span className="text-xs text-slate-600 font-mono">{scene.scene_id}</span>
-        <span className="text-sm font-medium">{scene.title}</span>
-        {scene.tension > 0 && <span className="ml-auto text-xs px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 shrink-0">T{scene.tension}</span>}
-        {scene.score !== undefined && scene.score < 1 && (
-          <span className="text-xs text-slate-500">{Math.round(scene.score * 100)}%</span>
+        <span className="text-xs text-slate-600 font-mono">{event.event_id}</span>
+        <span className="text-sm font-medium">{event.title}</span>
+        {event.tension > 0 && <span className="ml-auto text-xs px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 shrink-0">T{event.tension}</span>}
+        {event.score !== undefined && event.score < 1 && (
+          <span className="text-xs text-slate-500">{Math.round(event.score * 100)}%</span>
         )}
       </div>
       <div className="flex items-center gap-1 mb-1">
-        <p className="text-xs text-slate-500">{scene.novel} · {scene.chapter}</p>
+        <p className="text-xs text-slate-500">{event.novel} · {event.chapter}</p>
         {materialId && (
           <Link to={`/materials/${materialId}`} className="text-xs text-slate-600 hover:text-amber-400 transition-colors" title="查看素材详情">
             <ExternalLink className="w-3 h-3" />
           </Link>
         )}
       </div>
-      <p className="text-xs text-slate-400 leading-relaxed mb-2">{scene.summary}</p>
+      <p className="text-xs text-slate-400 leading-relaxed mb-2">{event.summary}</p>
 
-      {scene.matched && scene.matched.length > 0 && (
+      {event.matched && event.matched.length > 0 && (
         <div className="flex flex-wrap gap-1 mb-2">
-          {scene.matched.map(m => <span key={m} className="text-xs px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400">{m}</span>)}
+          {event.matched.map(m => <span key={m} className="text-xs px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400">{m}</span>)}
         </div>
       )}
 
-      {scene.tags && Object.keys(scene.tags).length > 0 && (
+      {event.tags && Object.keys(event.tags).length > 0 && (
         <div className="flex flex-wrap gap-1 mb-2">
-          {Object.entries(scene.tags).flatMap(([dim, vals]) =>
+          {Object.entries(event.tags).flatMap(([dim, vals]) =>
             (vals as string[]).map(v => {
               const c = TAG_COLORS[dim]
               return <span key={`${dim}-${v}`} className={cn('text-xs px-1.5 py-0.5 rounded', c?.bg ?? 'bg-slate-700', c?.text ?? 'text-slate-400')}>{v}</span>
@@ -278,9 +278,9 @@ function SceneResultCard({ scene }: { scene: SceneItem }) {
         </div>
       )}
 
-      {scene.characters && scene.characters.length > 0 && (
+      {event.characters && event.characters.length > 0 && (
         <div className="flex flex-wrap gap-1">
-          {scene.characters.map(c => <span key={c} className="text-xs px-1.5 py-0.5 rounded bg-violet-500/10 text-violet-400">{c}</span>)}
+          {event.characters.map(c => <span key={c} className="text-xs px-1.5 py-0.5 rounded bg-violet-500/10 text-violet-400">{c}</span>)}
         </div>
       )}
     </div>

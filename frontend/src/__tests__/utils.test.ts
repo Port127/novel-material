@@ -23,7 +23,7 @@ describe('cn()', () => {
 describe('TAG_COLORS', () => {
   it('covers all 20 tag dimensions', () => {
     const dims = [
-      'scene_type', 'conflict', 'stakes',
+      'event_type', 'conflict', 'stakes',
       'relationship', 'interaction', 'power_dynamic', 'character_moment', 'moral_spectrum',
       'emotion', 'reader_effect',
       'plot_stage', 'plot_function', 'pacing',

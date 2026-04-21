@@ -7,7 +7,7 @@ import Layout from './components/Layout'
 const Dashboard = lazy(() => import('./pages/Dashboard'))
 const MaterialList = lazy(() => import('./pages/MaterialList'))
 const MaterialDetail = lazy(() => import('./pages/MaterialDetail'))
-const SceneSearch = lazy(() => import('./pages/SceneSearch'))
+const EventSearch = lazy(() => import('./pages/EventSearch'))
 const CharacterSearch = lazy(() => import('./pages/CharacterSearch'))
 const TagDictionary = lazy(() => import('./pages/TagDictionary'))
 const Settings = lazy(() => import('./pages/Settings'))
@@ -54,7 +54,7 @@ export default function App() {
                 <Route index element={<ErrorBoundary><Dashboard /></ErrorBoundary>} />
                 <Route path="materials" element={<ErrorBoundary><MaterialList /></ErrorBoundary>} />
                 <Route path="materials/:id" element={<ErrorBoundary><MaterialDetail /></ErrorBoundary>} />
-                <Route path="search/scenes" element={<ErrorBoundary><SceneSearch /></ErrorBoundary>} />
+                <Route path="search/events" element={<ErrorBoundary><EventSearch /></ErrorBoundary>} />
                 <Route path="search/characters" element={<ErrorBoundary><CharacterSearch /></ErrorBoundary>} />
                 <Route path="tags" element={<ErrorBoundary><TagDictionary /></ErrorBoundary>} />
                 <Route path="upload" element={<ErrorBoundary><UploadPage /></ErrorBoundary>} />

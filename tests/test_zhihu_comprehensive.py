@@ -1,6 +1,6 @@
 """
 知乎调研测试案例 TC-ZH-001 ~ TC-ZH-100
-真实运行，覆盖素材入库、标签体系、搜索检索、场景质量、人物世界观、索引数据库、前端 API、统计报告。
+真实运行，覆盖素材入库、标签体系、搜索检索、事件质量、人物世界观、索引数据库、前端 API、统计报告。
 """
 import json
 import os
@@ -20,9 +20,9 @@ sys.path.insert(0, str(SCRIPTS_DIR))
 sys.path.insert(0, str(BACKEND_DIR))
 sys.path.insert(0, str(SCRIPTS_DIR / "core"))
 
-from core.validate_yaml import validate_scene, _flatten_scene, validate_meta, validate_yaml_parseable, load_tags_dict as _load_tags
-from core.quality_audit import compute_batch_quality, detect_quality_drift, load_scenes, _as_list
-from core.build_db import create_schema, ingest_novel, _flatten_scene as db_flatten, _str_or_first, _as_list as db_as_list
+from core.validate_yaml import validate_event, _flatten_event, validate_meta, validate_yaml_parseable, load_tags_dict as _load_tags
+from core.quality_audit import compute_batch_quality, detect_quality_drift, load_events, _as_list
+from core.build_db import create_schema, ingest_novel, _flatten_event as db_flatten, _str_or_first, _as_list as db_as_list
 
 REAL_DATA = ROOT / "data"
 REAL_TAGS = REAL_DATA / "tags.yaml"
@@ -37,12 +37,12 @@ if REAL_TAGS.exists():
     TAGS_DICT = {dim: set(str(v) for v in info["values"]) for dim, info in raw.items() if isinstance(info, dict) and "values" in info}
 
 
-def _make_scene(overrides=None):
+def _make_event(overrides=None):
     s = {
-        "id": "ch0001_s01", "chapter": "第1章 测试", "title": "黎明之战",
+        "id": "ev0001", "chapter": "第1章 测试", "title": "黎明之战",
         "summary": "主角在黎明时与敌人展开激战，最终以弱胜强",
         "tension": 4,
-        "scene_type": ["对决"], "conflict": ["人与人"], "stakes": ["生死"],
+        "event_type": ["对决"], "conflict": ["人与人"], "stakes": ["生死"],
         "characters": ["张三", "李四"],
         "relationship": ["对手"], "interaction": ["对抗"],
         "power_dynamic": "以弱胜强", "character_moment": ["觉醒"],
@@ -112,13 +112,13 @@ class TestMaterialManagement:
         assert content == "你好世界"
 
     def test_zh012_illegal_tags_detected(self, tmp_path):
-        """TC-ZH-012: 导入包含非法标签值的场景被检测到"""
+        """TC-ZH-012: 导入包含非法标签值的事件被检测到"""
         if not TAGS_DICT:
             pytest.skip("tags.yaml 不存在")
-        scene = _make_scene({"scene_type": ["超自然非法值_XYZ"]})
+        event = _make_event({"event_type": ["超自然非法值_XYZ"]})
         p = tmp_path / "bad.yaml"
-        p.write_text(yaml.dump(scene, allow_unicode=True), encoding="utf-8")
-        errs = validate_scene(p, TAGS_DICT, None)
+        p.write_text(yaml.dump(event, allow_unicode=True), encoding="utf-8")
+        errs = validate_event(p, TAGS_DICT, None)
         assert any("标签越界" in e for e in errs), f"未检测到非法标签: {errs}"
 
     def test_zh015_unique_ids(self):
@@ -135,8 +135,8 @@ class TestMaterialManagement:
 class TestTagSystem:
     """TC-ZH-016~030: 标签完整性、合法性、校验"""
 
-    SCENE_DIMS = [
-        "scene_type", "conflict", "stakes", "relationship", "interaction",
+    EVENT_DIMS = [
+        "event_type", "conflict", "stakes", "relationship", "interaction",
         "power_dynamic", "character_moment", "moral_spectrum", "emotion",
         "reader_effect", "plot_stage", "plot_function", "pacing",
         "technique", "dialogue_type", "pov", "info_delivery",
@@ -145,10 +145,10 @@ class TestTagSystem:
     NOVEL_DIMS = ["genre", "tone", "narrative_structure", "time_handling",
                   "prose_style", "writing_strength", "tropes"]
 
-    def test_zh016_all_20_scene_dims(self):
-        """TC-ZH-016: tags.yaml 包含全部 20 个场景标签维度"""
+    def test_zh016_all_20_event_dims(self):
+        """TC-ZH-016: tags.yaml 包含全部 20 个事件标签维度"""
         assert TAGS_DICT is not None
-        for dim in self.SCENE_DIMS:
+        for dim in self.EVENT_DIMS:
             assert dim in TAGS_DICT, f"缺少维度: {dim}"
 
     def test_zh017_all_7_novel_dims(self):
@@ -158,37 +158,37 @@ class TestTagSystem:
             assert dim in TAGS_DICT, f"缺少小说维度: {dim}"
 
     def test_zh021_illegal_tag_detected(self, tmp_path):
-        """TC-ZH-021: 非法标签值被 validate_scene 检测"""
-        scene = _make_scene({"emotion": ["非法情绪_ZZZ"]})
+        """TC-ZH-021: 非法标签值被 validate_event 检测"""
+        event = _make_event({"emotion": ["非法情绪_ZZZ"]})
         p = tmp_path / "test.yaml"
-        p.write_text(yaml.dump(scene, allow_unicode=True), encoding="utf-8")
-        errs = validate_scene(p, TAGS_DICT, None)
+        p.write_text(yaml.dump(event, allow_unicode=True), encoding="utf-8")
+        errs = validate_event(p, TAGS_DICT, None)
         assert any("标签越界" in e and "emotion" in e for e in errs)
 
     def test_zh022_missing_required_tag_field(self, tmp_path):
         """TC-ZH-022: 缺少必填标签字段被检测"""
-        scene = _make_scene()
-        del scene["emotion"]
+        event = _make_event()
+        del event["emotion"]
         p = tmp_path / "test.yaml"
-        p.write_text(yaml.dump(scene, allow_unicode=True), encoding="utf-8")
-        errs = validate_scene(p, TAGS_DICT, None)
+        p.write_text(yaml.dump(event, allow_unicode=True), encoding="utf-8")
+        errs = validate_event(p, TAGS_DICT, None)
         assert any("emotion" in e for e in errs)
 
     def test_zh023_tension_out_of_range(self, tmp_path):
         """TC-ZH-023: tension 超出 1-5 范围"""
         for bad_val in [0, 6, -1, 100]:
-            scene = _make_scene({"tension": bad_val})
+            event = _make_event({"tension": bad_val})
             p = tmp_path / "test.yaml"
-            p.write_text(yaml.dump(scene, allow_unicode=True), encoding="utf-8")
-            errs = validate_scene(p, TAGS_DICT, None)
+            p.write_text(yaml.dump(event, allow_unicode=True), encoding="utf-8")
+            errs = validate_event(p, TAGS_DICT, None)
             assert any("tension" in e for e in errs), f"tension={bad_val} 未被检测"
 
     def test_zh025_tag_whitespace(self, tmp_path):
         """TC-ZH-025: 标签值含前后空格"""
-        scene = _make_scene({"emotion": [" 燃 "]})
+        event = _make_event({"emotion": [" 燃 "]})
         p = tmp_path / "test.yaml"
-        p.write_text(yaml.dump(scene, allow_unicode=True), encoding="utf-8")
-        errs = validate_scene(p, TAGS_DICT, None)
+        p.write_text(yaml.dump(event, allow_unicode=True), encoding="utf-8")
+        errs = validate_event(p, TAGS_DICT, None)
         has_issue = any("标签越界" in e for e in errs)
         assert has_issue, "带空格的标签值应检测为非法"
 
@@ -197,9 +197,9 @@ class TestTagSystem:
         if not REAL_DB.exists():
             pytest.skip("material.db 不存在")
         conn = sqlite3.connect(str(REAL_DB))
-        q = """SELECT DISTINCT s.scene_id FROM scenes s
-               JOIN scene_tags t1 ON s.scene_id = t1.scene_id AND t1.dimension='scene_type' AND t1.value='对决'
-               JOIN scene_tags t2 ON s.scene_id = t2.scene_id AND t2.dimension='emotion' AND t2.value='燃'
+        q = """SELECT DISTINCT s.event_id FROM events s
+               JOIN event_tags t1 ON s.event_id = t1.event_id AND t1.dimension='event_type' AND t1.value='对决'
+               JOIN event_tags t2 ON s.event_id = t2.event_id AND t2.dimension='emotion' AND t2.value='燃'
                LIMIT 10"""
         rows = conn.execute(q).fetchall()
         conn.close()
@@ -207,11 +207,11 @@ class TestTagSystem:
 
     def test_zh030_tag_diversity_check(self):
         """TC-ZH-030: quality_audit 检测标签雷同"""
-        identical = [_make_scene({"id": f"ch{i:04d}_s01"}) for i in range(1, 11)]
+        identical = [_make_event({"id": f"ch{i:04d}_s01"}) for i in range(1, 11)]
         result = compute_batch_quality(identical)
         assert result["quality"]["tag_diversity"] < 0.5 or result["status"] == "failed" or \
                result["quality"]["tag_diversity"] == 0.1, \
-               f"10个相同标签场景的多样性应该很低: {result['quality']['tag_diversity']}"
+               f"10个相同标签事件的多样性应该很低: {result['quality']['tag_diversity']}"
 
 
 # ==============================================================================
@@ -231,14 +231,14 @@ class TestSearchRetrieval:
     def test_zh031_keyword_search(self):
         """TC-ZH-031: 关键词检索"""
         conn = self._conn()
-        rows = conn.execute("SELECT COUNT(*) FROM scenes WHERE summary LIKE '%战%'").fetchone()
+        rows = conn.execute("SELECT COUNT(*) FROM events WHERE summary LIKE '%战%'").fetchone()
         conn.close()
         assert rows[0] >= 0
 
     def test_zh032_nonexistent_keyword(self):
         """TC-ZH-032: 不存在的词返回空结果"""
         conn = self._conn()
-        rows = conn.execute("SELECT COUNT(*) FROM scenes WHERE summary LIKE '%飞天遁地炸裂锤ZZZYYYXXX%'").fetchone()
+        rows = conn.execute("SELECT COUNT(*) FROM events WHERE summary LIKE '%飞天遁地炸裂锤ZZZYYYXXX%'").fetchone()
         conn.close()
         assert rows[0] == 0
 
@@ -246,7 +246,7 @@ class TestSearchRetrieval:
         """TC-ZH-034: 按 emotion=悲伤 筛选"""
         conn = self._conn()
         rows = conn.execute(
-            "SELECT scene_id FROM scene_tags WHERE dimension='emotion' AND value='悲伤' LIMIT 5"
+            "SELECT event_id FROM event_tags WHERE dimension='emotion' AND value='悲伤' LIMIT 5"
         ).fetchall()
         conn.close()
         assert isinstance(rows, list)
@@ -254,9 +254,9 @@ class TestSearchRetrieval:
     def test_zh035_multi_dim_and(self):
         """TC-ZH-035: 多维 AND 查询"""
         conn = self._conn()
-        q = """SELECT s.scene_id FROM scenes s
-               WHERE s.scene_id IN (SELECT scene_id FROM scene_tags WHERE dimension='emotion' AND value='燃')
-               AND s.scene_id IN (SELECT scene_id FROM scene_tags WHERE dimension='scene_type' AND value='对决')
+        q = """SELECT s.event_id FROM events s
+               WHERE s.event_id IN (SELECT event_id FROM event_tags WHERE dimension='emotion' AND value='燃')
+               AND s.event_id IN (SELECT event_id FROM event_tags WHERE dimension='event_type' AND value='对决')
                LIMIT 10"""
         rows = conn.execute(q).fetchall()
         conn.close()
@@ -266,7 +266,7 @@ class TestSearchRetrieval:
         """TC-ZH-036: OR 查询"""
         conn = self._conn()
         rows = conn.execute(
-            "SELECT DISTINCT scene_id FROM scene_tags WHERE dimension='emotion' AND value IN ('燃','紧张') LIMIT 10"
+            "SELECT DISTINCT event_id FROM event_tags WHERE dimension='emotion' AND value IN ('燃','紧张') LIMIT 10"
         ).fetchall()
         conn.close()
         assert isinstance(rows, list)
@@ -274,7 +274,7 @@ class TestSearchRetrieval:
     def test_zh037_tension_range(self):
         """TC-ZH-037: tension >= 4"""
         conn = self._conn()
-        rows = conn.execute("SELECT COUNT(*) FROM scenes WHERE tension >= 4").fetchone()
+        rows = conn.execute("SELECT COUNT(*) FROM events WHERE tension >= 4").fetchone()
         conn.close()
         assert rows[0] >= 0
 
@@ -289,7 +289,7 @@ class TestSearchRetrieval:
         """TC-ZH-041: 跨小说搜索"""
         conn = self._conn()
         rows = conn.execute(
-            "SELECT DISTINCT material_id FROM scene_tags WHERE dimension='emotion' AND value='燃'"
+            "SELECT DISTINCT material_id FROM event_tags WHERE dimension='emotion' AND value='燃'"
         ).fetchall()
         conn.close()
         materials = [r[0] for r in rows]
@@ -298,25 +298,25 @@ class TestSearchRetrieval:
     def test_zh044_sql_injection(self):
         """TC-ZH-044: SQL 注入防御"""
         conn = self._conn()
-        malicious = "'; DROP TABLE scenes; --"
+        malicious = "'; DROP TABLE events; --"
         rows = conn.execute(
-            "SELECT COUNT(*) FROM scenes WHERE summary LIKE ?", (f"%{malicious}%",)
+            "SELECT COUNT(*) FROM events WHERE summary LIKE ?", (f"%{malicious}%",)
         ).fetchone()
-        still_exists = conn.execute("SELECT COUNT(*) FROM scenes").fetchone()
+        still_exists = conn.execute("SELECT COUNT(*) FROM events").fetchone()
         conn.close()
-        assert still_exists[0] > 0, "scenes 表被删除了！SQL 注入成功！"
+        assert still_exists[0] > 0, "events 表被删除了！SQL 注入成功！"
         assert rows[0] == 0
 
     def test_zh045_yaml_sqlite_consistency(self):
-        """TC-ZH-045: YAML 与 SQLite 场景数一致性"""
+        """TC-ZH-045: YAML 与 SQLite 事件数一致性"""
         conn = self._conn()
-        novels = conn.execute("SELECT material_id, total_scenes FROM novels").fetchall()
+        novels = conn.execute("SELECT material_id, total_events FROM novels").fetchall()
         conn.close()
         for mid, db_count in novels:
-            scenes_dir = REAL_NOVELS / mid / "scenes"
-            if not scenes_dir.exists():
+            events_dir = REAL_NOVELS / mid / "events"
+            if not events_dir.exists():
                 continue
-            yaml_count = len(list(scenes_dir.glob("ch*.yaml")))
+            yaml_count = len(list(events_dir.glob("ch*.yaml")))
             assert db_count == yaml_count, \
                 f"{mid}: SQLite={db_count} vs YAML={yaml_count}"
 
@@ -326,8 +326,8 @@ class TestSearchRetrieval:
         conn = self._conn()
         start = time.time()
         conn.execute(
-            """SELECT s.scene_id, s.title FROM scenes s
-               JOIN scene_tags t ON s.scene_id = t.scene_id
+            """SELECT s.event_id, s.title FROM events s
+               JOIN event_tags t ON s.event_id = t.event_id
                WHERE t.dimension='emotion' AND t.value='燃'
                LIMIT 100"""
         ).fetchall()
@@ -337,18 +337,18 @@ class TestSearchRetrieval:
 
 
 # ==============================================================================
-# D. 场景拆分与质量 TC-ZH-051 ~ TC-ZH-065
+# D. 事件拆分与质量 TC-ZH-051 ~ TC-ZH-065
 # ==============================================================================
-class TestSceneQuality:
-    """TC-ZH-051~065: 场景质量、Anti-Pattern、断点恢复"""
+class TestEventQuality:
+    """TC-ZH-051~065: 事件质量、Anti-Pattern、断点恢复"""
 
     def test_zh052_no_number_titles(self):
-        """TC-ZH-052: 真实场景 title 不是编号形式"""
+        """TC-ZH-052: 真实事件 title 不是编号形式"""
         for novel_dir in REAL_NOVELS.iterdir():
-            scenes_dir = novel_dir / "scenes"
-            if not scenes_dir.exists():
+            events_dir = novel_dir / "events"
+            if not events_dir.exists():
                 continue
-            for sf in list(scenes_dir.glob("ch*.yaml"))[:20]:
+            for sf in list(events_dir.glob("ch*.yaml"))[:20]:
                 try:
                     data = yaml.safe_load(sf.read_text(encoding="utf-8"))
                 except:
@@ -356,32 +356,32 @@ class TestSceneQuality:
                 if not data:
                     continue
                 title = str(data.get("title", ""))
-                assert not (title.startswith("场景") and title[2:].isdigit()), \
+                assert not (title.startswith("事件") and title[2:].isdigit()), \
                     f"{sf.name}: title 是编号形式 '{title}'"
 
     def test_zh054_tag_diversity_in_real_data(self):
         """TC-ZH-054: 真实数据中同批次标签组合不完全相同"""
         for novel_dir in REAL_NOVELS.iterdir():
-            scenes_dir = novel_dir / "scenes"
-            if not scenes_dir.exists():
+            events_dir = novel_dir / "events"
+            if not events_dir.exists():
                 continue
-            scenes = load_scenes(scenes_dir, "1-10")
-            if len(scenes) < 3:
+            events = load_events(events_dir, "1-10")
+            if len(events) < 3:
                 continue
-            result = compute_batch_quality(scenes)
+            result = compute_batch_quality(events)
             q = result.get("quality", {})
             assert q.get("tag_diversity", 0) > 0.1, \
                 f"{novel_dir.name}: 前10章标签多样性过低 {q.get('tag_diversity')}"
             break
 
     def test_zh056_yaml_safe_load(self):
-        """TC-ZH-056: 所有真实场景 YAML 能被 safe_load 解析"""
+        """TC-ZH-056: 所有真实事件 YAML 能被 safe_load 解析"""
         failures = []
         for novel_dir in REAL_NOVELS.iterdir():
-            scenes_dir = novel_dir / "scenes"
-            if not scenes_dir.exists():
+            events_dir = novel_dir / "events"
+            if not events_dir.exists():
                 continue
-            for sf in list(scenes_dir.glob("ch*.yaml"))[:50]:
+            for sf in list(events_dir.glob("ch*.yaml"))[:50]:
                 try:
                     yaml.safe_load(sf.read_text(encoding="utf-8"))
                 except yaml.YAMLError as e:
@@ -391,32 +391,32 @@ class TestSceneQuality:
     def test_zh058_quality_audit_runs(self):
         """TC-ZH-058: quality_audit 能正常审计"""
         for novel_dir in REAL_NOVELS.iterdir():
-            scenes_dir = novel_dir / "scenes"
-            if not scenes_dir.exists():
+            events_dir = novel_dir / "events"
+            if not events_dir.exists():
                 continue
-            scenes = load_scenes(scenes_dir, "1-10")
-            if not scenes:
+            events = load_events(events_dir, "1-10")
+            if not events:
                 continue
-            result = compute_batch_quality(scenes)
+            result = compute_batch_quality(events)
             assert "status" in result
-            assert result["scenes_count"] > 0
+            assert result["events_count"] > 0
             break
 
-    def test_zh059_detect_cloned_scenes(self):
-        """TC-ZH-059: 全部相同标签的场景被检测"""
-        clones = [_make_scene({"id": f"ch{i:04d}_s01"}) for i in range(1, 11)]
+    def test_zh059_detect_cloned_events(self):
+        """TC-ZH-059: 全部相同标签的事件被检测"""
+        clones = [_make_event({"id": f"ch{i:04d}_s01"}) for i in range(1, 11)]
         result = compute_batch_quality(clones)
         assert result["quality"]["tag_diversity"] <= 0.1
 
-    def test_zh064_scene_id_format(self):
-        """TC-ZH-064: 真实场景 ID 格式正确"""
+    def test_zh064_event_id_format(self):
+        """TC-ZH-064: 真实事件 ID 格式正确"""
         import re
         pattern = re.compile(r"ch\d{4}_s\d{1,2}")
         for novel_dir in REAL_NOVELS.iterdir():
-            scenes_dir = novel_dir / "scenes"
-            if not scenes_dir.exists():
+            events_dir = novel_dir / "events"
+            if not events_dir.exists():
                 continue
-            for sf in list(scenes_dir.glob("ch*.yaml"))[:20]:
+            for sf in list(events_dir.glob("ch*.yaml"))[:20]:
                 try:
                     data = yaml.safe_load(sf.read_text(encoding="utf-8"))
                 except:
@@ -428,14 +428,14 @@ class TestSceneQuality:
             break
 
     def test_zh065_not_all_conflict_empty(self):
-        """TC-ZH-065: 不是所有场景 conflict 都为空"""
+        """TC-ZH-065: 不是所有事件 conflict 都为空"""
         for novel_dir in REAL_NOVELS.iterdir():
-            scenes_dir = novel_dir / "scenes"
-            if not scenes_dir.exists():
+            events_dir = novel_dir / "events"
+            if not events_dir.exists():
                 continue
             has_conflict = 0
             total = 0
-            for sf in list(scenes_dir.glob("ch*.yaml"))[:50]:
+            for sf in list(events_dir.glob("ch*.yaml"))[:50]:
                 try:
                     data = yaml.safe_load(sf.read_text(encoding="utf-8"))
                 except:
@@ -447,7 +447,7 @@ class TestSceneQuality:
                 if c and c != []:
                     has_conflict += 1
             if total > 5:
-                assert has_conflict > 0, f"{novel_dir.name}: 前50个场景 conflict 全为空"
+                assert has_conflict > 0, f"{novel_dir.name}: 前50个事件 conflict 全为空"
                 break
 
 
@@ -514,14 +514,14 @@ class TestCharactersWorldbuilding:
 class TestIndexDatabase:
     """TC-ZH-076~085: 索引生成、SQLite 同步、可重建性"""
 
-    def test_zh078_sqlite_scene_count(self):
-        """TC-ZH-078: SQLite 场景数与 novels 表记录一致"""
+    def test_zh078_sqlite_event_count(self):
+        """TC-ZH-078: SQLite 事件数与 novels 表记录一致"""
         if not REAL_DB.exists():
             pytest.skip("material.db 不存在")
         conn = sqlite3.connect(str(REAL_DB))
-        for mid, total in conn.execute("SELECT material_id, total_scenes FROM novels").fetchall():
-            actual = conn.execute("SELECT COUNT(*) FROM scenes WHERE material_id=?", (mid,)).fetchone()[0]
-            assert total == actual, f"{mid}: novels.total_scenes={total} vs actual={actual}"
+        for mid, total in conn.execute("SELECT material_id, total_events FROM novels").fetchall():
+            actual = conn.execute("SELECT COUNT(*) FROM events WHERE material_id=?", (mid,)).fetchone()[0]
+            assert total == actual, f"{mid}: novels.total_events={total} vs actual={actual}"
         conn.close()
 
     def test_zh079_rebuild_db(self, tmp_path):
@@ -537,7 +537,7 @@ class TestIndexDatabase:
             first_mid = idx["materials"][0]["id"]
             count = ingest_novel(conn, first_mid)
             assert count >= 0
-            n = conn.execute("SELECT COUNT(*) FROM scenes").fetchone()[0]
+            n = conn.execute("SELECT COUNT(*) FROM events").fetchone()[0]
             assert n == count
         finally:
             os.chdir(old_cwd)
@@ -559,11 +559,11 @@ class TestIndexDatabase:
         assert db_path.exists()
 
     def test_zh081_flatten_nested_format(self):
-        """TC-ZH-081: 嵌套格式场景能被正确展平"""
+        """TC-ZH-081: 嵌套格式事件能被正确展平"""
         nested = {
             "id": "ch0001_s01", "chapter": "第1章", "title": "测试",
             "summary": "test", "tension": 3,
-            "content": {"scene_type": ["对决"], "conflict": ["人与人"], "stakes": ["生死"]},
+            "content": {"event_type": ["对决"], "conflict": ["人与人"], "stakes": ["生死"]},
             "people": {"relationship": ["对手"], "interaction": ["对抗"],
                        "power_dynamic": "以弱胜强", "character_moment": ["觉醒"],
                        "moral_spectrum": "正义"},
@@ -574,7 +574,7 @@ class TestIndexDatabase:
             "characters": ["张三"],
         }
         flat = db_flatten(nested)
-        assert flat.get("scene_type") == ["对决"]
+        assert flat.get("event_type") == ["对决"]
         assert flat.get("emotion") == ["燃"]
         assert flat.get("pov") == "第三人称限制"
 
@@ -584,21 +584,21 @@ class TestIndexDatabase:
             pytest.skip("material.db 不存在")
         conn = sqlite3.connect(str(REAL_DB))
         for mid, in conn.execute("SELECT material_id FROM novels").fetchall():
-            db_scenes = set(r[0] for r in conn.execute(
-                "SELECT scene_id FROM scenes WHERE material_id=?", (mid,)).fetchall())
-            scenes_dir = REAL_NOVELS / mid / "scenes"
-            if not scenes_dir.exists():
+            db_events = set(r[0] for r in conn.execute(
+                "SELECT event_id FROM events WHERE material_id=?", (mid,)).fetchall())
+            events_dir = REAL_NOVELS / mid / "events"
+            if not events_dir.exists():
                 continue
-            yaml_scenes = set()
-            for sf in scenes_dir.glob("ch*.yaml"):
+            yaml_events = set()
+            for sf in events_dir.glob("ch*.yaml"):
                 try:
                     data = yaml.safe_load(sf.read_text(encoding="utf-8"))
                     if data:
-                        yaml_scenes.add(data.get("id", sf.stem))
+                        yaml_events.add(data.get("id", sf.stem))
                 except:
                     pass
-            missing_in_db = yaml_scenes - db_scenes
-            extra_in_db = db_scenes - yaml_scenes
+            missing_in_db = yaml_events - db_events
+            extra_in_db = db_events - yaml_events
             assert len(missing_in_db) == 0, f"{mid}: YAML有但DB无: {list(missing_in_db)[:5]}"
             assert len(extra_in_db) == 0, f"{mid}: DB有但YAML无: {list(extra_in_db)[:5]}"
         conn.close()
@@ -688,9 +688,9 @@ class TestFrontendAPI:
         r = self.client.get("/api/materials/nm_fake_nonexistent_id")
         assert r.status_code == 404
 
-    def test_zh090_scene_search(self):
-        """TC-ZH-090: 场景搜索 API"""
-        r = self.client.get("/api/search/scenes", params={"scene_type": "对决"})
+    def test_zh090_event_search(self):
+        """TC-ZH-090: 事件搜索 API"""
+        r = self.client.get("/api/search/events", params={"event_type": "对决"})
         assert r.status_code == 200
 
     def test_zh091_character_search(self):

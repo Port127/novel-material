@@ -16,7 +16,7 @@
 | 7 | 多标签分类及其基本做法 | zhuanlan.zhihu.com/p/570797393 | 多维标签 |
 | 8 | 深度解析文本分类与标签的应用价值和原理 | zhuanlan.zhihu.com/p/260575592 | 标签原理 |
 | 9 | 你们的笔记、标签、分类是怎样的？ | zhihu.com/question/20256448 | 分类实践 |
-| 10 | 如何正确地拆书 | zhuanlan.zhihu.com/p/351328097 | 场景拆解 |
+| 10 | 如何正确地拆书 | zhuanlan.zhihu.com/p/351328097 | 事件拆解 |
 | 11 | 雪花写作法 | zhuanlan.zhihu.com/p/2001646363016983889 | 故事结构 |
 | 12 | 网文写作：拆书拆什么？如何拆？ | zhuanlan.zhihu.com/p/673645624 | 拆书方法 |
 | 13 | 小说写作丨怎样的人物设定技巧 | zhuanlan.zhihu.com/p/295612214 | 人物设定 |
@@ -43,7 +43,7 @@
 | 标签体系过于僵化或过于松散，标签值泛滥 | #6 #7 #8 | 标签合法性校验 |
 | 搜索不准确——关键词匹配不到想要的素材 | #4 #16 #17 | 多维检索准确率 |
 | 人物众多时设定遗忘、关系混乱 | #13 #14 #15 | 人物数据完整性 |
-| 长篇小说拆分时场景遗漏、标签雷同 | #10 #11 #12 | 场景质量审计 |
+| 长篇小说拆分时事件遗漏、标签雷同 | #10 #11 #12 | 事件质量审计 |
 | YAML 格式出错导致解析失败 | #19 | YAML 格式校验 |
 | SQLite 数据丢失无法恢复 | #18 | 数据一致性 |
 | AI 自动标注标签千篇一律 | #24 #25 | Anti-Pattern 检测 |
@@ -76,21 +76,21 @@
 
 | ID | 测试案例 | 预期结果 | 来源痛点 |
 |----|---------|---------|---------|
-| TC-ZH-016 | 检查 tags.yaml 所有 20 个场景标签维度是否齐全 | 确认 scene_type/conflict/stakes 等 20 维全部存在 | 标签完整性 |
+| TC-ZH-016 | 检查 tags.yaml 所有 20 个事件标签维度是否齐全 | 确认 event_type/conflict/stakes 等 20 维全部存在 | 标签完整性 |
 | TC-ZH-017 | 检查 tags.yaml 所有 7 个小说标签维度是否齐全 | 确认 genre/tone/narrative_structure 等 7 维全部存在 | 标签完整性 |
 | TC-ZH-018 | 向 tags.yaml 添加新标签值（tag-add） | 新值出现在对应维度下，YAML 格式正确 | 标签扩展 |
 | TC-ZH-019 | 添加一个已存在的重复标签值 | 拒绝添加并提示已存在 | 标签去重 |
-| TC-ZH-020 | 合并两个同义标签（tag-merge） | 旧标签值在全局被替换为新值，全部场景 YAML 更新 | 标签归并 |
-| TC-ZH-021 | 场景 YAML 中使用了 tags.yaml 中不存在的标签值 | validate_yaml.py 校验报错，明确指出非法值 | 标签合法性 |
-| TC-ZH-022 | 场景 YAML 中某个必填标签字段为空 | validate_yaml.py 校验报错，指出缺失字段 | 必填校验 |
-| TC-ZH-023 | 场景中 tension 值超出 1-5 范围（如 0 或 6） | 校验报错，提示 tension 必须在 1-5 之间 | 范围校验 |
-| TC-ZH-024 | 标签维度大小写不一致（如 Scene_Type 替代 scene_type） | 校验报错或自动纠正 | 大小写敏感 |
+| TC-ZH-020 | 合并两个同义标签（tag-merge） | 旧标签值在全局被替换为新值，全部事件 YAML 更新 | 标签归并 |
+| TC-ZH-021 | 事件 YAML 中使用了 tags.yaml 中不存在的标签值 | validate_yaml.py 校验报错，明确指出非法值 | 标签合法性 |
+| TC-ZH-022 | 事件 YAML 中某个必填标签字段为空 | validate_yaml.py 校验报错，指出缺失字段 | 必填校验 |
+| TC-ZH-023 | 事件中 tension 值超出 1-5 范围（如 0 或 6） | 校验报错，提示 tension 必须在 1-5 之间 | 范围校验 |
+| TC-ZH-024 | 标签维度大小写不一致（如 Scene_Type 替代 event_type） | 校验报错或自动纠正 | 大小写敏感 |
 | TC-ZH-025 | 标签值含前后空格（如 " 对决 "） | 校验检测到空格并报错或自动 trim | 空格处理 |
-| TC-ZH-026 | 同一场景的 scene_type 标签列表含重复值 | 校验检测到重复并报告 | 值重复 |
+| TC-ZH-026 | 同一事件的 event_type 标签列表含重复值 | 校验检测到重复并报告 | 值重复 |
 | TC-ZH-027 | 小说级标签（novel-tags）覆盖所有 7 个维度 | 生成的 tags.yaml 7 个维度都有值 | 覆盖率 |
 | TC-ZH-028 | tags.yaml 中删除一个正在使用中的标签值 | 系统应阻止或提示该值仍在使用 | 安全删除 |
-| TC-ZH-029 | 多维标签组合检索：scene_type=对决 AND emotion=燃 | 返回同时满足两个条件的场景 | 组合检索 |
-| TC-ZH-030 | 检查整本书场景标签多样性——不能所有场景标签相同 | quality_audit 检测出标签雷同并告警 | Anti-Pattern |
+| TC-ZH-029 | 多维标签组合检索：event_type=对决 AND emotion=燃 | 返回同时满足两个条件的事件 | 组合检索 |
+| TC-ZH-030 | 检查整本书事件标签多样性——不能所有事件标签相同 | quality_audit 检测出标签雷同并告警 | Anti-Pattern |
 
 ## C. 搜索与检索（TC-ZH-031 ~ TC-ZH-050）
 
@@ -99,43 +99,43 @@
 | TC-ZH-031 | 关键词检索"告别" | 返回包含"告别"的素材，按相关度排序 | 基本搜索 |
 | TC-ZH-032 | 关键词检索一个不存在的词（如"飞天遁地炸裂锤"） | 返回空结果集，不报错 | 空结果处理 |
 | TC-ZH-033 | 搜索中文标点符号（如"——"破折号） | 正确处理，不因标点导致搜索引擎报错 | 特殊字符 |
-| TC-ZH-034 | scene 搜索：按 emotion=悲伤 筛选 | 返回所有 emotion 含"悲伤"的场景 | 单维搜索 |
-| TC-ZH-035 | scene 搜索：按 emotion=悲伤 AND interaction=告别 | 仅返回同时满足两个条件的场景 | 多维 AND |
-| TC-ZH-036 | scene 搜索：标签多选（OR 查询）emotion=燃 OR emotion=紧张 | 返回含"燃"或"紧张"的所有场景 | 多选 OR |
-| TC-ZH-037 | scene 搜索：按 tension-min=4 过滤高张力场景 | 仅返回 tension>=4 的场景 | 数值过滤 |
+| TC-ZH-034 | event 搜索：按 emotion=悲伤 筛选 | 返回所有 emotion 含"悲伤"的事件 | 单维搜索 |
+| TC-ZH-035 | event 搜索：按 emotion=悲伤 AND interaction=告别 | 仅返回同时满足两个条件的事件 | 多维 AND |
+| TC-ZH-036 | event 搜索：标签多选（OR 查询）emotion=燃 OR emotion=紧张 | 返回含"燃"或"紧张"的所有事件 | 多选 OR |
+| TC-ZH-037 | event 搜索：按 tension-min=4 过滤高张力事件 | 仅返回 tension>=4 的事件 | 数值过滤 |
 | TC-ZH-038 | character 搜索：按 archetype=导师 | 返回所有原型为"导师"的人物 | 人物搜索 |
-| TC-ZH-039 | character 搜索：按角色名"张三"搜索 | 返回张三出现的所有场景 | 人物-场景 |
+| TC-ZH-039 | character 搜索：按角色名"张三"搜索 | 返回张三出现的所有事件 | 人物-事件 |
 | TC-ZH-040 | text 全文搜索：在 source.txt 中搜索一段原文 | 返回包含该段文字的素材 | 全文搜索 |
-| TC-ZH-041 | 跨小说搜索：同一标签条件在多本小说中检索 | 返回来自不同小说的场景，标明出处 | 跨素材检索 |
-| TC-ZH-042 | 上下文检索：输入"男主雨中追女主"的写作上下文 | 返回相关场景+人物+技法参考 | 语义检索 |
+| TC-ZH-041 | 跨小说搜索：同一标签条件在多本小说中检索 | 返回来自不同小说的事件，标明出处 | 跨素材检索 |
+| TC-ZH-042 | 上下文检索：输入"男主雨中追女主"的写作上下文 | 返回相关事件+人物+技法参考 | 语义检索 |
 | TC-ZH-043 | 搜索结果分页：limit=10，验证分页正确性 | 返回 10 条结果，支持翻页 | 分页 |
 | TC-ZH-044 | 搜索 SQL 注入测试：输入 `'; DROP TABLE scenes; --` | 不执行注入，正常返回空结果或报错 | 安全 |
-| TC-ZH-045 | SQLite 和 YAML 搜索结果一致性对比 | 两种方式返回的场景集合相同 | 数据一致性 |
+| TC-ZH-045 | SQLite 和 YAML 搜索结果一致性对比 | 两种方式返回的事件集合相同 | 数据一致性 |
 | TC-ZH-046 | 新入库的小说在 build-index 前能否被搜索到 | 不能，需先 build-index 才能通过 SQLite 检索 | 索引时效 |
-| TC-ZH-047 | build-index 后立即搜索刚入库的场景 | 能搜索到新入库的场景 | 索引更新 |
-| TC-ZH-048 | 在前端 SceneSearch 页面执行多标签搜索 | 前端正确发送请求，后端正确返回，卡片正确渲染 | 前端集成 |
+| TC-ZH-047 | build-index 后立即搜索刚入库的事件 | 能搜索到新入库的事件 | 索引更新 |
+| TC-ZH-048 | 在前端 EventSearch 页面执行多标签搜索 | 前端正确发送请求，后端正确返回，卡片正确渲染 | 前端集成 |
 | TC-ZH-049 | 在前端 CharacterSearch 页面搜索人物 | 返回结构化人物卡片（角色/原型/弧线/心理） | 前端展示 |
-| TC-ZH-050 | 搜索响应时间：1000+ 场景库中搜索不超过 2 秒 | 响应时间 < 2s | 性能 |
+| TC-ZH-050 | 搜索响应时间：1000+ 事件库中搜索不超过 2 秒 | 响应时间 < 2s | 性能 |
 
-## D. 场景拆分与质量（TC-ZH-051 ~ TC-ZH-065）
+## D. 事件拆分与质量（TC-ZH-051 ~ TC-ZH-065）
 
 | ID | 测试案例 | 预期结果 | 来源痛点 |
 |----|---------|---------|---------|
-| TC-ZH-051 | novel-scenes 拆分一批 10 章内容 | 生成对应数量的场景 YAML，每个文件格式合规 | 基本拆分 |
-| TC-ZH-052 | 场景 title 不能是"场景1""场景2"的编号形式 | 所有 title 都是有语义的概括短语 | Anti-Pattern |
-| TC-ZH-053 | 场景 summary 不能是章节开头几十字的截断 | summary 是对核心事件的概括，而非首句复制 | Anti-Pattern |
-| TC-ZH-054 | 同一批次内场景标签组合不能完全相同 | 任意两个场景的标签组合有差异 | Anti-Pattern |
-| TC-ZH-055 | 场景 chapter 字段从 chapter_index.yaml 逐字拷贝 | chapter 值与 chapter_index.yaml 完全一致 | 字段准确性 |
-| TC-ZH-056 | 场景 YAML 含中文引号的字符串用单引号包裹 | YAML 能被 safe_load 正确解析 | YAML 安全 |
+| TC-ZH-051 | novel-scenes 拆分一批 10 章内容 | 生成对应数量的事件 YAML，每个文件格式合规 | 基本拆分 |
+| TC-ZH-052 | 事件 title 不能是"事件1""事件2"的编号形式 | 所有 title 都是有语义的概括短语 | Anti-Pattern |
+| TC-ZH-053 | 事件 summary 不能是章节开头几十字的截断 | summary 是对核心事件的概括，而非首句复制 | Anti-Pattern |
+| TC-ZH-054 | 同一批次内事件标签组合不能完全相同 | 任意两个事件的标签组合有差异 | Anti-Pattern |
+| TC-ZH-055 | 事件 chapter 字段从 chapter_index.yaml 逐字拷贝 | chapter 值与 chapter_index.yaml 完全一致 | 字段准确性 |
+| TC-ZH-056 | 事件 YAML 含中文引号的字符串用单引号包裹 | YAML 能被 safe_load 正确解析 | YAML 安全 |
 | TC-ZH-057 | 全书自动模式（all）不需逐批确认 | 自动循环分批执行，无需用户干预 | 自动化 |
-| TC-ZH-058 | 每批场景写入后运行 quality_audit 审计 | 审计通过或报告问题，审计范围仅为本批 | 质量审计 |
+| TC-ZH-058 | 每批事件写入后运行 quality_audit 审计 | 审计通过或报告问题，审计范围仅为本批 | 质量审计 |
 | TC-ZH-059 | quality_audit 检测到标签雷同批次 | 报告雷同比例，提示需要重做 | 质量门控 |
-| TC-ZH-060 | 场景 text_range 与 source.txt 行号范围对应 | 根据 text_range 取出的文本与场景内容匹配 | 行号准确 |
-| TC-ZH-061 | 300+ 章小说的场景拆分进度追踪 | meta.yaml 中 pipeline 进度字段实时更新 | 进度追踪 |
-| TC-ZH-062 | 场景拆分中断后恢复（continue 模式） | 从上次中断的批次继续，不重复已完成的批次 | 断点恢复 |
-| TC-ZH-063 | 跨对话恢复场景拆分 | 新对话能读取 meta.yaml 中的进度，自动定位恢复点 | 跨对话 |
-| TC-ZH-064 | 验证场景 ID 格式 ch{NNNN}_s{NN} | 所有 ID 符合命名规范 | ID 规范 |
-| TC-ZH-065 | 验证 conflict=[] 不是所有场景都为空 | 大部分场景有具体冲突类型 | 质量 |
+| TC-ZH-060 | 事件 text_range 与 source.txt 行号范围对应 | 根据 text_range 取出的文本与事件内容匹配 | 行号准确 |
+| TC-ZH-061 | 300+ 章小说的事件拆分进度追踪 | meta.yaml 中 pipeline 进度字段实时更新 | 进度追踪 |
+| TC-ZH-062 | 事件拆分中断后恢复（continue 模式） | 从上次中断的批次继续，不重复已完成的批次 | 断点恢复 |
+| TC-ZH-063 | 跨对话恢复事件拆分 | 新对话能读取 meta.yaml 中的进度，自动定位恢复点 | 跨对话 |
+| TC-ZH-064 | 验证事件 ID 格式 ev{NNNN} | 所有 ID 符合命名规范 | ID 规范 |
+| TC-ZH-065 | 验证 conflict=[] 不是所有事件都为空 | 大部分事件有具体冲突类型 | 质量 |
 
 ## E. 人物与世界观（TC-ZH-066 ~ TC-ZH-075）
 
@@ -156,14 +156,14 @@
 
 | ID | 测试案例 | 预期结果 | 来源痛点 |
 |----|---------|---------|---------|
-| TC-ZH-076 | build-index 生成 scenes_index.yaml（倒排索引） | 索引文件包含标签→场景ID的映射 | 索引生成 |
-| TC-ZH-077 | build-index 生成 scenes_manifest.yaml（场景清单） | 清单文件包含所有场景的压缩视图 | 清单生成 |
-| TC-ZH-078 | build-index 同时更新 SQLite | material.db 中 scenes 表记录数与场景文件数一致 | SQLite 同步 |
+| TC-ZH-076 | build-index 生成 events_index.yaml（倒排索引） | 索引文件包含标签→事件ID的映射 | 索引生成 |
+| TC-ZH-077 | build-index 生成 events_manifest.yaml（事件清单） | 清单文件包含所有事件的压缩视图 | 清单生成 |
+| TC-ZH-078 | build-index 同时更新 SQLite | material.db 中 events 表记录数与事件文件数一致 | SQLite 同步 |
 | TC-ZH-079 | 从 YAML 完整重建 SQLite（build_db.py） | 重建后搜索结果与之前一致 | 可重建性 |
 | TC-ZH-080 | 删除 material.db 后重建 | 重建成功，无数据丢失 | 派生层可恢复 |
-| TC-ZH-081 | 新旧格式场景 YAML 混合时 build_db.py 兼容 | 嵌套格式和扁平格式都能正确入库 | 格式兼容 |
-| TC-ZH-082 | SQLite 中场景记录与 YAML 文件一一对应 | 无多余记录，无遗漏记录 | 数据一致 |
-| TC-ZH-083 | 索引统计数据与实际场景数吻合 | stats.yaml 中 total_scenes 等于场景文件数 | 统计准确 |
+| TC-ZH-081 | 新旧格式事件 YAML 混合时 build_db.py 兼容 | 嵌套格式和扁平格式都能正确入库 | 格式兼容 |
+| TC-ZH-082 | SQLite 中事件记录与 YAML 文件一一对应 | 无多余记录，无遗漏记录 | 数据一致 |
+| TC-ZH-083 | 索引统计数据与实际事件数吻合 | stats.yaml 中 total_events 等于事件文件数 | 统计准确 |
 | TC-ZH-084 | index.yaml 中所有 folder 路径都实际存在 | 每个注册路径都能访问到对应文件夹 | 路径有效 |
 | TC-ZH-085 | 多本小说同时 build-index 后全局索引不冲突 | plot_index 和 character_index 正确合并 | 并发安全 |
 
@@ -171,11 +171,11 @@
 
 | ID | 测试案例 | 预期结果 | 来源痛点 |
 |----|---------|---------|---------|
-| TC-ZH-086 | Dashboard 页面加载素材库概览 | 显示素材总数、场景总数、标签覆盖率等指标 | 首页概览 |
+| TC-ZH-086 | Dashboard 页面加载素材库概览 | 显示素材总数、事件总数、标签覆盖率等指标 | 首页概览 |
 | TC-ZH-087 | MaterialList 列表页显示所有已入库素材 | 列出所有小说，含书名/作者/状态 | 素材列表 |
 | TC-ZH-088 | MaterialDetail 详情页各 Tab 正确加载 | 大纲/世界观/人物/标签/统计 Tab 都能渲染 | 详情展示 |
 | TC-ZH-089 | MaterialDetail 遇到缺失字段不崩溃 | 字段不存在时用 RemainingFields 兜底渲染 | 容错 |
-| TC-ZH-090 | SceneSearch 结果卡片结构化展示 | 显示标题/张力/摘要/标签/人物，不是 JSON | 卡片渲染 |
+| TC-ZH-090 | EventSearch 结果卡片结构化展示 | 显示标题/张力/摘要/标签/人物，不是 JSON | 卡片渲染 |
 | TC-ZH-091 | CharacterSearch 人物卡片结构化展示 | 显示角色/原型/弧线/心理，不是 JSON | 卡片渲染 |
 | TC-ZH-092 | TagDictionary 页面显示完整标签字典 | 所有维度和值都能浏览 | 标签浏览 |
 | TC-ZH-093 | Settings 页面能正常加载和保存配置 | 配置修改后持久化生效 | 设置持久化 |

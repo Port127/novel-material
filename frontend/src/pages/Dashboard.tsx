@@ -49,7 +49,7 @@ export default function Dashboard() {
     )
   }
 
-  const sceneTypeOption = {
+  const eventTypeOption = {
     tooltip: { trigger: 'item' as const },
     series: [{
       type: 'pie',
@@ -57,7 +57,7 @@ export default function Dashboard() {
       avoidLabelOverlap: true,
       itemStyle: { borderRadius: 6, borderColor: '#020617', borderWidth: 2 },
       label: { color: '#94a3b8', fontSize: 11 },
-      data: stats.top_scene_types.slice(0, 10).map(t => ({
+      data: stats.top_event_types.slice(0, 10).map(t => ({
         name: t.value, value: t.count,
       })),
     }],
@@ -109,14 +109,14 @@ export default function Dashboard() {
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard icon={BookOpen} label="小说数量" value={stats.novels} color="bg-amber-500/15 text-amber-400" />
-        <StatCard icon={Film} label="场景数量" value={stats.scenes} color="bg-blue-500/15 text-blue-400" />
+        <StatCard icon={Film} label="事件数量" value={stats.events} color="bg-blue-500/15 text-blue-400" />
         <StatCard icon={Users} label="人物数量" value={stats.characters} color="bg-violet-500/15 text-violet-400" />
         <StatCard icon={Tag} label="标签记录" value={stats.tag_records.toLocaleString()} color="bg-emerald-500/15 text-emerald-400" />
       </div>
 
       {stats.per_novel.length > 0 && (
         <div className="rounded-xl bg-slate-900/80 border border-slate-800/60 p-5">
-          <h2 className="text-sm font-medium text-slate-400 mb-3">各小说场景数</h2>
+          <h2 className="text-sm font-medium text-slate-400 mb-3">各小说事件数</h2>
           <div className="space-y-2">
             {stats.per_novel.map(n => (
               <div key={n.material_id} className="flex items-center gap-3">
@@ -124,10 +124,10 @@ export default function Dashboard() {
                 <div className="w-48 h-2 bg-slate-800 rounded-full overflow-hidden">
                   <div
                     className="h-full bg-amber-500/60 rounded-full"
-                    style={{ width: `${Math.min(100, (n.scenes / Math.max(...stats.per_novel.map(x => x.scenes))) * 100)}%` }}
+                    style={{ width: `${Math.min(100, (n.events / Math.max(...stats.per_novel.map(x => x.events))) * 100)}%` }}
                   />
                 </div>
-                <span className="text-sm text-slate-400 w-16 text-right">{n.scenes}</span>
+                <span className="text-sm text-slate-400 w-16 text-right">{n.events}</span>
               </div>
             ))}
           </div>
@@ -136,8 +136,8 @@ export default function Dashboard() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="rounded-xl bg-slate-900/80 border border-slate-800/60 p-5">
-          <h2 className="text-sm font-medium text-slate-400 mb-3">场景类型分布</h2>
-          <ReactECharts option={sceneTypeOption} style={{ height: 280 }} theme="dark" />
+          <h2 className="text-sm font-medium text-slate-400 mb-3">事件类型分布</h2>
+          <ReactECharts option={eventTypeOption} style={{ height: 280 }} theme="dark" />
         </div>
         <div className="rounded-xl bg-slate-900/80 border border-slate-800/60 p-5">
           <h2 className="text-sm font-medium text-slate-400 mb-3">情绪分布 TOP 10</h2>

@@ -1,7 +1,7 @@
 ---
 name: tag-add
 description: 向标签字典新增标签值（支持加载主题域包和自定义扩展）
-when_to_use: 场景打标签时发现现有标签值不够用
+when_to_use: 事件打标签时发现现有标签值不够用
 argument-hint: "[维度] [主题域 | custom | 新值]"
 arguments: dimension, target
 ---
@@ -38,7 +38,7 @@ tags.yaml 采用三层结构：
 - `conflict`
 
 **扁平维度**（只有 values 列表）：
-- `scene_type`, `emotion`, `technique`, `relationship` 等其他维度
+- `event_type`, `emotion`, `technique`, `relationship` 等其他维度
 
 ## 前置检查
 
@@ -161,7 +161,7 @@ tags.yaml 采用三层结构：
 - 避免同义重复（如"争斗"和"对决"）
 - 如有近义值，建议先 `/tag-merge` 确认
 - 分层维度优先用主题域包，而非直接向 core 添加
-- 新值立即可用于后续场景标签
+- 新值立即可用于后续事件标签
 
 ## 示例
 
