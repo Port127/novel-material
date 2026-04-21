@@ -16,7 +16,6 @@
 10. [命令速查](#十命令速查)
 11. [脚本一览](#十一脚本一览)
 12. [最小记忆集](#十二最小记忆集)
-13. [Web UI](#十三web-ui)
 
 ---
 
@@ -518,68 +517,3 @@ external_refs:
 **出问题了**：
 - `python scripts/core/quality_audit.py [id]` — 质量不对劲
 - `python scripts/core/build_db.py` — 索引不对劲
-
----
-
-## 十三、Web UI
-
-### 启动
-
-```bash
-# 终端 1：后端
-cd backend && pip install -r requirements.txt && python main.py
-# → http://127.0.0.1:5273
-
-# 终端 2：前端
-cd frontend && npm install && npm run dev
-# → http://127.0.0.1:5173
-```
-
-### 页面功能
-
-| 页面 | 路径 | 功能 |
-|------|------|------|
-| 总览 | `/` | 统计仪表盘（小说/事件/人物/标签数量 + 事件类型/情绪/张力分布图表） |
-| 素材库 | `/materials` | 全部小说列表，点击进入详情 |
-| 素材详情 | `/materials/:id` | 7 个 tab（概览/大纲/世界观/人物/标签/事件/统计） + Pipeline 控制面板 |
-| 事件搜索 | `/search/events` | 标签多选搜索（20 维标签 + 张力范围 + 人物名） + 全文搜索 |
-| 人物搜索 | `/search/characters` | 按人名/角色类型/原型/道德光谱搜索 |
-| 标签字典 | `/tags` | 浏览全部标签维度和值，支持新增/合并标签 |
-| 上传 | `/upload` | 上传 txt 文件创建新素材 |
-| 设置 | `/settings` | LLM API 配置（Base URL / API Key / 模型） + 连接测试 |
-
-### Pipeline 在 Web 上的操作
-
-在素材详情页的「概览」tab，Pipeline 面板提供 6 个阶段按钮：
-
-| 阶段 | 可在 Web 触发 | 说明 |
-|------|:---:|------|
-| 入库检查 | ✅ | 检查文件完整性 |
-| 格式清洗 | ✅ | 调用 source_format.py |
-| 分析(LLM) | ✅ | 生成大纲→世界观→人物→标签 |
-| 事件拆分 | ⚠️ | 提示通过 Agent 执行（太复杂） |
-| 构建索引 | ✅ | 构建 SQLite + YAML 索引 |
-| 统计报告 | ✅ | LLM 生成统计数据 |
-
-### Web 搜索 vs CLI 搜索
-
-| 维度 | Web UI | CLI (`search.py`) |
-|------|--------|-------------------|
-| 标签选择 | 可视化多选，实时看到可选值 | 手动拼参数 |
-| 结果展示 | 卡片式展示，标签彩色标注 | 文本输出 |
-| 多维组合 | 同维度 OR，跨维度 AND | 同 |
-| 跳转 | 搜索结果可跳转素材详情 | 需手动打开文件 |
-| 适合 | 浏览、探索、找灵感 | 精确过滤、脚本集成 |
-
-### 运行测试
-
-```bash
-# 后端测试（93 个）
-cd backend && python -m pytest tests/ -v
-
-# 前端测试（33 个）
-cd frontend && npm test
-
-# 脚本测试（69 个）
-cd scripts && python -m pytest tests/ -v
-```
