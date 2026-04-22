@@ -65,17 +65,45 @@ pipeline:
   events_total_chapters: 1070
 
   # ── build-index 阶段 ──
+  index_building: false      # 索引构建中（中间状态，防中断丢失）
   index_built: false         # 索引是否已构建
   index_at: "2026-04-05T12:00:00Z"
   manifest_events: 907       # 事件清单中的事件总数
 
+  # ── extract-entities 阶段 ──
+  entities_extracted: false  # 原文实体是否已提取
+  entities_extracted_at: "2026-04-05T12:00:00Z"
+
+  # ── validate-completeness 阶段 ──
+  completeness_validated: false  # 完整性是否已验证
+  completeness_score: 0.95       # 覆盖率（0.0-1.0）
+  completeness_critical_count: 0 # critical 级别遗漏数
+
+  # ── ai-backfill 阶段 ──
+  backfill_done: false       # AI 补录是否完成
+  backfill_at: "2026-04-05T12:00:00Z"
+  backfill_summary:          # 补录摘要
+    entities_backfilled: 15  # 补录实体数
+    events_updated: 8        # 更新事件数
+    events_created: 2        # 新建事件数
+
   # ── refine 阶段 ──
+  refine_hash: ""               # 上次 refine 时事件数据的 hash（用于检测变化）
   refined: false
   refined_at: "2026-04-05T12:00:00Z"
   refine_summary:
     outline_changes: 3
     character_changes: 5
     tag_changes: 2
+  refine_batches:            # refine 分批状态
+    current_batch: 1         # 当前批次（1-6）
+    batches_completed: 0     # 已完成批次数
+    stats_merged: false      # batch-1 完成
+    hooks_verified: false    # batch-2 完成
+    characters_refined: false # batch-3 完成
+    relations_verified: false # batch-4 完成
+    worldbuilding_refined: false # batch-5 完成
+    cleanup_done: false      # batch-6 完成
 
   # ── novel-stats 阶段 ──
   stats_generated: false

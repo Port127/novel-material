@@ -23,7 +23,12 @@ arguments: material_id
 
 | 状态 | 行为 |
 |------|------|
-| refined=false, stats_generated=false | 执行 refine → novel-stats |
+| refined=false, stats_generated=false, refine_batches 缺失或 current_batch=1 | 从 refine batch-1 开始 |
+| refined=false, current_batch=2 | 从 refine batch-2（钩子验证）继续 |
+| refined=false, current_batch=3 | 从 refine batch-3（人物弧线）继续 |
+| refined=false, current_batch=4 | 从 refine batch-4（关系验证）继续 |
+| refined=false, current_batch=5 | 从 refine batch-5（世界观精调）继续 |
+| refined=false, current_batch=6 | 从 refine batch-6（清理汇总）继续 |
 | refined=true, stats_generated=false | 跳过 refine，执行 novel-stats |
 | 均已完成 | 输出"已完成" |
 
@@ -47,10 +52,24 @@ arguments: material_id
 确认开始？(yes/no)
 ```
 
-### 2. 执行 refine
+### 2. 执行 refine（分批精调）
 
-读取 `refine/SKILL.md` 并执行。主要产出：
+读取 `refine/SKILL.md` 并按其分批执行策略执行。
 
+refine 分为 6 个批次（batch-1 到 batch-6），每批完成后立即写入并更新状态：
+
+| 批次 | 操作 | 数据源 | 上下文控制 |
+|------|------|--------|-----------|
+| batch-1 | 统计数据合并 | `refine_input.json` | 只读 JSON，不读原始事件 |
+| batch-2 | 钩子验证 | 钩子清单 + 涉及的少数事件 | 每次验证 10 个钩子 |
+| batch-3 | 人物弧线 | 人物出场统计 + profiles/ | 每次处理 5-10 个角色 |
+| batch-4 | 关系验证 | relations.yaml + 涉及事件 | 每次验证 5 对关系 |
+| batch-5 | 世界观精调 | 地点/势力统计 + lore/ | 只读统计 + 个别事件 |
+| batch-6 | 清理汇总 | 汇总前 5 批结果 | 不读原始事件 |
+
+**关键：每批完成后立即写入文件 + 更新 meta.yaml，如果中断下次可从断点恢复。**
+
+主要产出：
 - 钩子网络建立（统一处理钩子铆合链）
 - 节奏曲线补充
 - 人物弧线细化

@@ -67,18 +67,39 @@ novel-pipeline（调度器）
 
 #### continue 模式
 
-读取 `meta.yaml` 中的 `pipeline` 字段，判断当前进度：
+读取 `meta.yaml` 中的 `pipeline` 字段，**结合文件系统实际状态**，判断当前进度：
+
+**Step 1: 读取 meta.yaml 状态**
 
 | 条件 | 路由到 | 说明 |
 |------|--------|------|
 | status=raw，formatted 缺失或 false | pipeline-ingest（补格式化） | 原文未清洗 |
 | status=raw，formatted=true | pipeline-analyze | 清洗完成，开始分析 |
 | status=outlined | pipeline-analyze（从缺失步骤恢复） | 分析进行中 |
-| status=tagged | pipeline-events | 小说标签已完成，开始事件拆分 |
-| status=tagged + events/ 已有部分文件 | pipeline-events（从断点恢复） | 事件拆分被中断 |
-| status=complete，refined 缺失或 false | pipeline-finalize | 索引已建，开始精调 |
+| status=tagged | 进入 Step 2 文件系统检查 | 可能是事件拆分中或已完成但未更新状态 |
+| status=complete，refined 缺失或 false，source_entities.json 存在 | pipeline-finalize | 索引已建+数据已验证，开始精调 |
+| status=complete，refined 缺失或 false，source_entities.json 缺失 | 进入 Step 2 文件系统检查 | 数据尚未验证，需检查实体提取状态 |
+| status=complete，refined=true，refine_batches.cleanup_done=false | pipeline-finalize（从断点恢复 refine） | 精调被中断，继续 refine |
 | status=complete，refined=true，stats_generated 缺失 | pipeline-finalize（跳 refine） | 精调完成，补统计 |
 | status=refined | 输出"全部完成" | 所有阶段均已完成 |
+
+**Step 2: 文件系统兜底检查（当 status=tagged 或 status=complete+source_entities 缺失 时执行）**
+
+当 meta.yaml 的 status 仍为 `tagged`，或 status 为 `complete` 但
+`source_entities.json` 缺失时，检查实际文件存在性，防止状态更新滞后：
+
+| 文件检查结果 | 路由到 | 说明 |
+|-------------|--------|------|
+| events/ 目录不存在或为空 | pipeline-events | 事件尚未开始拆分 |
+| events/ 部分完成 | pipeline-events（从断点恢复） | 事件拆分被中断 |
+| events/ 全部覆盖 + events_index.yaml 存在 + source_entities.json 缺失 | pipeline-events（继续执行实体提取） | 事件完成但实体未提取 |
+| events/ 全部覆盖 + events_index.yaml 存在 + source_entities.json 存在 + completeness_report.yaml 缺失 | pipeline-events（继续执行交叉验证） | 实体已提取但尚未验证 |
+| events/ 全部覆盖 + events_index.yaml 存在 + source_entities.json 存在 + completeness_report.yaml 存在 + 有 critical/warning + backfill_done=false | pipeline-events（执行 AI 补录） | 有遗漏需要补录 |
+| events/ 全部覆盖 + events_index.yaml 存在 + source_entities.json 存在 + completeness_report.yaml 存在 + 无 critical/warning 或 backfill_done=true + refined=false/缺失 | pipeline-finalize | 事件+索引+验证+补录已完成，进精调 |
+| events/ 全部覆盖 + 无 events_index.yaml 或 index_building=true | pipeline-events（跳过 events，直接 build-index） | 事件完成，索引未建完 |
+
+> ⚠️ 文件系统检查优先于 meta.yaml 状态。
+> 如果文件实际已完成但 status 未更新，以文件为准，避免重复跑 events。
 
 预览恢复计划后等待确认。
 
@@ -98,10 +119,13 @@ novel-pipeline（调度器）
 
 3. 读取并执行 `pipeline-events/SKILL.md`
    - 产出：events/*.yaml, events_index.yaml, events_manifest.yaml
+   - 附加：source_entities.json（原文实体提取）, completeness_report.yaml（完整性验证）
+   - 如有遗漏：执行 ai-backfill 补录
    - **此阶段可能跨对话**——pipeline-events 会在适当时机提醒开新对话
    - 如果在此阶段中断，下次 `continue` 会路由到 pipeline-events 恢复
 
 4. 读取并执行 `pipeline-finalize/SKILL.md`
+   - refine 分批执行（6 个批次，每批完成后写入）
    - 产出：精调后的 outline/characters/tags/worldbuilding + stats.*
    - 失败 → 停止，报告
 
@@ -110,8 +134,13 @@ novel-pipeline（调度器）
 #### continue 模式执行
 
 只调用需要恢复的子流水线及其后续子流水线。例如：
+- 从 pipeline-ingest 恢复 → 执行 ingest → analyze → events → finalize
+- 从 pipeline-analyze 恢复 → 执行 analyze → events → finalize
 - 从 pipeline-events 恢复 → 执行 events → finalize
-- 从 pipeline-finalize 恢复 → 仅执行 finalize
+  - 注意：pipeline-events 完成后会自动检查并进入 pipeline-finalize
+- 从 pipeline-finalize 恢复（refine 未开始）→ 执行 refine → novel-stats
+- 从 pipeline-finalize 恢复（refine 中，current_batch=N）→ 从 batch-N 继续 refine → novel-stats
+- 从 pipeline-finalize 恢复（refine 完成，stats 缺失）→ 仅执行 novel-stats
 
 ### 4. 最终报告
 
@@ -158,8 +187,22 @@ pipeline:
   stages_completed: [material-add, source-format, outline, worldbuilding, characters, tags]
   events_processed: [1-5, 6-10]
   formatted: true
+  index_building: false
   index_built: false
+  entities_extracted: false
+  completeness_validated: false
+  backfill_done: false
+  refine_hash: ""
   refined: false
+  refine_batches:
+    current_batch: 1
+    batches_completed: 0
+    stats_merged: false
+    hooks_verified: false
+    characters_refined: false
+    relations_verified: false
+    worldbuilding_refined: false
+    cleanup_done: false
   stats_generated: false
 ```
 
@@ -167,7 +210,8 @@ pipeline:
 
 - MUST 先输出预览，仅在用户确认后开始执行
 - MUST 调用子流水线的 SKILL.md，不直接调用原子 skill
-- MUST continue 模式通过 meta.yaml 判断恢复点
+- MUST continue 模式通过 meta.yaml + 文件系统兜底判断恢复点
+- MUST status=tagged 时执行文件系统兜底检查（events/ 覆盖情况 + 索引存在性）
 - MUST 每个子流水线完成后立即持久化状态
 - NEVER 在用户确认后再次停下等待确认（子流水线内部也不再确认）
 - NEVER 试图在一个对话内强行完成超长小说的全部流程
