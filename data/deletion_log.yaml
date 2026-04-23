@@ -55,3 +55,15 @@ deletions:
     file_count: 321
     tag_count: 5476
     character_count: 14
+- material_id: nm_novel_20260408_bfg7
+  name: 《大奉打更人》（校对版全本）
+  author: 卖报小郎君
+  status: tagged
+  deleted_at: '2026-04-22T00:00:00Z'
+  deleted_by: material-delete skill
+  stats:
+    event_count: 6
+    file_count: 18
+    tag_count: 0
+    character_count: 0
+  consistency_note: SQLite 仅 novels 表有 1 条记录，events/characters 等表为空

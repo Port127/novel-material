@@ -16,28 +16,37 @@ arguments: material_id
 
 ## 分批执行架构
 
-refine 采用 **6 个批次分批执行**，每批完成后立即写入并更新状态，
+refine 采用 **7 个批次分批执行**，每批完成后立即写入并更新状态，
 避免一次性读全部事件导致上下文爆炸。
 
 | 批次 | 操作 | 数据源 | 上下文控制 |
 |------|------|--------|-----------|
 | batch-1 | 统计数据合并 | `refine_input.json` | 只读 JSON，不读原始事件 |
 | batch-2 | 钩子验证 | 钩子清单 + 涉及的少数事件 | 每次验证 10 个钩子，只读相关事件 |
+| batch-2b | 线索交汇验证 | `cross_thread_events.yaml` + 涉及事件 | 每次验证 10 个交汇点 |
 | batch-3 | 人物弧线 | 人物出场统计 + profiles/ | 每次处理 5-10 个角色 |
 | batch-4 | 关系验证 | relations.yaml + 涉及事件 | 每次验证 5 对关系 |
 | batch-5 | 世界观精调 | 地点/势力统计 + lore/ | 只读统计 + 个别事件 |
-| batch-6 | 清理汇总 | 汇总前 5 批结果 | 不读原始事件 |
+| batch-6 | 清理汇总 | 汇总前 6 批结果 | 不读原始事件 |
 
 ## 前置检查
 
 1. 读取 `data/novels/{material_id}/meta.yaml`，确认 status 为 `complete` 或 `tagged`
 2. 确认 `events/` 目录下有事件文件
-3. 确认 `refine_input.json` 已存在（如不存在，先运行 `extract_refine_data.py`）
-4. 确认文件夹结构已存在：
+3. **检查完备性报告（新增）**：
+   - 读取 `completeness_report.yaml`（如存在）
+   - 如果 `completeness_score < 0.5` 且 `backfill_done=false`
+     → **拒绝执行**：输出「事件数据不完整，请先完成 ai-backfill」
+4. **检查章节覆盖率（新增）**：
+   - 读取 `chapter_index.yaml` 和所有事件的 `chapters` 字段
+   - 如果主线连续未覆盖章节 > 3
+     → **警告**：输出「主线覆盖不完整，精调结果可能不准确」
+5. 确认 `refine_input.json` 已存在（如不存在，先运行 `extract_refine_data.py`）
+6. 确认文件夹结构已存在：
    - `outline/_index.yaml` + 各模块
    - `characters/_index.yaml` + `relations.yaml` + `profiles/`
    - `worldbuilding/_index.yaml` + 各模块
-5. 确认 `tags.yaml` 已存在
+7. 确认 `tags.yaml` 已存在
 
 如存在 `events_manifest.yaml`，优先读取 manifest 而非逐个读 event 文件。
 
@@ -47,6 +56,7 @@ refine 采用 **6 个批次分批执行**，每批完成后立即写入并更新
 |------|------|
 | refine_batches 缺失或 current_batch=1 | 从 batch-1 开始 |
 | current_batch=2 | 从 batch-2（钩子验证）继续 |
+| current_batch=2b | 从 batch-2b（线索交汇验证）继续 |
 | current_batch=3 | 从 batch-3（人物弧线）继续 |
 | current_batch=4 | 从 batch-4（关系验证）继续 |
 | current_batch=5 | 从 batch-5（世界观精调）开始 |
@@ -102,8 +112,14 @@ python scripts/core/extract_refine_data.py {material_id} --no-update-meta --outp
 
 精调会修改多个关键文件，修改前为文件夹创建备份：
 
+**先清理旧备份**：
 ```bash
-# 备份文件夹结构
+rm -rf outline.bak/ characters.bak/ worldbuilding.bak/
+rm -f tags.yaml.bak
+```
+
+**再创建新备份**：
+```bash
 cp -r outline/ outline.bak/
 cp -r characters/ characters.bak/
 cp -r worldbuilding/ worldbuilding.bak/
@@ -171,9 +187,78 @@ refine_batches:
 **如果全部钩子验证完成**，更新状态：
 ```yaml
 refine_batches:
-  current_batch: 3
+  current_batch: "2b"
   batches_completed: 2
   hooks_verified: true
+```
+
+### 2b. Batch-2b：线索交汇验证
+
+从 `events/cross_thread_events.yaml` 中，**每次取 10 个交汇点**进行验证。
+
+#### 2b-1. 读取相关事件
+
+对每个交汇点：
+- 读取 `cross_thread_events.yaml` 中的交汇记录
+- 只读涉及的 1-3 个事件原始 YAML
+- 对比 `outline/subplots.yaml` 中的 `mainline_integration` 预估
+
+#### 2b-2. 交汇类型验证
+
+| 类型 | 验证标准 |
+|------|---------|
+| causal | 支线事件的结果是否真的在文本中影响主线走向 |
+| emotional | 不同线索在同一章是否产生情感层面的互动 |
+| thematic | 不同线索是否指向同一主题 |
+| parallel | 仅时间并行，无实质关联 |
+
+**验证操作**：
+- `integration_type` 不合理 → 修正为正确类型
+- 交汇点不存在（实际两事件内容无关联）→ 删除该交汇记录
+- `confidence` 过高（parallel 标为 high）→ 降级
+
+#### 2b-3. 校准 anchor_chapters
+
+对比 `cross_thread_events.yaml` 实际交汇章与 `outline/subplots.yaml` 中 `anchor_chapters` 的预估：
+- 有交汇但 `anchor_chapters` 缺失 → 补充
+- 标注了交汇但实际不存在 → 从 `anchor_chapters` 移除
+
+#### 2b-4. 更新文件
+
+**更新 `events/cross_thread_events.yaml`**（修正置信度、删除无效交汇）。
+
+**更新 `outline/subplots.yaml` 的 `mainline_integration`**：
+```yaml
+# outline/subplots.yaml — 精调后
+mainline_integration:
+  - subplot: 怀庆感情线
+    anchor_chapters: [50, 120, 200, 350]  # 校准后的交汇章
+    integration_type: emotional
+    intersection_count: 7  # 实际交汇次数
+    dominant_type: emotional  # 主导交汇类型
+```
+
+**更新 `outline/plotlines.yaml` 的 `intersection_matrix`**：
+```yaml
+# outline/plotlines.yaml — 精调后
+intersection_matrix:
+  - plotline_a: 主线
+    plotline_b: 感情线_怀庆
+    intersect_chapters: [50, 120, 200, 350]
+    description: '怀庆多次暗中相助，情感+因果双重交汇'
+    intersection_count: 7
+    dominant_type: emotional
+```
+
+**如果还有未处理的交汇点**，保持 current_batch=2b，提示用户继续下一批。
+
+**如果全部交汇点验证完成**，更新状态：
+```yaml
+refine_batches:
+  current_batch: 3
+  batches_completed: 3
+  hooks_verified: true
+  intersections_verified: true
 ```
 
 ### 3. Batch-3：人物弧线
@@ -311,6 +396,8 @@ refine_batches:
 - 人物小传的 `key_events` 中无效 event_id → 删除
 - 势力/地点的 `key_events` 中无效 event_id → 删除
 - 钩子的 `planted.event` / `harvested.event` 无效 → 删除或标记 pending
+- `cross_thread_events.yaml` 中指向不存在事件的交汇记录 → 删除
+- 事件 YAML 中 `intersects_mainline_at` 指向不存在事件 → 删除
 
 #### 6b. 精调 tags.yaml
 
@@ -340,9 +427,10 @@ python scripts/core/extract_refine_data.py {material_id}
 ```yaml
 refine_batches:
   current_batch: 6
-  batches_completed: 6
+  batches_completed: 7
   stats_merged: true
   hooks_verified: true
+  intersections_verified: true
   characters_refined: true
   relations_verified: true
   worldbuilding_refined: true
@@ -361,6 +449,8 @@ pipeline:
       restructure: {n}
     hooks_verified: {n}
     hooks_pending: {n}
+    intersections_verified: {n}
+    intersections_removed: {n}
     key_events_added: {n}
     characters_enriched: {n}
     worldbuilding_enriched: {n}
@@ -384,9 +474,14 @@ pipeline:
 文件夹更新：
   📂 outline/
     - hooks_network.yaml：验证 {n} 条钩子，{n} 条待回收
+    - plotlines.yaml：校准 {n} 条线索的交汇矩阵
+    - subplots.yaml：校准 {n} 条支线的 mainline_integration
     - structure.yaml：校准转折点
     - pacing_curve.yaml：补充 {n} 个数据点
     - _index.yaml：统计更新
+  
+  📂 events/
+    - cross_thread_events.yaml：验证 {n} 个交汇点，删除 {n} 个无效
   
   📂 characters/
     - _index.yaml：{n} 角色更新，{n} 升格，{n} 降格

@@ -18,6 +18,14 @@ arguments: material_id
 2. 确认 `status` 为 `complete` 或更高
 3. 确认 `events_index.yaml` 或 `events_manifest.yaml` 存在
 4. 确认 `outline/_index.yaml`、`characters/_index.yaml`、`tags.yaml` 存在
+5. **检查完备性报告（新增）**：
+   - 读取 `completeness_report.yaml`（如存在）
+   - 如果 `completeness_score < 0.5` 且 `backfill_done=false`
+     → **拒绝执行**：输出「事件数据不完整，请先完成 ai-backfill」
+6. **检查章节覆盖率（新增）**：
+   - 扫描所有事件的 `chapters` 字段
+   - 如果主线连续未覆盖章节 > 3
+     → **警告**：输出「主线覆盖不完整，精调结果可能不准确」
 
 ## 恢复逻辑
 
@@ -25,6 +33,7 @@ arguments: material_id
 |------|------|
 | refined=false, stats_generated=false, refine_batches 缺失或 current_batch=1 | 从 refine batch-1 开始 |
 | refined=false, current_batch=2 | 从 refine batch-2（钩子验证）继续 |
+| refined=false, current_batch=2b | 从 refine batch-2b（线索交汇验证）继续 |
 | refined=false, current_batch=3 | 从 refine batch-3（人物弧线）继续 |
 | refined=false, current_batch=4 | 从 refine batch-4（关系验证）继续 |
 | refined=false, current_batch=5 | 从 refine batch-5（世界观精调）继续 |
@@ -62,15 +71,17 @@ refine 分为 6 个批次（batch-1 到 batch-6），每批完成后立即写入
 |------|------|--------|-----------|
 | batch-1 | 统计数据合并 | `refine_input.json` | 只读 JSON，不读原始事件 |
 | batch-2 | 钩子验证 | 钩子清单 + 涉及的少数事件 | 每次验证 10 个钩子 |
+| batch-2b | 线索交汇验证 | `cross_thread_events.yaml` + 涉及事件 | 每次验证 10 个交汇点 |
 | batch-3 | 人物弧线 | 人物出场统计 + profiles/ | 每次处理 5-10 个角色 |
 | batch-4 | 关系验证 | relations.yaml + 涉及事件 | 每次验证 5 对关系 |
 | batch-5 | 世界观精调 | 地点/势力统计 + lore/ | 只读统计 + 个别事件 |
-| batch-6 | 清理汇总 | 汇总前 5 批结果 | 不读原始事件 |
+| batch-6 | 清理汇总 | 汇总前 6 批结果 | 不读原始事件 |
 
 **关键：每批完成后立即写入文件 + 更新 meta.yaml，如果中断下次可从断点恢复。**
 
 主要产出：
 - 钩子网络建立（统一处理钩子铆合链）
+- 线索交汇验证（校准主线与支线/感情线的关联纽带）
 - 节奏曲线补充
 - 人物弧线细化
 - 关系演变时间线
@@ -105,7 +116,7 @@ pipeline:
 📚 素材：{name}
 
 精调结果：
-  📖 outline/ — 钩子网络 +{n}条，节奏曲线 +{n} 点
+  📖 outline/ — 钩子网络 +{n}条，节奏曲线 +{n} 点，线索交汇 +{n} 个
   👥 characters/ — {n} 角色弧线细化，{n} 关系演变
   🗺️ worldbuilding/ — {n} 处补充
   🏷️ tags.yaml — {n} 维度校准
@@ -115,6 +126,7 @@ pipeline:
   🎬 事件总数：{total_events}
   📈 转折点：{turning_count}
   🪝 钩子网络：{total}/{verified}/{pending}（验证率 {rate}%）
+  🔗 线索交织：{intersections}个交汇点（密度 {density}）
 
 📁 全部完成！素材状态：refined
 

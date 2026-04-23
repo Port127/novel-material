@@ -60,8 +60,8 @@ arguments: material_id
   预计批次：{batch_count} 批
 
 将执行：
-  1. novel-events (all)  → 拆分剩余章节事件
-  2. build-index         → 构建倒排索引 + 事件清单
+  1. novel-events (all)  → 拆分剩余章节事件 + 跨线索交汇检测
+  2. build-index         → 构建倒排索引 + 事件清单 + 交汇关系注册
 
 ⚠️ 事件拆分将自动循环分批执行
 ⚠️ 每 30 批建议开新对话恢复，避免上下文膨胀
@@ -96,6 +96,26 @@ arguments: material_id
   ```
 - **批间不累积上下文**：每批只读当前批的原文，上一批的输出不带入下一批
 - **进度持久化**：每批完成后立即更新 `meta.yaml`，即使对话中断也不丢失进度
+
+### 3.5 全书质量审计（强制门控）
+
+全书事件完成后、进入 build-index 前，**必须**运行全书质量审计：
+
+```bash
+python scripts/core/quality_audit.py {material_id}
+```
+
+**禁止跳过此步骤**。如果审计脚本返回非零退出码（密度或覆盖检查失败），
+**禁止进入 build-index**，必须补切事件后重新审计。
+
+分级阻断规则：
+| 条件 | 行为 |
+|------|------|
+| 主线事件密度 < 0.25 | **强制阻断**：exit 1，必须补切 |
+| 连续未覆盖章节 > 3 章 | **强制阻断**：exit 1，必须补切 |
+| 密度 0.25-0.4 | 输出警告，允许继续 |
+
+审计通过后才可执行下一步。
 
 ### 4. 执行 build-index
 
@@ -167,14 +187,35 @@ python scripts/core/validate_completeness.py {material_id}
 
 输出 `completeness_report.yaml`，标记遗漏的 critical/warning 项。
 
-### 7. AI 补录（ai-backfill）
+### 7. AI 补录（强制阻断门）
 
-如果 completeness_report 中有 critical 或 warning 项：
+运行 `validate_completeness.py` 后，根据结果判断：
 
-读取并执行 `ai-backfill/SKILL.md`，对遗漏实体进行定向补录。
-- 每批处理 3-5 个实体
-- 只读相关章节，不读全文
-- 补录完成后重新验证
+**阻断判断表**：
+| 条件 | 行为 |
+|------|------|
+| completeness_score < 0.3 | **强制阻断**：禁止进入 pipeline-finalize，必须执行 ai-backfill |
+| completeness_score 0.3-0.5 且 critical_count > 10 | **强制阻断**：必须执行 ai-backfill |
+| completeness_score 0.5-0.8 且 critical_count > 0 | **警告**：建议执行 ai-backfill，允许用户选择跳过 |
+| completeness_score ≥ 0.8 或 critical_count = 0 | 跳过补录，进入 finalize |
+
+**阻断时的输出**：
+
+```
+🚫 数据完整性不足，禁止进入精调阶段
+
+素材：{name}
+完备性评分：{score}
+遗漏项：critical {n} 项，warning {n} 项
+
+必须执行：/pipeline-events {id}（继续 ai-backfill 补录）
+```
+
+**阻断后处理**：
+1. 更新 `meta.yaml`：`pipeline.current_stage: "backfill-blocked"`
+2. 读取并执行 `ai-backfill/SKILL.md`
+3. 每批处理 3-5 个实体，补录完成后重新验证
+4. 如果重新验证后 completeness_score ≥ 0.5 且 critical_count ≤ 5，解除阻断
 
 如果 completeness_report 中无 critical/warning，跳过此步骤。
 
@@ -209,7 +250,10 @@ pipeline:
 ```
 
 **更新状态后，检查 `meta.yaml` 的 `pipeline.refined` 字段**：
-- 如果 `refined=false` 或缺失 → 读取并执行 `pipeline-finalize/SKILL.md`
+- 如果 `completeness_score < 0.5` 且 `backfill_done=false`
+  → **拒绝进入 finalize**，输出阻断信息
+- 如果 `refined=false` 或缺失 且 `completeness_score ≥ 0.5` 或 `backfill_done=true`
+  → 读取并执行 `pipeline-finalize/SKILL.md`
 - 如果 `refined=true` + `refine_hash` 匹配当前事件 → 跳过 finalize，直接输出完成报告
 - 如果 `refined=true` + `refine_hash` 不匹配（事件有变化）→ 读取并执行 `pipeline-finalize/SKILL.md`（重新精调）
 
@@ -228,6 +272,11 @@ pipeline:
 🎬 事件总数：{total_events}个
 📊 覆盖率：100%
 
+🔗 线索交织：{n}个交汇点
+  主线×感情线：{n}个
+  主线×支线：{n}个
+  交汇文件：cross_thread_events.yaml
+
 📄 倒排索引：events_index.yaml
 📄 事件清单：events_manifest.yaml
 📄 SQLite：data/material.db
@@ -245,12 +294,33 @@ pipeline:
 - MUST 每 30 批输出分段提醒
 - MUST 批间不累积上下文（不把上一批事件数据带入下一批）
 - MUST events 全部完成后才执行 build-index
+- MUST events 完成后先运行 `quality_audit.py` 全书审计（不带 --batch），通过后才可进入 build-index
+- MUST 若审计 exit 1（密度 < 0.25 或连续缺口 > 3），禁止进入 build-index，必须补切事件
 - MUST build-index 开始前写入 index_building=true 中间状态
 - MUST build-index 完成后立即运行 extract_source_entities.py + validate_completeness.py
 - MUST completeness_report 中有遗漏时执行 ai-backfill
 - MUST 实体提取、交叉验证、补录全部完成后，再检查 refined 状态并决定是否进入 pipeline-finalize
 - NEVER 在一个对话内强行跑完超长小说的全部事件（适时提醒分段）
 - NEVER 由 novel-pipeline 调度器调用时重复串联 pipeline-finalize
+
+### ⚠️ API 速率限制（硬约束）
+
+事件拆分和补录阶段是**写入最密集的阶段**（可能产出 30-100+ 个事件文件），必须遵守：
+
+| 规则 | 说明 |
+|------|------|
+| **单条消息最多 2 个 Write** | 每次响应最多并行写入 2 个事件文件 |
+| **禁止批量重写** | 修复错误时，每次最多修复 2 个文件 |
+| **429 处理** | 收到速率限制错误时，暂停 10 秒后重试 |
+| **遵守 novel-events 的速率约束** | novel-events 内部的写入限制同样适用 |
+
+**推荐执行节奏**：
+
+```
+批次 1: 写 2 个事件 → 等待完成 → 验证通过
+批次 2: 写 2 个事件 → 等待完成 → 验证通过
+...（循环直到本批章节处理完毕）
+```
 
 ## References
 

@@ -105,6 +105,12 @@
 
 格式：`nm_{type}_{YYYYMMDD}_{random4}`
 
+## Schema Conventions
+
+编辑或生成 `docs/schemas/` 下的任何 schema 文件时，MUST 遵循 `.claude/rules/schema-conventions.md` 中定义的书写规范：
+- 文件头 + 字段说明段 + R/O 标记 + 注释列对齐 + `# ===` 分隔符
+- 参考文件：`event-unit.schema.yaml`、`meta.schema.yaml`
+
 ## Hard Rules
 
 - MUST 使用 skills 执行操作
@@ -125,6 +131,8 @@
 - MUST `_index.yaml` 存概览和统计，SQLite 存完整索引，各司其职
 - MUST 人物小传 key_events 只记录关键节点（≤10个），避免膨胀
 - MUST refine 是调整而非增量，可删除、合并、重构，不无限膨胀
+- MUST 跨文件变更（重构/迁移/重命名）完成后，输出变更清单：改了哪些文件 + 验证了什么 + 还有什么风险
+- MUST API 限速：连续 Shell 调用间隔 ≥1s，避免触发 rate limit
 - MUST 粒度自适应：地理/势力 ≤3 用单文件，>3 用文件夹
 - NEVER 编造质量数据（无信号写 TBD）
 - NEVER 用脚本批量生成模板化事件文件（详见 `ARCHITECTURE.md` → Anti-Pattern）

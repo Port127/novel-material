@@ -71,6 +71,26 @@ arguments: material_id, chapter_range
 - 同一事件中的地点切换
 - 同一线索内的时间流逝
 
+### 最小覆盖密度约束（硬约束）
+
+为防止事件粒度过粗，必须遵守以下约束：
+
+1. **主线连续未覆盖约束**：主线中连续未被任何事件覆盖的章节数不得超过 **3 章**
+   - 扫描所有已生成的事件，找出主线未覆盖的章节
+   - 如果发现连续 >3 章没有事件，**必须**在这些章节范围内补切事件
+   - 这是**硬约束**，不是建议
+
+2. **参考切分密度**：
+   | 小说类型 | 建议主线事件密度 |
+   |----------|-----------------|
+   | 硬科幻/悬疑 | 每 2-4 章至少 1 个主线事件 |
+   | 都市/日常 | 每 3-5 章至少 1 个主线事件 |
+   | 奇幻/玄幻 | 每 2-4 章至少 1 个主线事件 |
+
+3. **禁止合并独立场景**：同一章节内两个独立戏剧动作（角色不同、目标不同、结局不同），必须拆分为两个事件
+
+4. **回忆事件不替代主线事件**：回忆/闪回事件只补充背景，不能替代对原文的覆盖
+
 ---
 
 ## 钩子判定约束
@@ -366,6 +386,8 @@ info_hint:
 
 #### 1c. 输出线索清单
 
+输出 `threads_manifest.yaml`：
+
 ```yaml
 # threads_manifest.yaml
 threads:
@@ -373,6 +395,11 @@ threads:
     description: 许七安主线叙事
     estimated_chapters: "大部分章节"
     priority: 1
+    estimated_intersections:             # O | 预估与其他线索的交汇章
+      - with: romance_怀庆
+        chapters: [50, 120, 200]
+      - with: subplot_魏渊
+        chapters: [100, 250]
     
   - id: romance_怀庆
     description: 怀庆公主感情线
@@ -389,6 +416,15 @@ threads:
     estimated_chapters: [100, 250, 400]
     priority: 3
 ```
+
+#### 1d. 读取 outline 节拍作为事件边界参考（强制）
+
+读取 `outline/structure.yaml`，提取所有 `beat` 的章节号和描述。
+
+**这些 beat 是事件拆分的强制参考点**：
+- 每个 beat 至少对应一个事件（或作为多事件中的一个主事件的骨架）
+- 如果某 beat 覆盖的章节范围内没有事件，**必须补切**
+- beat 的 description 可以作为事件 title/summary 的参考素材
 
 ---
 
@@ -526,7 +562,32 @@ events:
 **F. 物理层**
 - `setting`, `scale`, `time_weather`
 
-#### 3e. 写入文件
+#### 3e. 写入文件（限流执行）
+
+**⚠️ API 速率限制约束（硬约束）**：
+
+为防止触发 API Key Rate Limit，文件写入必须遵守以下限制：
+
+| 规则 | 说明 |
+|------|------|
+| **单次消息最多 2 个 Write 调用** | 一次响应中最多并行写入 2 个文件 |
+| **每个事件文件独立写入** | 写完一个事件文件后，确认完成再写下一个 |
+| **禁止批量重写** | 不得在单条消息中重写 3 个以上已存在文件 |
+| **StrReplace 同理** | 单条消息最多 2 个 StrReplace 调用 |
+
+**执行顺序**：
+
+```
+批次 1: 写 ev_main_001.yaml + ev_main_002.yaml（2 个并行）
+  ↓
+批次 2: 写 ev_main_003.yaml + ev_game_001.yaml（2 个并行）
+  ↓
+...（每批 2 个，循环直到本批章节处理完毕）
+  ↓
+批次完成后统一执行 3f 格式校验 + 质量审计
+```
+
+**禁止在每单个文件写入后单独运行验证脚本**——这会浪费大量 API 调用。验证统一在 3f 阶段批量执行。
 
 ```
 events/
@@ -545,29 +606,131 @@ python scripts/core/quality_audit.py {material_id} --event {event_id}
 
 ---
 
-### 第四阶段：覆盖检查
+### 第四阶段：覆盖检查 + 强制自动补处理
 
 **多线索覆盖规则**：同一章节可被多个事件覆盖。
 
 检查逻辑：
-1. 主线应覆盖所有章节
+1. 主线应覆盖**所有章节**（每个章节至少被一个主线事件覆盖）
 2. 支线只覆盖其涉及的章节（不要求全覆盖）
-3. 检查是否有章节未被任何主线事件覆盖
+3. **强制自动补处理**：
+   - 计算所有章节中未被任何主线事件覆盖的章节
+   - 对缺失章节范围**自动执行补切**，无需用户确认
+   - 补切后重新运行覆盖检查，直到全部覆盖
+   - 补切时遵循「最小覆盖密度约束」（连续未覆盖 ≤ 3 章）
 
 ```
 覆盖检查结果：
   第1章: ev_main_001 ✓
-  第50章: ev_main_010 + ev_romance_怀庆_001 ✓（多事件覆盖）
-  第120章: ev_main_025 + ev_romance_怀庆_002 ✓
-  
-  缺失章节：无
-  
-  或：
-  缺失章节：第543章（主线未覆盖）
-  → 自动补处理
+  第50章: ev_main_010 + ev_romance_怀庆_001 ✓
+
+  缺失章节：第13,14,15章
+  → 自动补处理：ev_main_013（第13-15章）✓
+
+  最终缺失章节：无
 ```
 
 ---
+
+### 第五阶段：跨线索交汇检测
+
+**目标**：识别同一章节中多个线索事件同时发生的交汇点，建立主线与支线/感情线的关联纽带。
+
+#### 5a. 交汇章检测
+
+当同一章节被多个不同 `thread` 的事件覆盖时，标记为**交汇章**。
+
+检测逻辑：
+1. 扫描所有已生成事件的 `chapters` 字段
+2. 找出被多个不同 thread 事件覆盖的章节
+3. 对每个交汇章，判断交汇类型
+
+**交汇类型判定**：
+
+| 类型 | 判定标准 | 示例 |
+|------|---------|------|
+| **causal** | 支线事件的结果直接影响主线走向 | 魏渊之死→主角复仇主线加速 |
+| **emotional** | 不同线索在同一章产生情感层面的互动 | 怀庆暗中相助+主角面临危机 |
+| **thematic** | 不同线索指向同一主题 | 主线谈权谋，支线谈兄弟情，都指向"忠诚"主题 |
+| **parallel** | 仅时间上的并行，无实质关联 | 主角在A地战斗，配角在B地聊天 |
+
+**判定优先级**：causal > emotional > thematic > parallel（满足高级别时不再标低级别）
+
+#### 5b. 输出 cross_thread_events.yaml
+
+```yaml
+# events/cross_thread_events.yaml
+# 跨线索交汇点（事件拆分阶段自动捕捉，待 refine 验证）
+material_id: nm_xxx
+intersections:
+  - chapter: 120
+    events:
+      - event_id: ev_main_005
+        thread: main
+      - event_id: ev_romance_怀庆_002
+        thread: romance_怀庆
+    integration_type: emotional
+    note: '怀庆暗助，推动主线破案'
+    confidence: medium  # 事件拆分AI推断，待refine验证
+
+  - chapter: 250
+    events:
+      - event_id: ev_main_015
+        thread: main
+      - event_id: ev_subplot_魏渊_003
+        thread: subplot_魏渊
+    integration_type: causal
+    note: '魏渊之死直接触发主角复仇主线'
+    confidence: high
+
+stats:
+  total_intersections: 15
+  by_type:
+    causal: 5
+    emotional: 6
+    thematic: 3
+    parallel: 1
+  by_thread_pair:
+    main + romance_怀庆: 7
+    main + subplot_魏渊: 4
+    romance_怀庆 + subplot_临安: 2
+```
+
+#### 5c. 同步更新事件 YAML 的 intersects_mainline_at 字段
+
+对每个非主线（thread != main）的交汇事件，在其 YAML 中补充：
+
+```yaml
+# ev_romance_怀庆_002.yaml
+thread: romance_怀庆
+...
+intersects_mainline_at:
+  - chapter: 120
+    intersecting_event: ev_main_005
+    integration_type: emotional
+    note: '怀庆暗助，推动主线破案'
+    confidence: medium
+```
+
+**注意**：
+- 主线事件不填此字段（主线是被交汇方）
+- 只填与主线交汇的点，支线间互相交汇不填（已在 cross_thread_events.yaml 中记录）
+
+---
+
+## 上下文预算
+
+| 操作 | 最大读取量 | 说明 |
+|------|-----------|------|
+| 扫描章节标题 | 不限 | 只读标题行，不读正文 |
+| 单章阅读 | 单章全文 | 用于事件拆分/精调 |
+| 批量阅读 | ≤ 5 章/次 | 用于 outline 分段阅读 |
+| 补录阅读 | ≤ 3 章/次 | 只读遗漏实体相关章节 |
+
+**禁止**：
+- 一次性读取 > 10 章正文
+- 在不分段的情况下读取全文
+- 将上一步的完整输出原样传递到下一步
 
 ## 上下文控制策略
 
@@ -625,6 +788,11 @@ python scripts/core/quality_audit.py {material_id} --event {event_id}
   
 怀庆感情线：
   ev_romance_怀庆_001.yaml: 初遇 [第50章]
+
+🔗 跨线索交汇：
+  交汇点：{n}个
+  主线×感情线：{n}个
+  主线×支线：{n}个
 ```
 
 ## YAML 书写安全
@@ -664,6 +832,9 @@ python scripts/core/quality_audit.py {material_id} --event {event_id}
 | 8 | 钩子触犯排除规则 | 钩子标记触犯"不是钩子"的排除规则（强制删除） |
 | 9 | 钩子置信度不合理 | 钩子置信度与类型不匹配（如人物钩子标 high） |
 | 10 | 钩子铆合形式缺失 | 钩子未标注铆合形式（反转/悬念/期待/因果） |
+| 11 | 事件密度过低 | 主线 event_count / total_chapters < 0.4 |
+| 12 | 交汇类型错误 | 交汇类型与文本证据不匹配（需降级或删除） |
+| 13 | 交汇置信度不合理 | 交汇置信度过高而无明确证据 |
 
 ### 钩子质量检查流程
 

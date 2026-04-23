@@ -4,9 +4,9 @@
 # 世界观采用文件夹结构，支持模块化、粒度自适应和按需加载
 # 复杂世界观细分文件夹，简单世界观保持单文件
 
-# ─────────────────────────────────────────────────────────
+# ====================================================================
 # 文件夹结构
-# ─────────────────────────────────────────────────────────
+# ====================================================================
 
 # worldbuilding/
 # ├── _index.yaml              # 必选：概览 + 模块索引 + 统计
@@ -25,208 +25,192 @@
 #     ├── species.yaml         # 种族物种
 #     └── terminology.yaml     # 术语词典
 
-# ─────────────────────────────────────────────────────────
-# _index.yaml（必选）
-# ─────────────────────────────────────────────────────────
+# ====================================================================
+# 字段说明
+# ====================================================================
+#
+# 世界观模块根据复杂度自动选择单文件或文件夹结构：
+# - geography / factions: 实体数 ≤ 3 用单文件，> 3 用文件夹
+# - power_system: 一般单文件，多体系时改文件夹
+# - lore: 始终为文件夹
+#
+# R = 必填, O = 可选
 
-# 世界观概览 + 模块导航 + 快速统计
+# ====================================================================
+# _index.yaml（必选）—— 世界观概览 + 模块导航 + 快速统计
 # 路径: worldbuilding/_index.yaml
+# ====================================================================
 
-material_id: nm_xxx
+material_id: nm_xxx                             # R | 素材ID
 
 # 世界观概览
-world_type: 硬科幻  # 硬科幻/奇幻/都市/历史/玄幻/武侠/...
-complexity: high    # high/medium/low，决定细分程度
-setting_period: "近未来"  # 时间背景
+world_type: 硬科幻                               # R | 世界观类型（硬科幻/奇幻/都市/历史/玄幻/武侠）
+complexity: high                                # R | 复杂度（high / medium / low），决定细分程度
+setting_period: "近未来"                         # O | 时间背景
 
 # 模块索引（声明各模块的存放形式）
 modules:
   power_system:
-    enabled: true
-    path: power_system.yaml  # 单文件
-    complexity: simple       # simple → 单文件，complex → 文件夹
-  
+    enabled: true                               # R | 是否启用
+    path: power_system.yaml                     # R | 存放路径（单文件或文件夹）
+    complexity: simple                           # simple → 单文件, complex → 文件夹
+
   geography:
     enabled: true
-    path: geography/         # 文件夹（复杂时）
-    # path: geography.yaml    # 单文件（简单时）
+    path: geography/                            # 文件夹（复杂时）
+    # path: geography.yaml                       # 单文件（简单时）
     complexity: complex
-    regions_count: 5
-  
+    regions_count: 5                             # R | 区域数
+
   factions:
     enabled: true
-    path: factions/          # 文件夹（复杂时）
-    # path: factions.yaml     # 单文件（简单时）
+    path: factions/
+    # path: factions.yaml
     complexity: complex
-    factions_count: 8
-  
+    factions_count: 8                            # R | 势力数
+
   lore:
     enabled: true
-    path: lore/              # 文件夹
-    submodules: [history, artifacts, species, terminology]
+    path: lore/
+    submodules: [history, artifacts, species, terminology]  # R | 子模块列表
 
 # 快速统计
 stats:
-  regions: 5
-  factions: 8
-  artifacts: 12
-  terminology: 45
-  historical_events: 10
+  regions: 5                                    # R | 区域数
+  factions: 8                                   # R | 势力数
+  artifacts: 12                                 # R | 重要物品数
+  terminology: 45                               # R | 术语数
+  historical_events: 10                         # R | 历史事件数
 
-# ─────────────────────────────────────────────────────────
+# ====================================================================
 # power_system.yaml（力量体系）
-# ─────────────────────────────────────────────────────────
-
-# 力量/修炼/科技体系
 # 路径: worldbuilding/power_system.yaml
-# 注意：复杂体系可改为文件夹 power_system/，包含 _index.yaml + 各分支体系
+# 复杂体系可改为文件夹 power_system/，包含 _index.yaml + 各分支体系
+# ====================================================================
 
-material_id: nm_xxx
+material_id: nm_xxx                             # R | 素材ID
 
 # 是否存在力量体系
-has_power_system: true  # true/false（纯都市/生活文可能无）
+has_power_system: true                          # R | true / false（纯都市/生活文可能无）
 
-name: "力量体系名称"
-type: "灵气/魔法/斗气/科技/超能力/异能/修真/..."
+name: "力量体系名称"                             # R | 体系名称
+type: "灵气"                                    # R | 体系类型（灵气/魔法/斗气/科技/超能力/异能/修真）
 
 # 等级划分
 ranks:
-  - name: "等级1"
-    description: "等级描述"
-    capabilities: ["能力范围"]
+  - name: "等级1"                               # R | 等级名称
+    description: "等级描述"                      # R | 等级描述
+    capabilities: ["能力范围"]                   # O | 该等级能力列表
   - name: "等级2"
-    description: "等级描述"
-    capabilities: ["能力范围"]
-  - name: "等级3"
     description: "等级描述"
     capabilities: ["能力范围"]
 
 # 核心运作规则
 rules:
-  - rule: "规则描述"
-    implications: "规则影响"
+  - rule: "规则描述"                             # R | 规则内容
+    implications: "规则影响"                      # O | 对剧情的影响
 
 # 限制条件与代价
 limitations:
-  - limitation: "限制描述"
-    consequences: "违反后果"
+  - limitation: "限制描述"                       # R | 限制内容
+    consequences: "违反后果"                      # O | 违反后果
 
 # 特殊能力/技能（主要的）
 special_abilities:
-  - name: "能力名称"
-    description: "简要描述"
-    rank_required: "所需等级"
-    users: ["使用者"]
-    limitations: ["使用限制"]
+  - name: "能力名称"                             # R | 能力名称
+    description: "简要描述"                       # R | 能力描述
+    rank_required: "所需等级"                     # O | 所需最低等级
+    users: ["使用者"]                            # O | 使用者列表
+    limitations: ["使用限制"]                    # O | 使用限制
 
 # 力量体系与剧情的关系
 narrative_integration:
-  power_up_events: [event_id_1, event_id_2]  # 力量升级关键事件
-  power_conflicts: [event_id_3]              # 力量冲突事件
+  power_up_events: [event_id_1, event_id_2]     # O | 力量升级关键事件ID
+  power_conflicts: [event_id_3]                 # O | 力量冲突事件ID
 
-# ─────────────────────────────────────────────────────────
+# ====================================================================
 # geography（地理空间）
-# ─────────────────────────────────────────────────────────
+# 复杂时用文件夹 worldbuilding/geography/，简单时用单文件 worldbuilding/geography.yaml
+# ====================================================================
 
-# 地理空间：复杂时用文件夹，简单时用单文件
-# 文件夹路径: worldbuilding/geography/
-# 单文件路径: worldbuilding/geography.yaml
+# ── geography/_index.yaml（复杂时） ──
 
-# ─────────────────────────────────────────────────────────
-# geography/_index.yaml（复杂时）
-# ─────────────────────────────────────────────────────────
-
-material_id: nm_xxx
+material_id: nm_xxx                             # R | 素材ID
 
 # 空间层级结构
-spatial_hierarchy: "空间层级描述（如：九天十地、三界六道、银河→星系→行星）"
+spatial_hierarchy: "九天十地"                   # R | 空间层级描述（如：九天十地、三界六道、银河→星系→行星）
 
 # 区域索引
 regions_index:
-  - name: "地球"
-    file: earth.yaml
-    type: 星球
-    importance: primary
-    first_appearance: "第1章"
+  - name: "地球"                                # R | 区域名称
+    file: earth.yaml                            # R | 详情文件路径
+    type: 星球                                   # R | 区域类型（大陆/城市/秘境/星球/国度/概念空间）
+    importance: primary                          # R | primary / secondary / thematic / background
+    first_appearance: "第1章"                    # R | 首次出现章节
+
   - name: "三体星"
     file: trisolaris.yaml
     type: 星球
     importance: primary
     first_appearance: "第8章"
-  - name: "黑暗森林"
-    file: dark_forest.yaml
-    type: 概念空间
-    importance: thematic
-    first_appearance: "第20章"
 
 # 统计
 stats:
-  total_regions: 5
-  by_type:
+  total_regions: 5                              # R | 总区域数
+  by_type:                                      # R | 按类型分类统计
     星球: 2
     城市: 3
     概念空间: 1
 
-# ─────────────────────────────────────────────────────────
-# geography/{region_name}.yaml（区域详情）
-# ─────────────────────────────────────────────────────────
-
-# 各区域的详细信息
+# ── geography/{region_name}.yaml（区域详情） ──
 # 路径: worldbuilding/geography/{region_name}.yaml
 
-material_id: nm_xxx
-region_name: "区域名"
+material_id: nm_xxx                             # R | 素材ID
+region_name: "地球"                             # R | 区域名称
 
 # 基本信息
-type: "大陆/城市/秘境/星球/国度/区域/建筑/概念空间/..."
-description: "区域描述"
-importance: primary  # primary/secondary/thematic/background
+type: 星球                                     # R | 区域类型
+description: "人类居住的行星"                    # R | 区域描述
+importance: primary                             # R | primary / secondary / thematic / background
 
 # 首次出现
-first_appearance: "第X章"
+first_appearance: "第1章"                       # R | 首次出现章节
 
 # 子地点
 sub_locations:
-  - name: "子地点1"
-    type: "类型"
-    description: "描述"
-    significance: "重要性"
-  - name: "子地点2"
-    type: "类型"
-    description: "描述"
+  - name: "子地点1"                             # R | 子地点名称
+    type: "类型"                                 # R | 子地点类型
+    description: "描述"                          # R | 描述
+    significance: "重要性"                       # O | 在剧情中的重要性
 
 # 连通关系
 connections:
-  - to: "相邻/可达地区"
-    type: "物理连接/传送/星际航行/..."
-    distance: "距离描述"
+  - to: "相邻/可达地区"                          # R | 连接目标
+    type: "物理连接"                              # R | 连接类型（物理连接/传送/星际航行）
+    distance: "距离描述"                          # O | 距离描述
 
 # 剧情中的重要性
-significance: "该地区在剧情中的作用"
+significance: "该地区在剧情中的作用"              # R | 剧情作用描述
 
 # 关联事件（交叉引用）
 key_events:
-  - event_id: nm_xxx_ch01_ev001
-    chapter: 1
-    description: "事件简述"
-    role: "场景/转折点/战场/..."
+  - event_id: nm_xxx_ch01_ev001                 # R | 事件ID
+    chapter: 1                                   # R | 章节号
+    description: "事件简述"                       # R | 事件简述
+    role: "场景"                                 # R | 在该事件中的角色（场景/转折点/战场）
 
 # 关联势力
 associated_factions:
-  - faction: "势力名"
-    relationship: "控制/存在/争夺/..."
+  - faction: "势力名"                            # R | 势力名称
+    relationship: "控制"                          # R | 关系类型（控制/存在/争夺）
 
 # 环境特征（可选）
 environment:
-  climate: "气候"
-  terrain: "地形"
-  resources: ["资源"]
+  climate: "气候"                               # O | 气候特征
+  terrain: "地形"                               # O | 地形特征
+  resources: ["资源"]                            # O | 资源列表
 
-# ─────────────────────────────────────────────────────────
-# geography.yaml（简单时的单文件）
-# ─────────────────────────────────────────────────────────
-
-# 区域数 ≤ 3 时使用单文件
+# ── geography.yaml（简单时的单文件，区域数 ≤ 3） ──
 # 路径: worldbuilding/geography.yaml
 
 material_id: nm_xxx
@@ -244,83 +228,65 @@ regions:
       - event_id: xxx
         chapter: 1
 
-# ─────────────────────────────────────────────────────────
+# ====================================================================
 # factions（势力组织）
-# ─────────────────────────────────────────────────────────
+# 复杂时用文件夹 worldbuilding/factions/，简单时用单文件 worldbuilding/factions.yaml
+# 注意：此处关注"势力本身的设定"，characters 中的 factions 关注"谁属于哪个阵营"
+# ====================================================================
 
-# 势力组织：复杂时用文件夹，简单时用单文件
-# 文件夹路径: worldbuilding/factions/
-# 单文件路径: worldbuilding/factions.yaml
+# ── factions/_index.yaml（复杂时） ──
 
-# 注意：此处的 factions 关注"势力本身的设定"
-# characters.yaml 中的 factions 关注"谁属于哪个阵营"，两者互补
-
-# ─────────────────────────────────────────────────────────
-# factions/_index.yaml（复杂时）
-# ─────────────────────────────────────────────────────────
-
-material_id: nm_xxx
+material_id: nm_xxx                             # R | 素材ID
 
 # 势力索引
 factions_index:
-  - name: "ETO"
-    file: eto.yaml
-    type: 秘密组织
-    stance: 亲三体/反人类
-    importance: primary
+  - name: "ETO"                                 # R | 势力名称
+    file: eto.yaml                              # R | 详情文件路径
+    type: 秘密组织                                # R | 势力类型（宗门/王朝/公司/家族/军团/教会/秘密组织/外星文明）
+    stance: 亲三体/反人类                         # R | 立场
+    importance: primary                          # R | primary / secondary / minor
+
   - name: "PDC"
     file: pdc.yaml
     type: 政府组织
     stance: 亲人类/防御
     importance: primary
-  - name: "三体文明"
-    file: trisolaran.yaml
-    type: 外星文明
-    stance: 侵略者
-    importance: primary
 
 # 势力关系矩阵（概览）
 relations_matrix:
-  - faction_a: ETO
-    faction_b: PDC
-    relation: 敌对
-  - faction_a: ETO
-    faction_b: 三体文明
-    relation: 从属
+  - faction_a: ETO                              # R | 势力A
+    faction_b: PDC                              # R | 势力B
+    relation: 敌对                                # R | 关系类型（敌对/同盟/从属/竞争/中立）
 
 # 统计
 stats:
-  total_factions: 8
-  by_type:
+  total_factions: 8                             # R | 总势力数
+  by_type:                                      # R | 按类型分类统计
     秘密组织: 2
     政府组织: 3
     外星文明: 1
     科研机构: 2
 
-# ─────────────────────────────────────────────────────────
-# factions/{faction_name}.yaml（势力详情）
-# ─────────────────────────────────────────────────────────
-
-# 各势力的详细设定
+# ── factions/{faction_name}.yaml（势力详情） ──
 # 路径: worldbuilding/factions/{faction_name}.yaml
 
-material_id: nm_xxx
-faction_name: "势力名"
+material_id: nm_xxx                             # R | 素材ID
+faction_name: "ETO"                             # R | 势力名称
 
 # 基本信息
-type: "宗门/王朝/公司/家族/军团/教会/秘密组织/外星文明/科研机构/..."
-territory: "势力范围/活动区域"
-stance: "立场/定位描述"
-power_level: "实力等级/排名"
-importance: primary  # primary/secondary/minor
+type: 秘密组织                                   # R | 势力类型
+territory: "全球范围"                            # O | 势力范围/活动区域
+stance: "亲三体/反人类"                          # R | 立场
+power_level: "S级"                              # O | 实力等级/排名
+importance: primary                             # R | primary / secondary / minor
 
 # 首次出现
-first_appearance: "第X章"
+first_appearance: "第8章"                       # R | 首次出现章节
 
 # 组织结构
 structure:
-  leadership_type: "领袖制/议会制/寡头制/..."
-  hierarchy_levels:
+  leadership_type: "领袖制"                      # R | 领导体制（领袖制/议会制/寡头制）
+  hierarchy_levels:                              # O | 层级结构
     - level: "顶层"
       title: "职位名"
       description: "职责"
@@ -330,17 +296,17 @@ structure:
 
 # 关键人物（世界观视角）
 key_figures:
-  - name: "人物名"
-    role: "职位"
-    character_file: profiles/{name}.yaml  # 指向人物小传
-    narrative_role: "该人物在势力中的作用"
+  - name: "人物名"                               # R | 人物名称
+    role: "职位"                                 # R | 在势力中的职位
+    character_file: profiles/{name}.yaml        # O | 指向人物小传
+    narrative_role: "该人物在势力中的作用"         # O | 叙事角色描述
 
 # 势力间关系
 relationships:
-  - faction: "其他势力名"
-    relation: "敌对/同盟/从属/竞争/中立/..."
-    description: "关系描述"
-    evolution:  # 关系演变（可选）
+  - faction: "其他势力名"                         # R | 关联势力
+    relation: "敌对"                              # R | 关系类型
+    description: "关系描述"                       # R | 关系描述
+    evolution:                                   # O | 关系演变
       - stage: "初期"
         relation: "中立"
         chapter: 5
@@ -350,42 +316,30 @@ relationships:
 
 # 势力目标与动机
 goals:
-  - goal: "势力目标"
-    motivation: "动机描述"
-    methods: ["达成手段"]
+  - goal: "势力目标"                             # R | 目标内容
+    motivation: "动机描述"                        # R | 动机
+    methods: ["达成手段"]                         # O | 手段列表
 
 # 势力资源（可选）
 resources:
-  - resource: "资源类型"
-    amount: "资源量/等级"
-    significance: "重要性"
+  - resource: "资源类型"                          # R | 资源类型
+    amount: "资源量/等级"                         # O | 资源量
+    significance: "重要性"                        # O | 重要性
 
 # 关联事件（交叉引用）
 key_events:
-  - event_id: nm_xxx_ch05_ev002
-    chapter: 5
-    description: "势力建立"
-    significance: "势力起源"
-  - event_id: nm_xxx_ch20_ev008
-    chapter: 20
-    description: "内部分裂"
-    significance: "势力转折"
-  - event_id: nm_xxx_ch30_ev010
-    chapter: 30
-    description: "组织瓦解"
-    significance: "势力终点"
+  - event_id: nm_xxx_ch05_ev002                 # R | 事件ID
+    chapter: 5                                   # R | 章节号
+    description: "势力建立"                       # R | 事件简述
+    significance: "势力起源"                      # R | 在该事件中的意义
 
 # 关联地点
 associated_locations:
-  - location: "地点名"
-    relationship: "总部/分支/活动区域/..."
-    file: geography/{location}.yaml
+  - location: "地点名"                            # R | 地点名称
+    relationship: "总部"                          # R | 关联关系（总部/分支/活动区域）
+    file: geography/{location}.yaml             # O | 地点文件路径
 
-# ─────────────────────────────────────────────────────────
-# factions.yaml（简单时的单文件）
-# ─────────────────────────────────────────────────────────
-
-# 势力数 ≤ 3 时使用单文件
+# ── factions.yaml（简单时的单文件，势力数 ≤ 3） ──
 # 路径: worldbuilding/factions.yaml
 
 material_id: nm_xxx
@@ -404,86 +358,72 @@ factions:
       - event_id: xxx
         chapter: 5
 
-# ─────────────────────────────────────────────────────────
-# lore/（背景知识文件夹）
-# ─────────────────────────────────────────────────────────
+# ====================================================================
+# lore/（背景知识文件夹，始终存在）
+# ====================================================================
 
-# lore 文件夹始终存在，包含各子模块
-
-# ─────────────────────────────────────────────────────────
-# lore/history.yaml（历史事件）
-# ─────────────────────────────────────────────────────────
+# ── lore/history.yaml（历史事件） ──
 
 material_id: nm_xxx
 
-# 影响当前剧情的重大历史
 history:
-  - event: "历史事件名"
-    period: "时间/年代"
-    description: "事件描述"
-    impact: "对当前剧情的影响"
-    related_characters: ["相关人物"]
-    related_factions: ["相关势力"]
-    first_referenced: "第X章"  # 首次被提及
+  - event: "历史事件名"                           # R | 事件名称
+    period: "时间/年代"                           # R | 发生年代
+    description: "事件描述"                        # R | 事件描述
+    impact: "对当前剧情的影响"                     # R | 对剧情的影响
+    related_characters: ["相关人物"]               # O | 相关人物
+    related_factions: ["相关势力"]                 # O | 相关势力
+    first_referenced: "第X章"                     # R | 首次被提及的章节
 
-# ─────────────────────────────────────────────────────────
-# lore/artifacts.yaml（重要物品）
-# ─────────────────────────────────────────────────────────
+# ── lore/artifacts.yaml（重要物品） ──
 
 material_id: nm_xxx
 
-# 对剧情有重要作用的物品/神器/道具
 artifacts:
-  - name: "物品名"
-    type: "神器/武器/科技设备/信息载体/..."
-    description: "物品描述"
-    abilities: ["功能/能力"]
-    owner: "当前持有者"
-    origin: "来源/创造者"
-    first_appearance: "第X章"
-    significance: "剧情重要性"
+  - name: "物品名"                               # R | 物品名称
+    type: 神器                                    # R | 物品类型（神器/武器/科技设备/信息载体）
+    description: "物品描述"                        # R | 物品描述
+    abilities: ["功能/能力"]                       # O | 功能列表
+    owner: "当前持有者"                           # O | 当前持有者
+    origin: "来源/创造者"                         # O | 来源
+    first_appearance: "第X章"                     # R | 首次出现章节
+    significance: "剧情重要性"                     # R | 剧情重要性
     key_events:
       - event_id: xxx
         chapter: 10
-        role: "获取/使用/损坏/..."
+        role: "获取"                              # 在该事件中的角色（获取/使用/损坏）
 
-# ─────────────────────────────────────────────────────────
-# lore/species.yaml（种族物种）
-# ─────────────────────────────────────────────────────────
+# ── lore/species.yaml（种族物种） ──
 
 material_id: nm_xxx
 
-# 非人种族或特殊物种
 species:
-  - name: "种族名"
-    type: "外星文明/灵兽/妖魔/人工智能/变异生物/..."
-    description: "种族描述"
-    characteristics: ["特征"]
-    abilities: ["能力"]
-    habitat: "栖息地/分布"
-    relation_to_humans: "与人类的关系"
-    first_appearance: "第X章"
-    key_figures: ["代表人物"]
+  - name: "种族名"                               # R | 种族名称
+    type: 外星文明                                # R | 种族类型（外星文明/灵兽/妖魔/人工智能/变异生物）
+    description: "种族描述"                        # R | 种族描述
+    characteristics: ["特征"]                     # O | 特征列表
+    abilities: ["能力"]                           # O | 能力列表
+    habitat: "栖息地/分布"                        # O | 栖息地
+    relation_to_humans: "与人类的关系"             # O | 与人类关系
+    first_appearance: "第X章"                     # R | 首次出现章节
+    key_figures: ["代表人物"]                     # O | 代表人物
 
-# ─────────────────────────────────────────────────────────
-# lore/terminology.yaml（术语词典）
-# ─────────────────────────────────────────────────────────
+# ── lore/terminology.yaml（术语词典） ──
 
 material_id: nm_xxx
 
-# 小说独创的专有名词
 terminology:
-  - term: "术语名"
-    category: "科技/力量体系/组织/概念/..."
-    meaning: "含义解释"
-    usage_context: "使用场景"
-    first_appearance: "第X章"
-    related_terms: ["关联术语"]
+  - term: "术语名"                               # R | 术语名称
+    category: "科技"                              # R | 所属类别（科技/力量体系/组织/概念）
+    meaning: "含义解释"                            # R | 含义
+    usage_context: "使用场景"                      # O | 使用场景
+    first_appearance: "第X章"                     # O | 首次出现章节
+    related_terms: ["关联术语"]                   # O | 关联术语
 
-# ─────────────────────────────────────────────────────────
+# ====================================================================
 # 粒度自适应规则
-# ─────────────────────────────────────────────────────────
-
+# ====================================================================
+#
 # geography 和 factions 根据复杂度自动选择单文件或文件夹：
 #
 # | 模块     | 简单条件          | 复杂条件            |

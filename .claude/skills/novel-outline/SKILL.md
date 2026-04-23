@@ -20,6 +20,20 @@ arguments: material_id
 
 输出遵循 `docs/schemas/outline.schema.yaml` 的文件夹结构。
 
+## 上下文预算
+
+| 操作 | 最大读取量 | 说明 |
+|------|-----------|------|
+| 扫描章节标题 | 不限 | 只读标题行，不读正文 |
+| 单章阅读 | 单章全文 | 用于事件拆分/精调 |
+| 批量阅读 | ≤ 5 章/次 | 用于 outline 分段阅读 |
+| 补录阅读 | ≤ 3 章/次 | 只读遗漏实体相关章节 |
+
+**禁止**：
+- 一次性读取 > 10 章正文
+- 在不分段的情况下读取全文
+- 将上一步的完整输出原样传递到下一步
+
 ## 上下文控制策略
 
 长篇小说采用**分段阅读 + 增量汇总**：
@@ -110,6 +124,32 @@ arguments: material_id
 
 识别各情节线索，标注起点→转折→高潮→收束。
 
+#### 3g. 建立线索交汇锚点（如启用 plotlines 或 subplots）
+
+当识别到多线叙事时，**建立主线与支线/感情线的初始交汇锚点**，为后续事件拆分提供参考：
+
+- 在 `plotlines.yaml` 的 `intersections_with` 字段中标注线索间交汇关系
+- 在 `subplots.yaml` 的 `relation_to_mainline` 字段中标注支线与主线的关系类型
+  （`parallel` 并行 / `intertwining` 交织 / `counterpoint` 对照 / `framing` 框架）
+- 在 `subplots.yaml` 的 `mainline_integration` 中预估交汇章节
+
+**示例**：
+```yaml
+# outline/subplots.yaml — novel-outline 阶段产出（预估）
+subplots:
+  - name: "魏渊个人线"
+    relation_to_mainline: intertwining  # 预估关系类型
+    ...
+
+mainline_integration:
+  - subplot: 魏渊个人线
+    anchor_chapters: [100, 250]  # 基于大纲推断的预估交汇章
+    integration_type: causal     # 预估交汇类型
+```
+
+> ⚠️ 此阶段的交汇锚点是**大纲级别的推断**，不保证准确。
+> 精确的交汇点在 pipeline-events 第五阶段通过事件级数据捕捉，在 refine batch-2b 中验证。
+
 ### 4. 写入文件夹结构
 
 创建 `data/novels/{material_id}/outline/` 文件夹，写入：
@@ -127,6 +167,17 @@ outline/
 ```
 
 **注意**：本阶段识别的钩子写入 `hooks_network.yaml` 的初步版本，refine 阶段会补充详细验证。
+
+**⚠️ API 速率限制约束（硬约束）**：
+
+为防止触发 API Key Rate Limit，文件写入必须遵守以下限制：
+
+| 规则 | 说明 |
+|------|------|
+| **单次消息最多 2 个 Write 调用** | 一次响应中最多并行写入 2 个文件 |
+| **每个大纲模块独立写入** | 写完一个文件后，确认完成再写下一个 |
+
+**执行策略**：先写 `_index.yaml` → 再写 `structure.yaml`（必选，最大文件）→ 然后每次最多 2 个可选模块。
 
 ### 5. 更新状态
 

@@ -80,6 +80,20 @@ pipeline:
   tags_at: {today}
 ```
 
+### 3a. 质量检查
+
+依次运行：
+```bash
+python scripts/core/validate_yaml.py outline {material_id}
+python scripts/core/validate_yaml.py worldbuilding {material_id}
+python scripts/core/validate_yaml.py characters {material_id}
+python scripts/core/validate_yaml.py novel-tags {material_id}
+```
+
+任一校验失败，停止并报告。同时检查：
+- `characters/_index.yaml` 的 `roster` 中 `protagonists` 和 `antagonists` 不为空
+- `outline/_index.yaml` 的 `structure_summary.acts` ≥ 2
+
 ### 4. 输出报告
 
 ```
@@ -103,6 +117,16 @@ pipeline:
 - MUST 支持从中断点恢复（检查已有文件）
 - MUST 记录 pipeline 状态
 - NEVER 在 worldbuilding/characters 之前跳过 outline（outline 提供导航信息）
+- MUST **每个子 skill 完成后等待验证通过，再继续下一个**（禁止跳过子 skill 直接跳到后续阶段）
+- MUST **遵循子 skill 中的 API 速率限制**——每个子 skill 内部文件写入每次最多 2 个并行调用
+
+### ⚠️ API 速率限制
+
+分析阶段是文件写入最密集的阶段（outline 7-8 个文件 + worldbuilding 10+ 个文件 + characters N 个人物小传），**必须控制写入节奏**：
+
+- 每个子 skill 执行时，遵守其内部的「API 速率限制约束」
+- 每个子 skill 完成后，先运行 `validate_yaml.py` 校验，再继续下一个
+- 如果收到 `429 Too Many Requests` 错误，暂停 10 秒后重试
 
 ## References
 

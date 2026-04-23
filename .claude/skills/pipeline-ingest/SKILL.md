@@ -56,6 +56,16 @@ pipeline:
   chapters: {total_chapters}
 ```
 
+### 4a. 质量检查
+
+```bash
+python scripts/core/validate_yaml.py format {material_id}
+```
+
+如校验失败，停止并报告具体错误，不进入 pipeline-analyze。
+
+同时检查 `format_report.yaml` 中的章节连续性，如有缺失章节需用户确认后再继续。
+
 ### 5. 输出报告
 
 ```

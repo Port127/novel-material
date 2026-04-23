@@ -24,6 +24,29 @@ novel-pipeline（调度器）
 
 每个子流水线是独立的 skill，可单独调用，也可由此调度器串联。
 
+## 质量门控（所有模式通用）
+
+每个子流水线完成后必须执行对应的质量检查，检查不通过时**停止流水线并报告**，不进入下一阶段。
+
+| 阶段完成 | 检查项 | 工具 | 通过标准 |
+|----------|--------|------|---------|
+| pipeline-ingest | YAML schema 校验 | `validate_yaml.py format {id}` | 0 error |
+| pipeline-ingest | 章节连续性 | 检查 format_report.yaml | 无缺失章节或用户确认 |
+| pipeline-analyze | YAML schema 校验 | `validate_yaml.py outline/worldbuilding/characters/novel-tags {id}` | 0 error |
+| pipeline-analyze | 人物名册完整性 | 检查 characters/_index.yaml | protagonist/antagonists 不为空 |
+| pipeline-events | YAML schema 抽检 | `validate_yaml.py event {id}` + 随机 3 个事件 | 0 error |
+| pipeline-events | 章节覆盖检查 | 扫描 events/*.yaml 的 chapters 字段 | 主线连续未覆盖 ≤ 3 章 |
+| pipeline-events | 完备性验证 | `validate_completeness.py {id}` | completeness_score ≥ 0.5 或 backfill_done=true |
+| pipeline-finalize | YAML schema 校验 | `validate_yaml.py outline/characters {id}`（精调后） | 0 error |
+
+## 术语表
+
+| 术语 | 定义 | 出现位置 |
+|------|------|---------|
+| **事件批（event batch）** | 每次处理的一组连续章节（通常 3-5 章），产出若干事件 | pipeline-events, novel-events |
+| **精调批（refine batch）** | 每次处理的一组精调任务（10 个钩子/5-10 个角色/5 对关系） | refine, pipeline-finalize |
+| **补录批（backfill batch）** | 每次处理的一组遗漏实体（3-5 个实体） | ai-backfill, pipeline-events |
+
 ## 流程路由
 
 | 模式 | 触发词 | 执行流水线 | 参数 |
@@ -101,6 +124,11 @@ novel-pipeline（调度器）
 > ⚠️ 文件系统检查优先于 meta.yaml 状态。
 > 如果文件实际已完成但 status 未更新，以文件为准，避免重复跑 events。
 
+**Step 1b: 完备性阻断检查**
+
+如果 `completeness_validated=true` 且 `completeness_score < 0.5` 且 `backfill_done=false`：
+→ **阻止进入 finalize**，输出阻断信息，建议执行 `/pipeline-events {id}` 进行补录
+
 预览恢复计划后等待确认。
 
 ### 3. 执行子流水线
@@ -113,21 +141,57 @@ novel-pipeline（调度器）
    - 产出：material_id, source.txt, format_report.yaml
    - 失败 → 停止，报告
 
+   **质量检查**：
+   ```bash
+   python scripts/core/validate_yaml.py format {material_id}
+   ```
+   - 校验失败 → 停止并报告具体错误，不进入 pipeline-analyze
+   - 检查 `format_report.yaml` 章节连续性，有缺失章节需用户确认
+
 2. 读取并执行 `pipeline-analyze/SKILL.md`
    - 产出：outline/、worldbuilding/、characters/ 文件夹结构, tags.yaml
    - 失败 → 停止，报告
 
+   **质量检查**：
+   ```bash
+   python scripts/core/validate_yaml.py outline {material_id}
+   python scripts/core/validate_yaml.py worldbuilding {material_id}
+   python scripts/core/validate_yaml.py characters {material_id}
+   python scripts/core/validate_yaml.py novel-tags {material_id}
+   ```
+   - 任一校验失败 → 停止并报告
+   - 检查 `characters/_index.yaml` 的 `roster` 中 `protagonists` 和 `antagonists` 不为空
+   - 检查 `outline/_index.yaml` 的 `structure_summary.acts` ≥ 2
+   - 检查不通过 → 停止，不进入 pipeline-events
+
 3. 读取并执行 `pipeline-events/SKILL.md`
    - 产出：events/*.yaml, events_index.yaml, events_manifest.yaml
    - 附加：source_entities.json（原文实体提取）, completeness_report.yaml（完整性验证）
-   - 如有遗漏：执行 ai-backfill 补录
    - **此阶段可能跨对话**——pipeline-events 会在适当时机提醒开新对话
    - 如果在此阶段中断，下次 `continue` 会路由到 pipeline-events 恢复
 
+   **质量检查**：
+   ```bash
+   python scripts/core/validate_yaml.py event {material_id}
+   ```
+   - 随机抽检 3 个事件文件，校验失败 → 停止并报告
+   - 扫描所有事件的 `chapters` 字段，主线连续未覆盖 > 3 章 → 强制补切事件
+   - 运行 `validate_completeness.py {material_id}`：
+     - `completeness_score < 0.5` 且 `backfill_done=false` → **强制阻断**，执行 ai-backfill，禁止进入 pipeline-finalize
+     - 补录完成后重新验证，达标后才放行
+
 4. 读取并执行 `pipeline-finalize/SKILL.md`
+   - 前置检查：如果 `completeness_score < 0.5` 且 `backfill_done=false` → 拒绝执行
    - refine 分批执行（6 个批次，每批完成后写入）
    - 产出：精调后的 outline/characters/tags/worldbuilding + stats.*
    - 失败 → 停止，报告
+
+   **质量检查**：
+   ```bash
+   python scripts/core/validate_yaml.py outline {material_id}
+   python scripts/core/validate_yaml.py characters {material_id}
+   ```
+   - 精调后 YAML 校验失败 → 停止并报告
 
 每个子流水线内部已有自己的预览/确认逻辑，**由调度器调用时跳过子流水线的预览**（调度器层面已经确认过了），直接进入执行。
 
@@ -155,7 +219,6 @@ novel-pipeline（调度器）
 生成文件：
   - meta.yaml              (元数据)
   - source.txt             (清洗后原文)
-  - source.raw.txt         (原始备份)
   - format_report.yaml     (格式清洗报告)
   - outline/              (故事大纲文件夹，已精调)
   - worldbuilding/        (世界观文件夹，已精调)

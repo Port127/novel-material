@@ -10,6 +10,8 @@ arguments: material_id
 
 对已入库的小说原文 `source.txt` 进行格式清洗，输出清洗后的文本和格式报告。
 
+`source.txt` 由 `material-add` 从原始文件复制而来，**就是工作文件**，直接原地清洗，无需额外备份。
+
 **优先使用固化脚本** `scripts/core/source_format.py`，仅在脚本不满足需求时动态补充。
 
 ## 前置检查
@@ -19,11 +21,7 @@ arguments: material_id
 
 ## 执行步骤
 
-### 1. 备份原始文件
-
-将 `source.txt` 复制为 `source.raw.txt`（仅首次执行）。
-
-### 2. 运行固化脚本
+### 1. 运行固化脚本
 
 ```bash
 python scripts/core/source_format.py \
@@ -31,6 +29,8 @@ python scripts/core/source_format.py \
   data/novels/{material_id}/source.txt \
   data/novels/{material_id}/format_report.yaml
 ```
+
+脚本原地清洗 `source.txt`（读取后覆盖写入）。
 
 脚本覆盖的清洗操作：
 
@@ -46,7 +46,7 @@ python scripts/core/source_format.py \
 
 首次运行前安装依赖：`pip install -r scripts/requirements.txt`
 
-### 3. 检查脚本输出
+### 2. 检查脚本输出
 
 读取脚本的 stdout 摘要和生成的 `format_report.yaml`，检查：
 
@@ -54,7 +54,7 @@ python scripts/core/source_format.py \
 - **SUSPICIOUS 项**：逐条检查是否需要人工确认
 - **异常情况**：脚本未覆盖的特殊格式问题
 
-### 4. 动态补充处理（仅在需要时）
+### 3. 动态补充处理（仅在需要时）
 
 如果脚本输出中发现以下情况，**才**动态生成补充脚本：
 
@@ -69,7 +69,7 @@ python scripts/core/source_format.py \
 
 **如果脚本输出正常、无异常，跳过此步骤。**
 
-### 5. 生成章节索引 (chapter_index.yaml)
+### 4. 生成章节索引 (chapter_index.yaml)
 
 格式清洗完成后，扫描清洗后的 `source.txt`，生成持久化章节索引文件 `chapter_index.yaml`：
 
@@ -95,7 +95,7 @@ chapters:
 
 如果 `format_report.yaml` 中已包含完整章节列表，可直接提取为 `chapter_index.yaml`。
 
-### 6. 更新 meta.yaml
+### 5. 更新 meta.yaml
 
 在 `meta.yaml` 的 `pipeline` 字段内增加格式化信息：
 
@@ -133,12 +133,11 @@ pipeline:
 
 📄 报告文件：data/novels/{id}/format_report.yaml
 📄 章节索引：data/novels/{id}/chapter_index.yaml
-📄 原始备份：data/novels/{id}/source.raw.txt
 ```
 
 ## 注意事项
 
-- 原始文件始终保留备份 `source.raw.txt`
+- `source.txt` 由 `material-add` 从原始文件复制而来，直接原地清洗，**无需额外备份**
 - 不修改实际内容（剧情、对话等），只做格式层面清洗
 - 遇到无法自动判断的问题标记为 suspicious，交由用户确认
 - 固化脚本处理大文件无 token 限制，agent 只需读取脚本的输出摘要

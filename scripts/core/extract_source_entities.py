@@ -27,11 +27,23 @@ def load_character_names(characters_dir: Path) -> list[str]:
     if index_path.exists():
         with open(index_path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
-        roster = data.get("roster", [])
-        for entry in roster:
+    roster = data.get("roster", {})
+    if isinstance(roster, list):
+        entries = roster
+    elif isinstance(roster, dict):
+        entries = []
+        for group in roster.values():
+            if isinstance(group, list):
+                entries.extend(group)
+    else:
+        entries = []
+    for entry in entries:
+        if isinstance(entry, dict):
             name = entry.get("name")
-            if name:
-                names.append(str(name))
+        else:
+            name = entry
+        if name:
+            names.append(str(name))
     # 补充 profiles/ 中的文件名（去掉 .yaml）
     profiles_dir = characters_dir / "profiles"
     if profiles_dir.is_dir():

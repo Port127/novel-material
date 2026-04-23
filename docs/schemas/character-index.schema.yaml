@@ -3,24 +3,38 @@
 # 路径: data/character_index.yaml
 # 由 build-index 自动聚合，只读
 
-entries:
-  - material_id: nm_xxx
-    novel_name: "《书名》"
-    characters:
-      - name: "角色名"
-        role: protagonist           # protagonist / antagonist / supporting / minor
-        archetype: 英雄             # 从 tags.yaml archetype 选取
-        traits: [性格特征1, 性格特征2]
-        moral_spectrum: 正义         # 正义 / 灰色 / 黑暗 / 亦正亦邪 / 被迫为恶
-        arc_summary: "一句话弧线概括（≤30字）"
-        arc_stages: 3               # 弧线阶段数
-        appearance_count: 100       # 出场事件数
-        first_appearance: "第X章"
-        narrative_function: 推动主线  # 从 tags.yaml narrative_function 选取
+# ====================================================================
+# 字段说明
+# ====================================================================
+#
+# 跨书人物索引，用于横向比较不同小说的人物特征。
+# 每个条目对应一部已 completed 的素材。
+# 写作参考维度（fatal_flaw 等）从人物小传 depth 字段提取。
+#
+# R = 必填, O = 可选
 
-        # 写作参考维度（可选，从 characters.yaml 深度字段提取）
-        fatal_flaw: ""              # 致命缺陷
-        obsession: ""               # 执念
-        misbelief: ""               # 误判/错误信念
-        soft_spot: ""               # 软肋
-        contrast_habit: ""          # 反差习惯
+# ====================================================================
+# 条目列表
+# ====================================================================
+
+entries:
+  - material_id: nm_xxx                         # R | 素材ID
+    novel_name: "《书名》"                       # R | 书名
+    characters:
+      - name: "角色名"                           # R | 人物名称
+        role: protagonist                       # R | 角色类型（protagonist / antagonist / supporting / minor）
+        archetype: 英雄                          # R | 人物原型（tags.yaml → archetype）
+        traits: [性格特征1, 性格特征2]           # R | 性格特征列表
+        moral_spectrum: 正义                     # R | 道德光谱（正义 / 灰色 / 黑暗 / 亦正亦邪 / 被迫为恶）
+        arc_summary: "一句话弧线概括（≤30字）"    # O | 人物弧线摘要
+        arc_stages: 3                           # O | 弧线阶段数
+        appearance_count: 100                   # R | 出场事件数
+        first_appearance: "第X章"                # R | 首次出场章节
+        narrative_function: 推动主线             # R | 叙事功能（tags.yaml → narrative_function）
+
+        # 写作参考维度（可选，从人物小传深度字段提取）
+        fatal_flaw: ""                          # O | 致命缺陷
+        obsession: ""                           # O | 执念
+        misbelief: ""                           # O | 误判/错误信念
+        soft_spot: ""                           # O | 软肋
+        contrast_habit: ""                      # O | 反差习惯

@@ -30,6 +30,7 @@ arguments: material_id
 ### Per-Novel（事件索引）
 - `data/novels/{material_id}/events_index.yaml` — 倒排索引（标签 → event_id 列表）
 - `data/novels/{material_id}/events_manifest.yaml` — 事件清单（压缩视图）
+- `data/novels/{material_id}/events/cross_thread_events.yaml` — 跨线索交汇点（如存在，由 novel-events 第五阶段产出）
 
 ### Global（跨小说聚合索引）
 - `data/character_index.yaml` — 人物索引（从 characters/_index.yaml 聚合）
@@ -64,6 +65,9 @@ python scripts/core/build_db.py --material {material_id}
 - 自动读取 `worldbuilding/factions/` + `geography/`
 - 自动读取 `outline/hooks_network.yaml`
 - 自动填充交叉引用表 `character_events`、`faction_events`、`region_events`
+
+> ⚠️ 跨线索交汇数据（`events/cross_thread_events.yaml`）目前**仅以 YAML 存储**，
+> 不导入 SQLite。如需查询，直接读取 `cross_thread_events.yaml`。
 
 agent 只需读取脚本输出即可。如果脚本报错或需要特殊处理，再按以下步骤手动执行。
 
@@ -209,8 +213,18 @@ entries:
     novel_name: "《书名》"
     genre: [都市, 重生]
     total_events: 45
+    threads:
+      - main: 30
+      - romance_怀庆: 8
+      - subplot_魏渊: 7
+    thread_intersections:                    # 跨线索交汇统计
+      total: 15
+      by_type:
+        causal: 5
+        emotional: 6
+        thematic: 4
     structure:
-      modules_enabled: [structure, plotlines, hooks_network, pacing_curve]
+      modules_enabled: [structure, plotlines, hooks_network, pacing_curve, subplots]
       acts: 3
       plot_stages:                # 各阶段事件分布
         开篇: 3
@@ -231,6 +245,7 @@ entries:
 - 基本信息：`outline/_index.yaml`
 - 钩子统计：`outline/hooks_network.yaml`（如启用）
 - 事件分布：`events_index.yaml`
+- 线索交汇统计：`events/cross_thread_events.yaml`（如存在）
 
 ### 6. 更新 meta.yaml
 

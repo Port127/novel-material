@@ -4,9 +4,9 @@
 # 人物采用文件夹结构，主角/重要配角有独立小传，龙套只保留在索引中
 # 支持人物弧线、心理深度、关键事件交叉引用
 
-# ─────────────────────────────────────────────────────────
+# ====================================================================
 # 文件夹结构
-# ─────────────────────────────────────────────────────────
+# ====================================================================
 
 # characters/
 # ├── _index.yaml              # 必选：名册索引 + 关系概览 + 统计
@@ -16,25 +16,33 @@
 #     ├── wang_miao.yaml
 #     └── ...
 
-# ─────────────────────────────────────────────────────────
-# _index.yaml（必选）
-# ─────────────────────────────────────────────────────────
+# ====================================================================
+# 字段说明
+# ====================================================================
+#
+# 角色分四级：protagonist（主角）、antagonist（反派）、supporting（重要配角）、minor（龙套）
+# 主角和反派必须生成小传文件，龙套只保留在索引中。
+#
+# R = 必填, O = 可选
+# 值域标记 "tags.yaml → xxx" 表示值必须从 tags.yaml 的对应维度选取
 
-# 名册索引 + 关系概览 + 快速统计
+# ====================================================================
+# _index.yaml（必选）—— 名册索引 + 关系概览 + 统计
 # 路径: characters/_index.yaml
+# ====================================================================
 
-material_id: nm_xxx
+material_id: nm_xxx                             # R | 素材ID
 
 # 角色名册（全部角色一览）
 roster:
   # 主角（有详细小传）
   protagonists:
-    - name: 叶文洁
-      file: profiles/ye_wenjie.yaml
-      archetype: 悲剧反派
-      first_appearance: "第1章"
-      brief_description: "红岸基地工程师，按下命运之键"
-    
+    - name: 叶文洁                              # R | 人物名称
+      file: profiles/ye_wenjie.yaml             # R | 小传文件路径（null = 无小传，龙套级）
+      archetype: 悲剧反派                        # R | 人物原型（tags.yaml → archetype）
+      first_appearance: "第1章"                  # R | 首次出场章节
+      brief_description: "红岸基地工程师，按下命运之键"  # R | 一句话描述（≤20字）
+
     - name: 汪淼
       file: profiles/wang_miao.yaml
       archetype: 科学家
@@ -44,7 +52,7 @@ roster:
   # 反派（有详细小传或为龙套）
   antagonists:
     - name: 三体文明
-      file: null  # null 表示无详细小传，龙套级
+      file: null
       archetype: 外星入侵者
       first_appearance: "第8章"
       brief_description: "来自半人马座的入侵文明"
@@ -56,7 +64,7 @@ roster:
       archetype: 理想主义者
       first_appearance: "第5章"
       brief_description: "理论物理学家，汪淼挚友"
-    
+
     - name: 史强
       file: profiles/shi_qiang.yaml
       archetype: 粗犷警察
@@ -69,88 +77,71 @@ roster:
       file: null
       first_appearance: "第2章"
       brief_description: "叶文洁女儿，自杀身亡"
-      note: "回忆角色"
-    
+      note: "回忆角色"                         # O | 备注
+
     - name: 邵琳
       file: null
       first_appearance: "第6章"
       brief_description: "叶文洁同事"
       note: "配角"
-    
-    - name: 魏成
-      file: null
-      first_appearance: "第10章"
-      brief_description: "数学家"
-      note: "配角"
 
 # 阵营概览（与 worldbuilding/factions 互补）
 factions_summary:
-  - faction: ETO
-    members: [叶文洁, ...]
-    leader: 叶文洁
-    stance: 亲三体/反人类
-  
+  - faction: ETO                                # R | 势力名称
+    members: [叶文洁, ...]                      # R | 成员列表
+    leader: 叶文洁                              # O | 领导者
+    stance: 亲三体/反人类                        # R | 立场
+
   - faction: PDC
     members: [史强, ...]
     stance: 亲人类/防御
 
 # 关系网概览（核心关系）
 relations_summary:
-  total_relations: 23
-  key_relations:
-    - from: 叶文洁
-      to: 三体文明
-      type: 敌对
-      significance: 核心冲突
-    - from: 汪淼
-      to: 丁仪
-      type: 挚友
-      significance: 支线关系
+  total_relations: 23                           # R | 关系总数
+  key_relations:                                # R | 核心关系列表
+    - from: 叶文洁                              # R | 关系起点
+      to: 三体文明                              # R | 关系终点
+      type: 敌对                                 # R | tags.yaml → relationship
+      significance: 核心冲突                     # R | 重要性描述
 
 # 统计
 stats:
-  total_characters: 45
-  protagonists: 2
-  antagonists: 1
-  supporting: 8
-  minor: 34
-  relations: 23
-  factions: 8
+  total_characters: 45                          # R | 总角色数
+  protagonists: 2                               # R | 主角数
+  antagonists: 1                                # R | 反派数
+  supporting: 8                                 # R | 重要配角数
+  minor: 34                                     # R | 龙套数
+  relations: 23                                 # R | 关系数
+  factions: 8                                   # R | 阵营数
 
 # 人物弧线状态（概览）
 arc_status:
-  - character: 叶文洁
-    arc_stage: 完成
-    arc_type: 悲剧弧线
-    start_chapter: 1
-    end_chapter: 36
-  - character: 汪淼
-    arc_stage: 完成
-    arc_type: 探索弧线
-    start_chapter: 3
-    end_chapter: 36
+  - character: 叶文洁                           # R | 人物名称
+    arc_stage: 完成                              # R | 弧线阶段（进行中/完成）
+    arc_type: 悲剧弧线                           # R | 弧线类型（tags.yaml → arc_type）
+    start_chapter: 1                            # R | 起始章节
+    end_chapter: 36                             # R | 结束章节
 
-# ─────────────────────────────────────────────────────────
+# ====================================================================
 # relations.yaml（关系网详情）
-# ─────────────────────────────────────────────────────────
-
-# 人物关系网的详细描述
 # 路径: characters/relations.yaml
+# ====================================================================
 
-material_id: nm_xxx
+material_id: nm_xxx                             # R | 素材ID
 
 # 关系列表
 relations:
-  - from: 叶文洁
-    to: 三体文明
-    type: 敌对  # 从 tags.yaml relationship 维度选取
-    description: "背叛人类，主动联系三体"
-    importance: primary  # primary/secondary/minor
-    evolution:  # 关系演变轨迹（可选）
-      - stage: "起源"
-        state: "第一次接触"
-        chapter: 8
-        trigger_event: nm_xxx_ch08_ev003
+  - from: 叶文洁                                # R | 关系起点
+    to: 三体文明                                # R | 关系终点
+    type: 敌对                                   # R | tags.yaml → relationship
+    description: "背叛人类，主动联系三体"         # R | 关系描述
+    importance: primary                          # R | primary / secondary / minor
+    evolution:                                   # O | 关系演变轨迹
+      - stage: "起源"                            # 阶段名称
+        state: "第一次接触"                      # 关系状态
+        chapter: 8                               # 发生章节
+        trigger_event: nm_xxx_ch08_ev003         # 触发事件ID
       - stage: "加深"
         state: "建立联系"
         chapter: 15
@@ -159,133 +150,95 @@ relations:
         state: "忏悔"
         chapter: 36
         trigger_event: nm_xxx_ch36_ev012
-  
-  - from: 汪淼
-    to: 丁仪
-    type: 挚友
-    description: "科学家同僚，互相支持"
-    importance: secondary
-    evolution:
-      - stage: "相识"
-        state: "初次见面"
-        chapter: 5
-      - stage: "深化"
-        state: "共同面对危机"
-        chapter: 20
-  
-  - from: 汪淼
-    to: 史强
-    type: 同事
-    description: "调查搭档，互补关系"
-    importance: secondary
 
 # 关系网络图数据（可选，用于可视化）
 network_graph:
-  nodes: [叶文洁, 汪淼, 丁仪, 史强, 三体文明]
-  edges:
+  nodes: [叶文洁, 汪淼, 丁仪, 史强, 三体文明]    # R | 节点列表
+  edges:                                         # R | 边列表
     - source: 叶文洁
       target: 三体文明
-      weight: 5  # 关系强度 1-5
+      weight: 5                                  # 关系强度 1-5
       type: 敌对
-    - source: 汪淼
-      target: 丁仪
-      weight: 4
-      type: 挚友
 
-# ─────────────────────────────────────────────────────────
+# ====================================================================
 # profiles/{name_pinyin}.yaml（人物小传）
-# ─────────────────────────────────────────────────────────
-
-# 主角/重要配角的详细人物小传
 # 路径: characters/profiles/{name_pinyin}.yaml
-# 注意：龙套角色不在此，只保留在 _index.yaml 的 minor 列表中
+# 龙套角色不在此，只保留在 _index.yaml 的 minor 列表中
+# ====================================================================
 
-material_id: nm_xxx
-character_name: 叶文洁
+material_id: nm_xxx                             # R | 素材ID
+character_name: 叶文洁                          # R | 人物名称
 
-# ─── 基本信息 ───
+# ── 基本信息 ──
 
-role: protagonist  # protagonist/antagonist/supporting/minor
-archetype: 悲剧反派  # 从 tags.yaml archetype 维度选取
-narrative_function: 推动主线  # 从 tags.yaml narrative_function 维度选取
+role: protagonist                               # R | protagonist / antagonist / supporting / minor
+archetype: 悲剧反派                              # R | tags.yaml → archetype
+narrative_function: 推动主线                     # R | tags.yaml → narrative_function
 
-first_appearance: "第1章"
-last_appearance: "第36章"  # 可选
+first_appearance: "第1章"                       # R | 首次出场章节
+last_appearance: "第36章"                       # O | 最后出场章节
 
-# 别名/称呼
-aliases:
+aliases:                                        # O | 别名/称呼列表
   - "叶工"
   - "红岸工程师"
 
-# 核心特征（一句话）
-description: "红岸基地工程师，按下命运之键，背叛人类"
+description: "红岸基地工程师，按下命运之键，背叛人类"  # R | 核心特征（一句话）
 
-# ─── 性格特征 ───
+# ── 性格特征 ──
 
-traits:
+traits:                                         # R | 性格特征列表
   - 冷静理性
   - 隐忍深沉
   - 悲观主义
 
-# 道德光谱
-moral_spectrum: 灰色  # 正义/灰色/黑暗/亦正亦邪
+moral_spectrum: 灰色                             # R | tags.yaml → moral_spectrum
 
-# ─── 心理深度维度（主要角色必填）───
+# ── 心理深度维度（protagonist/antagonist 必填）───
 
 psychology:
-  # 会害到自己或他人的关键缺陷
-  fatal_flaw: "对人类的绝望导致背叛"
-  
-  # 长期追求、放不下的事物
-  obsession: "寻找更高等的文明来拯救人类"
-  
-  # 最在意的人或事
-  soft_spot: "女儿杨冬、对科学的纯粹追求"
-  
-  # 坚信但并不完全正确的信念
-  misbelief: "人类已无可救药，唯有外来力量能改变"
-  
-  # 与身份或表象相反的小习惯
-  contrast_habit: "表面冷静，内心却对女儿的自杀极度自责"
-  
-  # 容易触发错过/误判/等待落空的结构点
-  tragedy_trigger: "信任背叛、女儿的死亡"
+  fatal_flaw: "对人类的绝望导致背叛"             # O | 关键缺陷（会害到自己或他人）
+  obsession: "寻找更高等的文明来拯救人类"         # O | 执念（长期追求、放不下的事物）
+  soft_spot: "女儿杨冬、对科学的纯粹追求"         # O | 软肋（最在意的人或事）
+  misbelief: "人类已无可救药，唯有外来力量能改变"  # O | 误判（坚信但并不完全正确的信念）
+  contrast_habit: "表面冷静，内心却对女儿的自杀极度自责"  # O | 反差习惯
+  tragedy_trigger: "信任背叛、女儿的死亡"         # O | 悲剧触发点
 
-# ─── 外貌特征（可选，便于写作保持一致）───
+# ── 外貌特征（可选）───
 
 appearance:
-  age: "中年"
-  gender: 女性
-  features:
+  age: "中年"                                   # O | 年龄段
+  gender: 女性                                  # O | 性别
+  features:                                     # O | 外貌特征列表
     - "面容冷峻"
     - "眼神深邃"
-  typical_clothing: "工程师制服"
+  typical_clothing: "工程师制服"                # O | 典型着装
 
-# ─── 人物弧线 ───
+# ── 人物弧线 ──
 
 arc:
-  type: 悲剧弧线  # 成长弧线/堕落弧线/悲剧弧线/探索弧线/...
-  stages:
-    - stage: 起点
-      state: "红岸基地工程师，对人类失望"
-      chapter: 1
-      description: "回忆红岸时代，埋下背叛种子"
-      key_events: [nm_xxx_ch01_ev001]
-    
+  type: 悲剧弧线                                 # R | 弧线类型（成长弧线/堕落弧线/悲剧弧线/探索弧线）
+  stages:                                       # R | 弧线阶段列表
+    - stage: 起点                               # 阶段名称（起点/转折1/转折2/.../终点）
+      state: "红岸基地工程师，对人类失望"        # 该阶段的状态
+      chapter: 1                                 # 发生章节
+      description: "回忆红岸时代，埋下背叛种子"   # 描述
+      key_events: [nm_xxx_ch01_ev001]           # 关联事件ID列表
+      trigger: "接收三体信号"                    # O | 触发事件（转折阶段必填）
+
     - stage: 转折1
       state: "发现三体信号，做出选择"
       chapter: 8
       trigger: "接收三体信号"
       description: "按下发射键，命运的抉择"
       key_events: [nm_xxx_ch08_ev003]
-    
+
     - stage: 转折2
       state: "建立ETO，背叛深化"
       chapter: 15
       trigger: "组织三体信徒"
       description: "成为ETO精神领袖"
       key_events: [nm_xxx_ch15_ev005]
-    
+
     - stage: 终点
       state: "临终忏悔，揭示真相"
       chapter: 36
@@ -293,101 +246,80 @@ arc:
       description: "向汪淼坦白，弧线收束"
       key_events: [nm_xxx_ch36_ev012]
 
-# ─── 关系网络（该角色的人际关系）───
+# ── 关系网络（该角色的人际关系）───
 
 relationships:
-  - to: 三体文明
-    type: 救世主情结/敌对
-    description: "将三体视为拯救力量"
-    importance: primary
-    evolution_file: relations.yaml  # 指向详细演变
-  
+  - to: 三体文明                                # R | 关系对象
+    type: 救世主情结/敌对                         # R | 关系类型
+    description: "将三体视为拯救力量"             # R | 关系描述
+    importance: primary                          # R | primary / secondary / minor
+    evolution_file: relations.yaml               # O | 指向详细演变文件
+
   - to: 杨冬
     type: 母女
     description: "女儿自杀成为心理创伤"
     importance: primary
-  
+
   - to: 汪淼
     type: 前辈/启示者
     description: "向汪淼揭示真相"
     importance: secondary
 
-# ─── 关键事件（交叉引用，≤ 10 个）───
+# ── 关键事件（交叉引用）───
 
 key_events:
-  - event_id: nm_xxx_ch01_ev001
-    chapter: 1
-    description: "首次出场，回忆红岸基地"
-    significance: "人物起点，埋下背叛种子"
-    role_in_event: 主角
-  
+  - event_id: nm_xxx_ch01_ev001                 # R | 事件ID
+    chapter: 1                                   # R | 章节号
+    description: "首次出场，回忆红岸基地"         # R | 事件简述
+    significance: "人物起点，埋下背叛种子"        # R | 意义
+    role_in_event: 主角                          # R | 在事件中的角色
+
   - event_id: nm_xxx_ch08_ev003
     chapter: 8
     description: "接收三体信号，按下发射键"
     significance: "核心转变，命运的抉择"
     role_in_event: 主角
-  
-  - event_id: nm_xxx_ch15_ev005
-    chapter: 15
-    description: "建立ETO组织"
-    significance: "势力建立"
-    role_in_event: 发起者
-  
-  - event_id: nm_xxx_ch36_ev012
-    chapter: 36
-    description: "临终忏悔，揭示真相"
-    significance: "人物终点，弧线收束"
-    role_in_event: 主角
 
-# ─── 对白样本（可选，角色语言风格参考）───
+# ── 对白样本（可选）───
 
 dialogue_samples:
-  - quote: "人类已无法自救，唯有引来更高等的力量..."
-    context: "向三体发送信号"
-    style_note: "冷静、绝望、坚定"
-  
-  - quote: "我犯下了不可挽回的错误..."
-    context: "临终忏悔"
-    style_note: "沉痛、内疚"
+  - quote: "人类已无法自救，唯有引来更高等的力量..."  # R | 对白原文
+    context: "向三体发送信号"                    # R | 语境
+    style_note: "冷静、绝望、坚定"               # R | 语言风格注记
 
-# ─── 阵营归属 ───
+# ── 阵营归属 ──
 
 faction_affiliations:
-  - faction: ETO
-    role: 精神领袖/创始人
-    period: "第8章 - 第36章"
-    stance: 核心
-  
-  - faction: 红岸基地
-    role: 工程师
-    period: "回忆部分"
-    stance: 成员
+  - faction: ETO                                # R | 势力名称
+    role: 精神领袖/创始人                         # R | 在该势力中的角色
+    period: "第8章 - 第36章"                    # R | 归属时期
+    stance: 核心                                 # R | 在该势力中的地位
 
-# ─── 与势力/地点的关联 ───
+# ── 与势力/地点的关联 ──
 
 worldbuilding_links:
   factions:
-    - faction: ETO
-      file: worldbuilding/factions/eto.yaml
-      relationship: 创始人
-  
+    - faction: ETO                              # R | 势力名称
+      file: worldbuilding/factions/eto.yaml     # R | 势力文件路径
+      relationship: 创始人                       # R | 关联描述
+
   locations:
-    - location: 红岸基地
-      file: worldbuilding/geography/red_coast.yaml
-      relationship: 工作地点/命运转折点
+    - location: 红岸基地                         # R | 地点名称
+      file: worldbuilding/geography/red_coast.yaml  # R | 地点文件路径
+      relationship: 工作地点/命运转折点            # R | 关联描述
 
-# ─────────────────────────────────────────────────────────
+# ====================================================================
 # 粒度自适应规则
-# ─────────────────────────────────────────────────────────
-
+# ====================================================================
+#
 # 人物小传的生成规则：
 #
 # | 角色类型    | 小传文件 | 内容深度                         |
 # |-------------|----------|----------------------------------|
-# | protagonist | ✅ 必须   | 完整小传（含心理维度、弧线、对白）|
-# | antagonist  | ✅ 必须   | 完整小传                         |
-# | supporting  | ⚡ 可选   | 核心小传（弧线、关键事件）        |
-# | minor       | ❌ 无     | 只在 _index.yaml 保留基本信息    |
+# | protagonist | 必须      | 完整小传（含心理维度、弧线、对白） |
+# | antagonist  | 必须      | 完整小传                         |
+# | supporting  | 可选      | 核心小传（弧线、关键事件）        |
+# | minor       | 无        | 只在 _index.yaml 保留基本信息    |
 #
 # 判断逻辑：
 # - role = protagonist/antagonist → 必须生成 profiles/{name}.yaml
@@ -398,4 +330,3 @@ worldbuilding_links:
 # key_events 限制：
 # - protagonist/antagonist: ≤ 10 个关键事件
 # - supporting: ≤ 5 个关键事件
-# - 避免膨胀，只记录真正重要的节点

@@ -1,46 +1,72 @@
 # format_report.yaml schema
 # 源文件格式化报告
 # 路径: data/novels/{material_id}/format_report.yaml
+# 由 source-format 阶段生成，记录原文清洗入库的完整统计
 
-material_id: nm_xxx
-formatted_at: "2026-04-05T12:00:00Z"
+# ====================================================================
+# 字段说明
+# ====================================================================
+#
+# 报告记录格式化脚本对 source.txt 的全部修改，
+# 包括章节解析、繁简转换、广告去除、标点修复等。
+#
+# R = 必填, O = 可选
 
+# ====================================================================
+# 基本信息
+# ====================================================================
+
+material_id: nm_xxx                             # R | 素材ID
+formatted_at: "2026-04-05T12:00:00Z"            # R | 格式化完成时间
+
+# ====================================================================
 # 章节结构
+# ====================================================================
+
 chapters:
-  total_detected: 1070
-  title_pattern: "第{N}章 {name}"     # 识别到的主要章节标题模式
-  missing: [233, 567]                  # 缺失的章节号
-  duplicates:
+  total_detected: 1070                          # R | 识别到的章节总数
+  title_pattern: "第{N}章 {name}"               # R | 识别到的主要章节标题模式
+  missing: [233, 567]                           # O | 缺失的章节号列表
+  duplicates:                                   # O | 疑似重复章节
     - chapter: 445
-      duplicate_of: 444
-      similarity: 0.95
-  short_chapters:                      # 异常短章（< 200字）
+      duplicate_of: 444                         # 与之重复的章节号
+      similarity: 0.95                          # 文本相似度
+  short_chapters:                               # O | 异常短章（< 200字）
     - chapter: 789
       char_count: 120
       note: "疑似截断"
 
+# ====================================================================
 # 修复统计
-fixes:
-  traditional_to_simplified: 1203      # 繁→简转换字数
-  quote_fixed: 87                      # 引号修复处数
-  ads_removed: 15                      # 广告段落删除数
-  garbled_cleaned: 3                   # 乱码清理处数
-  chapter_title_normalized: 1070       # 章节名标准化数
-  whitespace_fixed: 500                # 空白修复处数
-  punctuation_fixed: 200               # 标点修复处数
+# ====================================================================
 
+fixes:
+  traditional_to_simplified: 1203               # R | 繁→简转换字数
+  quote_fixed: 87                               # R | 引号修复处数
+  ads_removed: 15                               # R | 广告段落删除数
+  garbled_cleaned: 3                            # R | 乱码清理处数
+  chapter_title_normalized: 1070                # R | 章节名标准化数
+  whitespace_fixed: 500                         # R | 空白修复处数
+  punctuation_fixed: 200                        # R | 标点修复处数
+
+# ====================================================================
 # 需人工确认的问题
+# ====================================================================
+
 suspicious:
-  - chapter: 233
-    issue: "章节缺失，从232直接跳到234"
-    severity: high                     # high / medium / low
+  - chapter: 233                                # 问题章节号
+    issue: "章节缺失，从232直接跳到234"          # 问题描述
+    severity: high                              # high / medium / low
   - chapter: 789
     issue: "章节字数仅120字，疑似截断"
     severity: medium
 
+# ====================================================================
 # 前后对比
+# ====================================================================
+
 diff_summary:
-  original_chars: 3500000              # 原始总字数
-  cleaned_chars: 3480000               # 清洗后总字数
-  removed_chars: 20000                 # 删除字数
-  modified_lines: 2500                 # 修改行数
+  original_chars: 3500000                       # R | 原始总字数
+  cleaned_chars: 3480000                        # R | 清洗后总字数
+  removed_chars: 20000                          # R | 删除字数
+  modified_lines: 2500                          # R | 修改行数

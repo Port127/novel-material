@@ -334,6 +334,50 @@ def full_audit(material_id: str, write_report: bool = False):
 
     failed_batches = [b['range'] for b in batch_results if b['status'] == 'failed']
 
+    _exit_blocked = False
+
+    # ── Gate 0: Determine total_chapters from chapter_index.yaml ──
+    chapter_index_path = base_dir / "chapter_index.yaml"
+    if chapter_index_path.exists():
+        with open(chapter_index_path, 'r', encoding='utf-8') as f:
+            ci = yaml.safe_load(f) or {}
+        total_chapters = ci.get('total', max_ch)
+    else:
+        total_chapters = max_ch
+
+    # ── Gate 1: Event density check ──
+    density_result = check_event_density(all_valid, total_chapters)
+    print(f"\n事件密度:")
+    print(f"  主线事件: {density_result['main_event_count']}/{total_chapters} 章")
+    print(f"  总事件: {density_result['total_event_count']}/{total_chapters} 章")
+    print(f"  密度: {density_result['density']:.3f}")
+    if density_result['density'] < 0.25:
+        print(f"\n🚫 密度严重不足 (< 0.25)，禁止进入下一阶段")
+        if density_result.get('issues'):
+            for issue in density_result['issues']:
+                print(f"  - {issue}")
+        print("  请补切事件后重新审计")
+        _exit_blocked = True
+    elif density_result['density'] < 0.4:
+        print(f"\n⚠️  密度偏低 (0.25 ≤ 密度 < 0.4)，建议补切事件")
+        if density_result.get('issues'):
+            for issue in density_result['issues']:
+                print(f"  - {issue}")
+
+    # ── Gate 2: Chapter coverage check ──
+    coverage_result = check_chapter_coverage(all_valid, total_chapters)
+    print(f"\n章节覆盖:")
+    print(f"  已覆盖: {coverage_result['coverage_rate']:.1%} ({len(coverage_result['covered_chapters'])}/{total_chapters})")
+    print(f"  最大连续缺口: {coverage_result['max_consecutive_gap']} 章")
+    if coverage_result['missing_chapters']:
+        missing_str = ', '.join(str(c) for c in coverage_result['missing_chapters'][:20])
+        suffix = '...' if len(coverage_result['missing_chapters']) > 20 else ''
+        print(f"  未覆盖章节: {missing_str}{suffix}")
+    if coverage_result['status'] == 'fail':
+        print(f"\n🚫 连续未覆盖章节超过 3 章，禁止进入下一阶段")
+        print("  请补切事件后重新审计")
+        _exit_blocked = True
+
     # Print summary
     print(f"\n{'='*50}")
     print(f"📊 质量审计报告 — {material_id}")
@@ -382,15 +426,23 @@ def full_audit(material_id: str, write_report: bool = False):
             meta = yaml.safe_load(f) or {}
         meta['event_batches'] = batch_results
         meta['quality_drift'] = drift
+        meta['event_density'] = density_result
+        meta['chapter_coverage'] = coverage_result
         with open(meta_path, 'w', encoding='utf-8') as f:
             yaml.dump(meta, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
         print(f"📄 批次质量数据已写入 meta.yaml")
+
+    # Deferred exit: allow report/meta to be written before blocking
+    if locals().get('_exit_blocked'):
+        sys.exit(1)
 
     return {
         'total': total,
         'failed_batches': failed_batches,
         'drift': drift,
         'global_quality': global_quality,
+        'event_density': density_result,
+        'chapter_coverage': coverage_result,
     }
 
 
@@ -461,6 +513,59 @@ def batch_audit(material_id: str, batch_range: str):
 
     print(f"📄 批次结果已写入 meta.yaml")
     return result
+
+
+def check_chapter_coverage(events: list, total_chapters: int) -> dict:
+    """检查事件对章节的覆盖情况。"""
+    covered = set()
+    for e in events:
+        if isinstance(e, dict):
+            for ch in e.get('chapters', []):
+                try:
+                    covered.add(int(ch))
+                except (ValueError, TypeError):
+                    continue
+
+    missing = sorted(set(range(1, total_chapters + 1)) - covered)
+
+    # 计算最大连续缺口
+    max_gap = 0
+    current_gap = 0
+    for i in range(1, total_chapters + 1):
+        if i not in covered:
+            current_gap += 1
+            max_gap = max(max_gap, current_gap)
+        else:
+            current_gap = 0
+
+    return {
+        'covered_chapters': sorted(covered),
+        'coverage_rate': round(len(covered) / total_chapters, 3) if total_chapters > 0 else 0,
+        'missing_chapters': missing,
+        'max_consecutive_gap': max_gap,
+        'status': 'pass' if max_gap <= 3 else 'fail',
+    }
+
+
+def check_event_density(events: list, total_chapters: int) -> dict:
+    """检查事件密度是否合理。"""
+    main_events = [e for e in events if e.get('thread') == 'main']
+    density = len(main_events) / total_chapters if total_chapters > 0 else 0
+
+    issues = []
+    if density < 0.4:
+        issues.append(
+            f"事件密度过低: {density:.2f} (每章 {len(main_events)} 个主线事件 / {total_chapters} 章)"
+        )
+
+    return {
+        'main_event_count': len(main_events),
+        'total_event_count': len(events),
+        'total_chapters': total_chapters,
+        'density': round(density, 3),
+        'status': 'pass' if density >= 0.4 else 'fail',
+        'issues': issues if issues else None,
+    }
 
 
 def main():

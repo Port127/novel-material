@@ -71,7 +71,6 @@
                +-------------------------------+
                | novels/{id}/meta.yaml          |  元数据
                | novels/{id}/source.txt         |  清洗后原文
-               | novels/{id}/source.raw.txt     |  原始备份
                | novels/{id}/format_report.yaml |  清洗报告
                | novels/{id}/outline.yaml       |  大纲（+精调）
                | novels/{id}/worldbuilding.yaml |  世界观设定（+精调）
@@ -183,7 +182,6 @@ scripts/
 |------|------|--------|
 | `meta.yaml` | 元数据（书名、作者、状态、pipeline 进度） | `material-add` / `material-import` |
 | `source.txt` | 清洗后原文 | `material-add` + `source-format` |
-| `source.raw.txt` | 原始备份 | `source-format` |
 | `format_report.yaml` | 格式清洗报告 | `source-format` |
 | `chapter_index.yaml` | 章节索引（章号+标题+行号范围） | `source-format` |
 | `outline.yaml` | 故事大纲（结构+节奏+钩子） | `novel-outline` + `refine` |
@@ -389,3 +387,18 @@ python ../novel-material/scripts/core/search.py text --query 告别
 **决策**：移除 FastAPI 后端 + React 前端 Web UI。所有操作统一通过 Agent CLI 和脚本完成。
 
 **动机**：Web UI 的 `events` 阶段（事件拆分）因复杂度过高无法在浏览器内运行，大部分核心功能仍依赖 Agent CLI。维护两套入口（CLI + Web）增加了复杂度但收益有限。移除后架构更精简，所有功能仍可通过 CLI 完成。
+
+### ADR-6：流水线阶段间必须加脚本门控（2026-04）
+
+**决策**：在 `pipeline-events` 的事件拆分和 build-index 之间加入 `quality_audit.py` 全书审计作为强制门控。密度 < 0.25 或连续覆盖缺口 > 3 章时 `exit 1` 阻断。
+
+**动机**：首次完整 pipeline 运行（《三体1》）暴露出 agent 跳过了事件拆分的扫描阶段，直接凭印象写了 12 个事件（36 章，密度 0.33），后续所有阶段（索引构建、实体提取、精调、统计）都基于低质量数据运行，最终完整度仅 2.6%。根本原因：SKILL 的"MUST"约束对 LLM 不够强，agent 会自作主张判断"这个检查意义不大"然后跳过。
+
+**设计原则**：
+1. 门控脚本必须只读（不修改数据），失败时先写诊断报告再 exit 1
+2. 阈值分级：严重不足强制阻断（exit 1），轻微偏低只警告（允许继续）
+3. SKILL 声明"禁止跳过" + 脚本 exit 1 双重约束
+
+**代价**：每个流水线阶段之间增加 1-2 次脚本调用（< 10 秒）。对于低质量产出，agent 需要额外补切事件。但这是正确的反馈，总比基于垃圾数据生成完整但错误的产物好。
+
+**可移植性**：此模式已抽象为全局 skill `~/.cursor/skills/ai-pipeline-gates/SKILL.md`，适用于任何由 agent 执行的多步骤流水线。

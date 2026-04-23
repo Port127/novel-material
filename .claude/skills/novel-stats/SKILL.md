@@ -185,6 +185,60 @@ hooks_stats:
 - 从 `hooks_network.chains` 计算跨度分布
 - 从 `hooks_network.pending` 提取待回收详情
 
+### 7b. 线索交织统计
+
+从 `events/cross_thread_events.yaml`（如存在）采集跨线索交汇数据：
+
+```yaml
+thread_analysis:
+  # 总体统计
+  total_intersections: 15                # 交汇点总数
+  intersection_density: 0.018            # 交汇章数 / 总章数
+  
+  # 按交汇类型分布
+  by_type:
+    causal: 5                            # 因果交汇
+    emotional: 6                         # 情感交汇
+    thematic: 3                          # 主题交汇
+    parallel: 1                          # 并行交汇
+  
+  # 按线索对分布
+  by_thread_pair:
+    main + romance_怀庆: 7               # 主线×感情线
+    main + subplot_魏渊: 4              # 主线×支线
+    romance_怀庆 + subplot_临安: 2      # 感情线间交汇
+    main + cast_许新年: 2               # 主线×群像线
+  
+  # 按章节段分布（每50章一段）
+  by_chapter_range:
+    1-50: 1
+    51-100: 3
+    101-150: 4
+    151-200: 2
+    201-250: 3
+    251-300: 2
+  
+  # 各支线交汇详情
+  subplot_intersection_detail:
+    - subplot: romance_怀庆
+      total: 7
+      dominant_type: emotional
+      anchor_chapters: [50, 120, 200, 350]
+      with_mainline: true
+      causal_impact: medium              # 对主线的因果影响力（high/medium/low）
+    - subplot: subplot_魏渊
+      total: 4
+      dominant_type: causal
+      anchor_chapters: [100, 250]
+      with_mainline: true
+      causal_impact: high
+```
+
+**数据来源**：
+- 从 `events/cross_thread_events.yaml` 读取交汇点清单
+- 从 `outline/subplots.yaml` 的 `mainline_integration` 读取支线交汇锚点
+- 从 `outline/plotlines.yaml` 的 `intersection_matrix` 读取线索交织矩阵
+
 ### 8. 人物统计
 
 ```yaml
@@ -272,6 +326,11 @@ relationship_graph:
 
 ## 节奏模式
 (Mermaid xychart-beta 堆叠图)
+
+## 线索交织分析
+(饼图：按交汇类型分布)
+(表格：各支线交汇详情 — 支线名 / 交汇次数 / 主导类型 / 锚点章节)
+(柱状图：按章节段分布 — 每50章一段的交汇密度)
 ```
 
 ### 12. 生成交互版报告 stats.html
@@ -290,6 +349,10 @@ relationship_graph:
    - 节点 = 人物（大小按出场频率，颜色按阵营）
    - 边 = 关系（标签显示关系类型，粗细按 weight）
    - 支持拖拽、缩放、hover 显示详情
+9. **线索交织图谱** — ECharts Graph 力导向图（如存在 cross_thread_events.yaml）
+   - 节点 = 线索（主线/支线/感情线，大小按事件数，颜色按重要性）
+   - 边 = 交汇关系（标签显示交汇类型，粗细按交汇次数）
+   - 支持拖拽、缩放、hover 显示交汇详情
 
 **HTML 生成策略**：
 - 单文件，所有 CSS/JS 内联（ECharts 通过 CDN 引入）
@@ -304,6 +367,13 @@ relationship_graph:
 - `stats.yaml` — 所有原始统计数据（含 relationship_graph）
 - `stats.md` — 轻量可视化报告（Mermaid）
 - `stats.html` — 交互版报告（ECharts + 关系图谱）
+
+**⚠️ API 速率限制约束**：
+
+| 规则 | 说明 |
+|------|------|
+| **每次最多写入 1 个报告文件** | stats.yaml、stats.md、stats.html 依次写入，不得并行 |
+| **stats.html 可能超过上下文** | 如 HTML 内容过大，分 2-3 次 Write 调用追加写入 |
 
 ### 14. 更新 meta.yaml
 
@@ -324,6 +394,7 @@ pipeline:
   事件总数：45
   转折点：{n} 个（平均每 23.7 章一个）
   钩子网络：45 总 / 38 已验证 / 7 待回收（验证率 84%）
+  线索交织：{n} 个交汇点（密度 {rate}）
   主导情感：紧张、温馨、平静
   紧张度范围：1.5 - 4.8
 

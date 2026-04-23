@@ -4,9 +4,9 @@
 # 大纲采用文件夹结构，支持模块化和按需加载
 # 各模块根据小说特征自动启用（必选 + 可选机制）
 
-# ─────────────────────────────────────────────────────────
+# ====================================================================
 # 文件夹结构
-# ─────────────────────────────────────────────────────────
+# ====================================================================
 
 # outline/
 # ├── _index.yaml              # 必选：概览 + 模块索引 + 统计
@@ -18,22 +18,34 @@
 # ├── themes.yaml              # 可选：主题演变
 # └── emotional_arc.yaml       # 可选：情绪曲线
 
-# ─────────────────────────────────────────────────────────
-# _index.yaml（必选）
-# ─────────────────────────────────────────────────────────
+# ====================================================================
+# 字段说明
+# ====================================================================
+#
+# structure 模块必选，其余按条件启用：
+# - plotlines: 多线叙事时启用
+# - hooks_network: 伏笔密集时启用
+# - pacing_curve: 章节数 > 30 时启用
+# - subplots: 支线 > 3 时启用
+# - themes: 主题复杂时启用
+# - emotional_arc: 情绪导向时启用
+#
+# R = 必填, O = 可选
 
-# 大纲概览 + 模块导航 + 快速统计
+# ====================================================================
+# _index.yaml（必选）—— 大纲概览 + 模块导航 + 快速统计
 # 路径: outline/_index.yaml
+# ====================================================================
 
-material_id: nm_xxx
+material_id: nm_xxx                             # R | 素材ID
 
 # 全书概要
-premise: "一句话核心前提"
-theme: [生存与文明, 科学与人道]
-tone: [硬科幻, 冷峻, 哲思]
+premise: "一句话核心前提"                         # R | 核心前提（一句话概括）
+theme: [生存与文明, 科学与人道]                   # R | 主题标签
+tone: [硬科幻, 冷峻, 哲思]                        # R | 基调标签
 
 # 启用的模块（根据小说特征自动判断）
-modules_enabled:
+modules_enabled:                                # R | 已启用模块列表
   - structure      # 必选
   - plotlines      # 可选：多线叙事时启用
   - hooks_network  # 可选：伏笔密集时启用
@@ -44,10 +56,10 @@ modules_enabled:
 
 # 结构索引（快速导航）
 structure_summary:
-  acts: 3
-  sequences: 12
-  beats: 48
-  act_ranges:
+  acts: 3                                       # R | 幕数
+  sequences: 12                                 # R | 序列数
+  beats: 48                                     # R | 节拍数
+  act_ranges:                                   # R | 各幕章节范围
     - act: 1
       title: "发现危机"
       chapters: [1, 10]
@@ -60,85 +72,77 @@ structure_summary:
 
 # 情节线索索引（启用 plotlines 模块时）
 plotlines_summary:
-  count: 4
-  names: [主线, 科技线, 伦理线, 文明线]
+  count: 4                                      # R | 线索数
+  names: [主线, 科技线, 伦理线, 文明线]           # R | 线索名称列表
 
 # 钩子统计（启用 hooks_network 模块时）
 hooks_stats:
-  total: 45
-  verified: 38
-  pending: 7
+  total: 45                                     # R | 钩子总数
+  verified: 38                                  # R | 已验证
+  pending: 7                                    # R | 待回收
 
 # 支线统计（启用 subplots 模块时）
 subplots_stats:
-  count: 5
+  count: 5                                      # R | 支线数
 
 # 主题统计（启用 themes 模块时）
 themes_stats:
-  count: 3
+  count: 3                                      # R | 主题数
 
-# ─────────────────────────────────────────────────────────
-# structure.yaml（必选）
-# ─────────────────────────────────────────────────────────
-
-# 结构骨架：幕 → 序列 → 节拍
+# ====================================================================
+# structure.yaml（必选）—— 结构骨架：幕 → 序列 → 节拍
 # 路径: outline/structure.yaml
+# ====================================================================
 
-material_id: nm_xxx
+material_id: nm_xxx                             # R | 素材ID
 
 # 三层结构
 acts:
-  - act: 1
-    title: "幕名"
-    chapters: [1, 10]
-    arc: "本幕叙事弧线"
-    sequences:
-      - sequence: 1
-        title: "序列名"
-        chapters: [1, 3]
-        beats:
-          - beat: 1
-            title: "节拍名"
-            chapter: 1
-            description: "节拍描述"
-            tension: 2
+  - act: 1                                      # R | 幕编号
+    title: "幕名"                                # R | 幕名称
+    chapters: [1, 10]                           # R | 章节范围
+    arc: "本幕叙事弧线"                           # R | 叙事弧线描述
+    sequences:                                  # R | 序列列表
+      - sequence: 1                             # 序列编号
+        title: "序列名"                          # 序列名称
+        chapters: [1, 3]                        # 序列章节范围
+        beats:                                  # 节拍列表
+          - beat: 1                             # 节拍编号
+            title: "节拍名"                      # 节拍名称
+            chapter: 1                           # 发生章节
+            description: "节拍描述"               # 节拍描述
+            tension: 2                           # 张力值 1-5
           - beat: 2
             title: "节拍名"
             chapter: 2
             description: "节拍描述"
             tension: 3
-      - sequence: 2
-        title: "序列名"
-        chapters: [4, 6]
-        beats: [...]
     turning_point:
-      chapter: 10
-      description: "转折点描述"
-      type: "转折类型"  # inciting_incident / first_threshold / midpoint / dark_night / climax
+      chapter: 10                               # R | 转折点章节
+      description: "转折点描述"                   # R | 转折描述
+      type: first_threshold                    # R | inciting_incident / first_threshold / midpoint / dark_night / climax
 
 # 结构模板识别（可选）
 structure_pattern:
-  type: "三幕式"  # 三幕式 / 英雄之旅 / 五幕式 / 环形结构 / ...
-  description: "简要说明"
+  type: "三幕式"                                 # O | 结构类型（三幕式/英雄之旅/五幕式/环形结构）
+  description: "简要说明"                         # O | 结构说明
 
-# ─────────────────────────────────────────────────────────
-# plotlines.yaml（可选，多线叙事时启用）
-# ─────────────────────────────────────────────────────────
-
-# 情节线索追踪：各线的起点 → 转折 → 高潮 → 收束
+# ====================================================================
+# plotlines.yaml（可选）—— 情节线索追踪
 # 路径: outline/plotlines.yaml
+# ====================================================================
 
-material_id: nm_xxx
+material_id: nm_xxx                             # R | 素材ID
 
 plotlines:
-  - name: "主线"
-    description: "线索简述"
-    importance: primary  # primary / secondary / tertiary
-    chapters_covered: [1, 36]
-    stages:
-      - stage: origin
-        chapter: 1
-        description: "线索起点"
+  - name: "主线"                                # R | 线索名称
+    description: "线索简述"                       # R | 线索描述
+    importance: primary                          # R | primary / secondary / tertiary
+    chapters_covered: [1, 36]                   # R | 覆盖章节范围
+    stages:                                     # R | 线索发展阶段
+      - stage: origin                           # 阶段（origin/development/climax/resolution）
+        chapter: 1                               # 发生章节
+        description: "线索起点"                   # 阶段描述
       - stage: development
         chapter: 10
         description: "线索发展"
@@ -148,85 +152,73 @@ plotlines:
       - stage: resolution
         chapter: 36
         description: "线索收束"
-    key_events: [event_id_1, event_id_2]
-    intersections_with: [线索B, 线索C]  # 与其他线索的交汇点
-
-  - name: "科技线"
-    description: "科技发现脉络"
-    importance: secondary
-    chapters_covered: [3, 30]
-    stages: [...]
-    key_events: [...]
-    intersections_with: [主线]
+    key_events: [event_id_1, event_id_2]        # O | 关键事件ID列表
+    intersections_with: [线索B, 线索C]           # O | 与其他线索的交汇点
 
 # 多线交织矩阵（可选）
 intersection_matrix:
-  - plotline_a: 主线
-    plotline_b: 科技线
-    intersect_chapters: [5, 15, 25]
-    description: "交汇描述"
+  - plotline_a: 主线                            # R | 线索A
+    plotline_b: 科技线                           # R | 线索B
+    intersect_chapters: [5, 15, 25]             # R | 交汇章节
+    description: "交汇描述"                       # R | 交汇描述
 
-# ─────────────────────────────────────────────────────────
-# hooks_network.yaml（可选，伏笔密集时启用）
-# ─────────────────────────────────────────────────────────
-
-# 钩子网络：埋设 → 回收链
+# ====================================================================
+# hooks_network.yaml（可选）—— 钩子网络：埋设 → 回收链
 # 路径: outline/hooks_network.yaml
+# ====================================================================
 
-material_id: nm_xxx
+material_id: nm_xxx                             # R | 素材ID
 
 # 铆合链列表
 chains:
-  - hook_id: hook_001
-    hook_type: 道具钩子              # 道具钩子/人物钩子/悬念钩子/信息钩子/情感钩子
-    crossing_type: 因果铆合          # 反转铆合/因果铆合/悬念铆合/期待铆合
-    planted:
-      chapter: 3
-      description: "钩子描述"
-      source: plot_function           # hooks字段 或 plot_function
-    harvested:
-      chapter: 28
-      description: "回收描述"
-    confidence: high                 # high/medium/low
+  - hook_id: hook_001                           # R | 钩子ID
+    hook_type: 道具钩子                           # R | 道具钩子/人物钩子/悬念钩子/信息钩子/情感钩子
+    crossing_type: 因果铆合                       # R | 反转铆合/因果铆合/悬念铆合/期待铆合
+    planted:                                    # R | 埋设信息
+      chapter: 3                                 # 埋设章节
+      description: "钩子描述"                     # 埋设描述
+      source: plot_function                     # 来源（hooks字段 / plot_function）
+    harvested:                                  # R | 回收信息
+      chapter: 28                                # 回收章节
+      description: "回收描述"                     # 回收描述
+    confidence: high                            # R | high / medium / low
 
 # 待回收钩子
 pending:
-  - hook_id: hook_002
+  - hook_id: hook_002                           # R | 钩子ID
     hook_type: 信息钩子
     crossing_type: 反转铆合
-    planted_chapter: 12
-    detail: "待回收钩子描述"
-    confidence: low
+    planted_chapter: 12                         # R | 埋设章节
+    detail: "待回收钩子描述"                      # R | 钩子描述
+    confidence: low                             # R | high / medium / low
 
 # 统计
 stats:
-  total_hooks: 45
-  verified_hooks: 38
-  pending_hooks: 7
-  by_type:
+  total_hooks: 45                               # R | 钩子总数
+  verified_hooks: 38                            # R | 已验证
+  pending_hooks: 7                              # R | 待回收
+  by_type:                                      # R | 按类型分布
     道具钩子: 15
     人物钩子: 12
     悬念钩子: 8
-  by_crossing:
+  by_crossing:                                  # R | 按铆合形式分布
     反转铆合: 15
     因果铆合: 20
     悬念铆合: 8
 
-# ─────────────────────────────────────────────────────────
-# pacing_curve.yaml（可选，章节数 > 30 时启用）
-# ─────────────────────────────────────────────────────────
-
-# 节奏曲线：关键章节张力标注
+# ====================================================================
+# pacing_curve.yaml（可选）—— 节奏曲线：关键章节张力标注
 # 路径: outline/pacing_curve.yaml
+# ====================================================================
 
-material_id: nm_xxx
+material_id: nm_xxx                             # R | 素材ID
 
 # 张力曲线（关键节点）
 tension_curve:
-  - chapter: 1
-    tension: 2
-    note: "日常切入"
-    beat_type: setup
+  - chapter: 1                                  # R | 章节号
+    tension: 2                                  # R | 张力值 1-5
+    note: "日常切入"                             # O | 张力说明
+    beat_type: setup                            # R | 节拍类型（setup/inciting_incident/midpoint/climax/resolution）
   - chapter: 10
     tension: 3
     note: "危机显现"
@@ -246,32 +238,30 @@ tension_curve:
 
 # 节奏特征摘要
 pacing_summary:
-  overall: "慢启动渐加速"
-  peaks: [28, 35]  # 张力峰值章节
-  valleys: [1, 36]  # 张力低谷章节
-  avg_tension: 3.2
+  overall: "慢启动渐加速"                        # R | 整体节奏描述
+  peaks: [28, 35]                               # R | 张力峰值章节
+  valleys: [1, 36]                              # R | 张力低谷章节
+  avg_tension: 3.2                              # R | 平均张力
 
-# ─────────────────────────────────────────────────────────
-# subplots.yaml（可选，支线 > 3 时启用）
-# ─────────────────────────────────────────────────────────
-
-# 支线网络：各支线与主线的关系
+# ====================================================================
+# subplots.yaml（可选）—— 支线网络：各支线与主线的关系
 # 路径: outline/subplots.yaml
+# ====================================================================
 
-material_id: nm_xxx
+material_id: nm_xxx                             # R | 素材ID
 
 subplots:
-  - name: "爱情支线"
-    description: "支线简述"
-    importance: secondary  # primary / secondary / tertiary
-    protagonist: "角色名"  # 支线主角
-    chapters_covered: [5, 30]
-    relation_to_mainline: parallel  # parallel / intertwining / counterpoint / framing
-    resolution_type: resolved  # resolved / unresolved / tragic / open
-    stages:
-      - stage: introduction
-        chapter: 5
-        description: "支线引入"
+  - name: "爱情支线"                             # R | 支线名称
+    description: "支线简述"                       # R | 支线描述
+    importance: secondary                        # R | primary / secondary / tertiary
+    protagonist: "角色名"                         # R | 支线主角
+    chapters_covered: [5, 30]                   # R | 覆盖章节范围
+    relation_to_mainline: parallel               # R | parallel / intertwining / counterpoint / framing
+    resolution_type: resolved                    # R | resolved / unresolved / tragic / open
+    stages:                                     # R | 支线发展阶段
+      - stage: introduction                     # 阶段（introduction/development/climax/resolution）
+        chapter: 5                               # 发生章节
+        description: "支线引入"                   # 阶段描述
       - stage: development
         chapter: 15
         description: "支线发展"
@@ -284,64 +274,60 @@ subplots:
 
 # 支线-主线交织图
 mainline_integration:
-  - subplot: 爱情支线
-    anchor_chapters: [10, 20]  # 与主线交汇的章节
-    integration_type: emotional  # thematic / emotional / causal / parallel
+  - subplot: 爱情支线                           # R | 支线名称
+    anchor_chapters: [10, 20]                   # R | 与主线交汇的章节
+    integration_type: emotional                 # R | thematic / emotional / causal / parallel
 
-# ─────────────────────────────────────────────────────────
-# themes.yaml（可选，主题复杂时启用）
-# ─────────────────────────────────────────────────────────
-
-# 主题演变：主题在全书中的展开
+# ====================================================================
+# themes.yaml（可选）—— 主题演变：主题在全书中的展开
 # 路径: outline/themes.yaml
+# ====================================================================
 
-material_id: nm_xxx
+material_id: nm_xxx                             # R | 素材ID
 
 themes:
-  - name: "生存与文明"
-    description: "主题简述"
-    importance: primary  # primary / secondary / tertiary
-    evolution:
-      - stage: introduction
-        chapter: 1
-        statement: "主题首次呈现"
+  - name: "生存与文明"                           # R | 主题名称
+    description: "主题简述"                       # R | 主题描述
+    importance: primary                          # R | primary / secondary / tertiary
+    evolution:                                  # R | 主题演变阶段
+      - stage: introduction                     # 阶段（introduction/complication/resolution）
+        chapter: 1                               # 发生章节
+        statement: "主题首次呈现"                 # 该阶段的表述
       - stage: complication
         chapter: 15
         statement: "主题深化/冲突"
       - stage: resolution
         chapter: 36
         statement: "主题最终呈现"
-    motifs:  # 母题（反复出现的元素）
+    motifs:                                     # O | 母题（反复出现的元素）
       - motif: "黑暗森林"
-        appearances: [8, 20, 35]
+        appearances: [8, 20, 35]                # 出现章节
         meaning: "宇宙生存法则的隐喻"
-    symbols:  # 象征
+    symbols:                                    # O | 象征
       - symbol: "红岸基地"
         meaning: "人类科技野心的象征"
 
 # 主题交织
 theme_intersections:
-  - theme_a: 生存与文明
-    theme_b: 科学与人道
-    conflict_chapters: [10, 25]
-    resolution: "共存但代价巨大"
+  - theme_a: 生存与文明                         # R | 主题A
+    theme_b: 科学与人道                          # R | 主题B
+    conflict_chapters: [10, 25]                 # R | 冲突/交汇章节
+    resolution: "共存但代价巨大"                   # R | 交汇结果
 
-# ─────────────────────────────────────────────────────────
-# emotional_arc.yaml（可选，情绪导向时启用）
-# ─────────────────────────────────────────────────────────
-
-# 情绪曲线：读者情绪预期管理
+# ====================================================================
+# emotional_arc.yaml（可选）—— 情绪曲线：读者情绪预期管理
 # 路径: outline/emotional_arc.yaml
+# ====================================================================
 
-material_id: nm_xxx
+material_id: nm_xxx                             # R | 素材ID
 
 # 读者情绪曲线
 emotional_curve:
-  - chapter: 1
-    emotion: curiosity  # curiosity / suspense / fear / hope / anger / sadness / relief / ...
-    intensity: 2
-    trigger: "悬念引入"
-    expectation_created: "读者期待：悬念何时揭晓"
+  - chapter: 1                                  # R | 章节号
+    emotion: curiosity                          # R | 情绪（curiosity/suspense/fear/hope/anger/sadness/relief/tension）
+    intensity: 2                                # R | 情绪强度 1-5
+    trigger: "悬念引入"                          # R | 触发因素
+    expectation_created: "读者期待：悬念何时揭晓"   # O | 创造的期待
   - chapter: 10
     emotion: fear
     intensity: 4
@@ -356,13 +342,13 @@ emotional_curve:
     emotion: relief
     intensity: 2
     trigger: "收尾"
-    expectation_fulfilled: "悬念揭晓"
+    expectation_fulfilled: "悬念揭晓"             # O | 满足的期待（收束阶段）
 
 # 情绪节奏
 emotional_rhythm:
-  dominant_emotions: [curiosity, fear, tension]
-  emotion_transitions:
-    - from: curiosity
-      to: fear
-      chapter: 8
-      trigger: "危机信号"
+  dominant_emotions: [curiosity, fear, tension]  # R | 主导情绪列表
+  emotion_transitions:                           # R | 情绪转换列表
+    - from: curiosity                            # 起始情绪
+      to: fear                                   # 目标情绪
+      chapter: 8                                 # 转换章节
+      trigger: "危机信号"                         # 转换触发

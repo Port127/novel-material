@@ -27,16 +27,16 @@ chapter_titles:                           # R | 从 chapter_index.yaml 逐字拷
   - '第3章 仙侠世界一样能推理'
   - '第4章 是时候表演真正的技术了'
   - '第5章 解开谜题'
-title: 税银案破案自救                     # R | 有语义的事件概括
+title: 税银案破案自救                      # R | 有语义的事件概括
 summary: >-                               # R | 100-200字概括事件全过程
   许七安穿越入狱，面临流放边陲的命运。
   通过堂弟许新年获取税银案卷宗，运用推理分析，
   发现案件疑点，成功破解税银失踪之谜。
 text_range: [18, 445]                     # O | source.txt 行号范围（仅本事件涉及的段落）
-event_type: 推理破案                      # R | tags.yaml → event_type
-event_stage: 开局困境→突破契机→成功破局   # R | tags.yaml → event_stage
-outcome: 成功自救                         # R | tags.yaml → outcome
-event_arc: 绝境→求卷宗→分析推理→破案自救  # O | 事件弧线简述
+event_type: 推理破案                       # R | tags.yaml → event_type
+event_stage: 开局困境→突破契机→成功破局    # R | tags.yaml → event_stage
+outcome: 成功自救                          # R | tags.yaml → outcome
+event_arc: 绝境→求卷宗→分析推理→破案自救   # O | 事件弧线简述
 characters:                               # R | 出场人物名列表
   - 许七安
   - 许新年
@@ -55,7 +55,7 @@ power_dynamic: 下对上                     # R | tags.yaml → power_dynamic
 character_moment:                         # R | tags.yaml → character_moment
   - 性格展示
   - 成长顿悟
-moral_spectrum: 正义                      # R | tags.yaml → moral_spectrum
+moral_spectrum: 正义                       # R | tags.yaml → moral_spectrum
 emotion_arc:                              # R | 情绪变化轨迹 [起点→中间→结局]
   - 恐惧
   - 挐扎
@@ -107,6 +107,26 @@ sub_events: []                            # O | 子事件ID列表（可选）
 plot_threads: []                          # O | refine阶段补充
 
 # ====================================================================
+# 跨线索交汇字段（可选，仅当本事件与其他线索事件在同一章同时发生时使用）
+# ====================================================================
+#
+# 当同一章节被多个 thread 的事件覆盖时，标记为交汇点。
+# 用于建立主线与支线/感情线之间的关联纽带。
+#
+# 交汇类型说明：
+# - causal: 支线事件的结果直接影响主线走向
+# - emotional: 支线与主线在同一章产生情感层面的互动
+# - thematic: 不同线索指向同一主题
+# - parallel: 仅时间上的并行，无实质关联
+
+intersects_mainline_at:                   # O | 与主线的交汇点（仅支线/感情线事件填写）
+  - chapter: 120                          # 交汇章节
+    intersecting_event: ev_main_005       # 同时发生的主线事件ID
+    integration_type: emotional           # causal / emotional / thematic / parallel
+    note: '怀庆暗助，推动主线破案'
+    confidence: medium                    # high（明确文本证据）/ medium（间接关联）/ low（推断）
+
+# ====================================================================
 # hooks 字段说明（可选，事件拆解时捕捉显性钩子）
 # ====================================================================
 #
@@ -133,7 +153,7 @@ hooks:
       lines: [450, 455]                   # 埋设行号范围
       resolved_in: unknown                # 回收事件ID（已知时填写，未知填unknown）
       crossing_type: 悬念铆合             # 铆合形式
-      
+
   # 跨事件道具钩子（显性可识别）
   items_crossing:
     - item: 神秘石头                      # 物品名称
@@ -144,7 +164,7 @@ hooks:
       expected_harvest: unknown           # 预计回收事件（已知时填写）
       crossing_type: 因果铆合             # 因果铆合/反转铆合
       confidence: high                    # high/medium/low
-      
+
   # 跨事件人物关联（显性可识别，置信度默认medium）
   character_crossing:
     - character: 热心路人                 # 人物名称
@@ -153,7 +173,7 @@ hooks:
       behavior_hint: 出场时眼神有微妙异样  # 行为异常描述（可选）
       expected_role_change: unknown       # 预计变化类型（已知时填写）
       confidence: medium                  # 默认medium
-      
+
   # 信息钩子标记（低置信度，只标记疑似）
   info_hint:
     - detail: '城东的井水最近变苦了'      # 细节文本
