@@ -59,7 +59,7 @@ pipeline:
 ### 4a. 质量检查
 
 ```bash
-python scripts/core/validate_yaml.py format {material_id}
+python scripts/core/validate_yaml.py meta {material_id}
 ```
 
 如校验失败，停止并报告具体错误，不进入 pipeline-analyze。

@@ -331,10 +331,27 @@ def main():
     parser = argparse.ArgumentParser(description="交叉验证事件数据完整性")
     parser.add_argument("material_id", help="素材 ID")
     parser.add_argument("--output", help="自定义输出路径", default=None)
+    parser.add_argument("--fail-threshold", type=float, default=0.5,
+                        help="覆盖率低于此值时返回非零退出码（默认0.5）")
 
     args = parser.parse_args()
     output_path = Path(args.output) if args.output else None
-    validate_completeness(args.material_id, output_path)
+    report = validate_completeness(args.material_id, output_path)
+
+    # 阻断检查：覆盖率低于阈值或存在 critical 问题时返回非零退出码
+    completeness_score = report.get("completeness_score", 1.0)
+    critical_count = report.get("summary", {}).get("critical", 0)
+
+    if completeness_score < args.fail_threshold or critical_count > 0:
+        print(f"\n🚫 阻断条件触发：")
+        if completeness_score < args.fail_threshold:
+            print(f"  - 覆盖率 {completeness_score:.1%} < {args.fail_threshold:.1%}")
+        if critical_count > 0:
+            print(f"  - 存在 {critical_count} 个 critical 问题")
+        print(f"\n  需执行 ai-backfill 后重新验证")
+        sys.exit(1)
+
+    sys.exit(0)
 
 
 if __name__ == "__main__":

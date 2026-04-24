@@ -69,31 +69,29 @@ python scripts/core/source_format.py \
 
 **如果脚本输出正常、无异常，跳过此步骤。**
 
-### 4. 生成章节索引 (chapter_index.yaml)
+### 4. 章节索引自动生成
 
-格式清洗完成后，扫描清洗后的 `source.txt`，生成持久化章节索引文件 `chapter_index.yaml`：
+脚本运行时传入 `--index` 参数，直接输出 `chapter_index.yaml`：
 
-```yaml
-# data/novels/{material_id}/chapter_index.yaml
-total: 1070
-chapters:
-  - num: 1
-    title: "第1章 喝酒不开车"
-    start_line: 1
-    end_line: 280
-  - num: 2
-    title: "第2章 重生回到2002年"
-    start_line: 281
-    end_line: 530
-  # ...
+```bash
+python scripts/core/source_format.py \
+  data/novels/{material_id}/source.txt \
+  data/novels/{material_id}/source.txt \
+  data/novels/{material_id}/format_report.yaml \
+  --index data/novels/{material_id}/chapter_index.yaml
 ```
 
-此文件是**下游 skill 的关键依赖**：
-- `novel-events` 的 `chapter` 字段必须从此文件逐字拷贝
-- `validate_yaml.py` 用此文件校验章节名匹配
-- `novel-outline` / `novel-events` 用此文件定位章节读取范围
+**无需手动生成**，脚本自动确保标题单引号包裹，避免 YAML 中文引号解析问题。
 
-如果 `format_report.yaml` 中已包含完整章节列表，可直接提取为 `chapter_index.yaml`。
+输出格式示例：
+```yaml
+total: 6
+chapters:
+  - num: 1
+    title: '第1章 《时间之外的往事》序言(节选)'
+    start_line: 41
+    end_line: 700
+```
 
 ### 5. 更新 meta.yaml
 

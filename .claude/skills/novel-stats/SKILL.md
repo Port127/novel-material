@@ -20,9 +20,21 @@ arguments: material_id
 
 ## 输出文件
 
-- `data/novels/{material_id}/stats.yaml` — 原始统计数据
+- `data/novels/{material_id}/stats.yaml` — 原始统计数据（**唯一数据源**）
 - `data/novels/{material_id}/stats.md` — 轻量可视化报告（Markdown + Mermaid 图表）
-- `data/novels/{material_id}/stats.html` — 交互版报告（ECharts 图表 + 人物关系图谱）
+- `data/novels/{material_id}/stats.html` — 交互版报告（**必须读取 stats.yaml 作为数据源**）
+
+## 数据源一致性约束
+
+**stats.html 和 stats.md 必须使用 stats.yaml 作为数据源**，禁止独立统计。
+
+原因：
+- 独立统计会导致口径不一致（如 event_type 分类维度与 stats.yaml 不同）
+- stats.yaml 是唯一权威数据源，其他报告只是可视化层
+
+执行顺序：
+1. 先生成 stats.yaml（统一统计逻辑）
+2. stats.md 和 stats.html 从 stats.yaml 读取数据，只做渲染格式转换
 
 ## 执行步骤
 

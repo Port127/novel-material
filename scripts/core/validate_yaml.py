@@ -47,6 +47,132 @@ NESTED_REMAP = {
 META_REQUIRED_FIELDS = ['material_id', 'type', 'name', 'source', 'status']
 
 
+def validate_outline(base_dir: Path) -> list[str]:
+    """校验 outline/ 文件夹结构。"""
+    errors = []
+    outline_dir = base_dir / "outline"
+
+    # 必选文件
+    index_path = outline_dir / "_index.yaml"
+    structure_path = outline_dir / "structure.yaml"
+
+    for p in [index_path, structure_path]:
+        if not p.exists():
+            errors.append(f"缺少必选文件: {p.name}")
+        else:
+            errs = validate_yaml_parseable(p)
+            errors.extend([f"{p.name}: {e}" for e in errs])
+
+    # _index.yaml 必填字段
+    if index_path.exists():
+        try:
+            with open(index_path, 'r', encoding='utf-8') as f:
+                data = yaml.safe_load(f) or {}
+            required = ['material_id', 'premise', 'theme', 'tone', 'modules_enabled']
+            for field in required:
+                if field not in data:
+                    errors.append(f"_index.yaml 缺少: {field}")
+            # structure_summary 检查
+            if 'structure_summary' not in data:
+                errors.append("_index.yaml 缺少: structure_summary")
+            elif 'acts' not in data['structure_summary']:
+                errors.append("_index.yaml structure_summary 缺少: acts")
+        except yaml.YAMLError as e:
+            errors.append(f"_index.yaml 解析失败: {e}")
+
+    return errors
+
+
+def validate_worldbuilding(base_dir: Path) -> list[str]:
+    """校验 worldbuilding/ 文件夹结构。"""
+    errors = []
+    wb_dir = base_dir / "worldbuilding"
+
+    if not wb_dir.exists():
+        errors.append("worldbuilding/ 目录不存在")
+        return errors
+
+    index_path = wb_dir / "_index.yaml"
+    if not index_path.exists():
+        errors.append("缺少 _index.yaml")
+    else:
+        errs = validate_yaml_parseable(index_path)
+        errors.extend([f"_index.yaml: {e}" for e in errs])
+
+        try:
+            with open(index_path, 'r', encoding='utf-8') as f:
+                data = yaml.safe_load(f) or {}
+            required = ['material_id']
+            for field in required:
+                if field not in data:
+                    errors.append(f"_index.yaml 缺少: {field}")
+        except yaml.YAMLError as e:
+            errors.append(f"_index.yaml 解析失败: {e}")
+
+    return errors
+
+
+def validate_characters(base_dir: Path) -> list[str]:
+    """校验 characters/ 文件夹结构。"""
+    errors = []
+    chars_dir = base_dir / "characters"
+
+    if not chars_dir.exists():
+        errors.append("characters/ 目录不存在")
+        return errors
+
+    index_path = chars_dir / "_index.yaml"
+    if not index_path.exists():
+        errors.append("缺少 _index.yaml")
+    else:
+        errs = validate_yaml_parseable(index_path)
+        errors.extend([f"_index.yaml: {e}" for e in errs])
+
+        try:
+            with open(index_path, 'r', encoding='utf-8') as f:
+                data = yaml.safe_load(f) or {}
+
+            # roster 必填且 protagonists/antagonists 不为空
+            if 'roster' not in data:
+                errors.append("_index.yaml 缺少: roster")
+            else:
+                roster = data['roster']
+                if 'protagonists' not in roster or not roster['protagonists']:
+                    errors.append("roster.protagonists 为空")
+                if 'antagonists' not in roster or not roster['antagonists']:
+                    errors.append("roster.antagonists 为空")
+        except yaml.YAMLError as e:
+            errors.append(f"_index.yaml 解析失败: {e}")
+
+    return errors
+
+
+def validate_novel_tags(base_dir: Path) -> list[str]:
+    """校验 tags.yaml。"""
+    errors = []
+    tags_path = base_dir / "tags.yaml"
+
+    if not tags_path.exists():
+        errors.append("tags.yaml 不存在")
+        return errors
+
+    errs = validate_yaml_parseable(tags_path)
+    errors.extend(errs)
+
+    try:
+        with open(tags_path, 'r', encoding='utf-8') as f:
+            data = yaml.safe_load(f) or {}
+
+        required = ['material_id', 'genre', 'tone', 'themes']
+        for field in required:
+            if field not in data:
+                errors.append(f"缺少: {field}")
+    except yaml.YAMLError as e:
+        errors.append(f"解析失败: {e}")
+
+    return errors
+
+
 def load_tags_dict():
     """Load tags.yaml and return {dimension: set(values)}."""
     tags_path = Path("data/tags.yaml")
@@ -293,6 +419,58 @@ def cmd_meta(material_id: str):
     return 0
 
 
+def cmd_outline(material_id: str):
+    """Validate outline/ folder."""
+    base_dir = Path(f"data/novels/{material_id}")
+    errs = validate_outline(base_dir)
+    if errs:
+        print(f"❌ outline 校验失败:")
+        for e in errs:
+            print(f"  - {e}")
+        return 1
+    print(f"✅ outline 校验通过")
+    return 0
+
+
+def cmd_worldbuilding(material_id: str):
+    """Validate worldbuilding/ folder."""
+    base_dir = Path(f"data/novels/{material_id}")
+    errs = validate_worldbuilding(base_dir)
+    if errs:
+        print(f"❌ worldbuilding 校验失败:")
+        for e in errs:
+            print(f"  - {e}")
+        return 1
+    print(f"✅ worldbuilding 校验通过")
+    return 0
+
+
+def cmd_characters(material_id: str):
+    """Validate characters/ folder."""
+    base_dir = Path(f"data/novels/{material_id}")
+    errs = validate_characters(base_dir)
+    if errs:
+        print(f"❌ characters 校验失败:")
+        for e in errs:
+            print(f"  - {e}")
+        return 1
+    print(f"✅ characters 校验通过")
+    return 0
+
+
+def cmd_novel_tags(material_id: str):
+    """Validate tags.yaml."""
+    base_dir = Path(f"data/novels/{material_id}")
+    errs = validate_novel_tags(base_dir)
+    if errs:
+        print(f"❌ novel-tags 校验失败:")
+        for e in errs:
+            print(f"  - {e}")
+        return 1
+    print(f"✅ novel-tags 校验通过")
+    return 0
+
+
 def cmd_all(material_id: str):
     """Validate all output files."""
     base_dir = Path(f"data/novels/{material_id}")
@@ -363,14 +541,36 @@ def main():
     all_parser = subparsers.add_parser('all', help='校验全部产出')
     all_parser.add_argument('material_id', help='素材 ID')
 
+    # 新增命令
+    outline_parser = subparsers.add_parser('outline', help='校验 outline/ 文件夹')
+    outline_parser.add_argument('material_id', help='素材 ID')
+
+    worldbuilding_parser = subparsers.add_parser('worldbuilding', help='校验 worldbuilding/ 文件夹')
+    worldbuilding_parser.add_argument('material_id', help='素材 ID')
+
+    characters_parser = subparsers.add_parser('characters', help='校验 characters/ 文件夹')
+    characters_parser.add_argument('material_id', help='素材 ID')
+
+    novel_tags_parser = subparsers.add_parser('novel-tags', help='校验 tags.yaml')
+    novel_tags_parser.add_argument('material_id', help='素材 ID')
+
     args = parser.parse_args()
 
+    # 命令路由
     if args.command == 'event':
         sys.exit(cmd_event(args.material_id, args.pattern))
     elif args.command == 'meta':
         sys.exit(cmd_meta(args.material_id))
     elif args.command == 'all':
         sys.exit(cmd_all(args.material_id))
+    elif args.command == 'outline':
+        sys.exit(cmd_outline(args.material_id))
+    elif args.command == 'worldbuilding':
+        sys.exit(cmd_worldbuilding(args.material_id))
+    elif args.command == 'characters':
+        sys.exit(cmd_characters(args.material_id))
+    elif args.command == 'novel-tags':
+        sys.exit(cmd_novel_tags(args.material_id))
 
 
 if __name__ == '__main__':

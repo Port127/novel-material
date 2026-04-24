@@ -7,10 +7,12 @@ source_format.py — 小说原文格式清洗脚本
 
 用法:
     python scripts/core/source_format.py <input_file> <output_file> <report_file>
+    python scripts/core/source_format.py <input_file> <output_file> <report_file> --index <index_file>
 
 输出:
     - output_file: 清洗后的文本
     - report_file: YAML 格式的清洗报告（符合 format-report.schema.yaml）
+    - index_file: 可选，章节索引文件 chapter_index.yaml（标题强制单引号包裹）
 """
 
 import argparse
@@ -270,6 +272,35 @@ def analyze_chapters(text: str) -> dict:
     }
 
 
+def write_chapter_index(chapters: list[dict], total_lines: int, output_path: Path):
+    """写入 chapter_index.yaml，标题强制单引号包裹。
+
+    Args:
+        chapters: analyze_chapters() 返回的章节列表
+        total_lines: 原文总行数
+        output_path: 输出文件路径
+    """
+    lines = [f"total: {len(chapters)}", "chapters:"]
+
+    for i, ch in enumerate(chapters):
+        # 标题强制单引号，内部单引号转义为 ''
+        title = ch.get('title', '')
+        escaped_title = title.replace("'", "''")
+
+        # 计算 end_line：下一章的 line - 1，或 EOF
+        if i + 1 < len(chapters):
+            end_line = chapters[i + 1]['line'] - 1
+        else:
+            end_line = total_lines
+
+        lines.append(f"  - num: {ch['num']}")
+        lines.append(f"    title: '{escaped_title}'")
+        lines.append(f"    start_line: {ch['line']}")
+        lines.append(f"    end_line: {end_line}")
+
+    output_path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+
+
 def normalize_chapter_titles(text: str, chapters: list[dict]) -> tuple[str, int]:
     """标准化章节标题，返回 (修复后文本, 标准化数)。"""
     if not chapters:
@@ -326,8 +357,15 @@ def remove_ads(text: str) -> tuple[str, int]:
     return '\n'.join(cleaned), count
 
 
-def format_source(input_path: str, output_path: str, report_path: str) -> dict:
-    """主入口：执行全部清洗步骤。"""
+def format_source(input_path: str, output_path: str, report_path: str, index_path: str = None) -> dict:
+    """主入口：执行全部清洗步骤。
+
+    Args:
+        input_path: 输入文件路径
+        output_path: 输出文件路径（清洗后文本）
+        report_path: 报告文件路径 (YAML)
+        index_path: 可选，章节索引文件路径 (chapter_index.yaml)
+    """
     text = Path(input_path).read_text(encoding='utf-8')
     original_chars = len(text)
     original_lines = text.count('\n') + 1
@@ -372,9 +410,14 @@ def format_source(input_path: str, output_path: str, report_path: str) -> dict:
     modified_lines += n
 
     cleaned_chars = len(text)
+    cleaned_lines = text.count('\n') + 1
 
     # 写清洗后文本
     Path(output_path).write_text(text, encoding='utf-8')
+
+    # 如果指定了 index_path，输出 chapter_index.yaml
+    if index_path:
+        write_chapter_index(chapters, cleaned_lines, Path(index_path))
 
     # 构建报告
     suspicious = []
@@ -487,13 +530,14 @@ def main():
     parser.add_argument('input', help='输入文件路径')
     parser.add_argument('output', help='输出文件路径')
     parser.add_argument('report', help='报告文件路径 (YAML)')
+    parser.add_argument('--index', help='章节索引输出路径 (chapter_index.yaml)', default=None)
     args = parser.parse_args()
 
     if not Path(args.input).exists():
         print(f'ERROR: 输入文件不存在: {args.input}', file=sys.stderr)
         sys.exit(1)
 
-    report = format_source(args.input, args.output, args.report)
+    report = format_source(args.input, args.output, args.report, args.index)
 
     # 输出摘要到 stdout（供 agent 读取）
     fixes = report['fixes']
@@ -522,6 +566,9 @@ def main():
 
     for s in suspicious:
         print(f'SUSPICIOUS: 第{s["chapter"]}章 - {s["issue"]} [{s["severity"]}]')
+
+    if args.index:
+        print(f'chapter_index: {args.index}')
 
 
 if __name__ == '__main__':

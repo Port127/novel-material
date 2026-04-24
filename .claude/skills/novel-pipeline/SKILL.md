@@ -30,14 +30,14 @@ novel-pipeline（调度器）
 
 | 阶段完成 | 检查项 | 工具 | 通过标准 |
 |----------|--------|------|---------|
-| pipeline-ingest | YAML schema 校验 | `validate_yaml.py format {id}` | 0 error |
+| pipeline-ingest | YAML schema 校验 | `validate_yaml.py meta {id}` | 0 error |
 | pipeline-ingest | 章节连续性 | 检查 format_report.yaml | 无缺失章节或用户确认 |
-| pipeline-analyze | YAML schema 校验 | `validate_yaml.py outline/worldbuilding/characters/novel-tags {id}` | 0 error |
+| pipeline-analyze | YAML schema 校验 | `validate_yaml.py outline {id}` 等（逐个执行） | 0 error |
 | pipeline-analyze | 人物名册完整性 | 检查 characters/_index.yaml | protagonist/antagonists 不为空 |
 | pipeline-events | YAML schema 抽检 | `validate_yaml.py event {id}` + 随机 3 个事件 | 0 error |
 | pipeline-events | 章节覆盖检查 | 扫描 events/*.yaml 的 chapters 字段 | 主线连续未覆盖 ≤ 3 章 |
 | pipeline-events | 完备性验证 | `validate_completeness.py {id}` | completeness_score ≥ 0.5 或 backfill_done=true |
-| pipeline-finalize | YAML schema 校验 | `validate_yaml.py outline/characters {id}`（精调后） | 0 error |
+| pipeline-finalize | YAML schema 校验 | `validate_yaml.py outline {id}` + `validate_yaml.py characters {id}` | 0 error |
 
 ## 术语表
 
@@ -278,6 +278,8 @@ pipeline:
 - MUST 每个子流水线完成后立即持久化状态
 - NEVER 在用户确认后再次停下等待确认（子流水线内部也不再确认）
 - NEVER 试图在一个对话内强行完成超长小说的全部流程
+- NEVER 手动修改 meta.yaml 的状态字段（如 refined、completeness_score、backfill_done）
+  → 状态字段必须由脚本写入，手动修改视为绕过质量门控
 
 ## 示例
 

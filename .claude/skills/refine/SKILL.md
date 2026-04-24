@@ -313,12 +313,23 @@ refine_batches:
 
 **如果还有未处理的角色**，保持 current_batch=3，提示用户继续下一批。
 
-**如果全部角色处理完成**，更新状态：
+**如果全部角色处理完成**，**必须执行验证检查**：
+
+#### 3e. Batch-3 验证检查（强制）
+
+扫描 `profiles/*.yaml`，检查 `key_events` 字段：
+- 如发现 `event_id: 待补充` → **保持 current_batch=3**，继续处理
+- 如发现 `event_id` 指向不存在的事件 → `adjust`：修正或删除该引用
+
+验证通过后，更新状态并**写入产出清单**：
 ```yaml
 refine_batches:
   current_batch: 4
   batches_completed: 3
   characters_refined: true
+  batch_3_outputs:
+    profiles_updated: [ye_wenjie, wang_miao, ...]  # 实际更新的 profiles
+    key_events_filled: 25                          # 填充的 key_events 数量
 ```
 
 ### 4. Batch-4：关系验证

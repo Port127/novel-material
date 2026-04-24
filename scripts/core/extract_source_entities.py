@@ -128,60 +128,94 @@ def load_worldbuilding_entities(worldbuilding_dir: Path) -> dict[str, list[str]]
 
 def split_source_by_chapters(source_text: str, base_dir: Path) -> tuple[list[tuple[int, str]], int]:
     """
-    将原文按章节切分。优先用 chapter_index.yaml 标题匹配，
-    失败时退回正则表达式匹配（第X章/第X节/Chapter X）。
+    将原文按章节切分。优先用 chapter_index.yaml 的行号切分，
+    失败时退回标题匹配，再失败时退回正则表达式匹配。
     返回 ([(chapter_number, chapter_text), ...], total_chapters) 元组。
     """
     ci_path = base_dir / "chapter_index.yaml"
     total_chapters = 0
 
-    # 尝试用 chapter_index.yaml 的标题匹配
+    # 方案 1：优先用 chapter_index.yaml 的 start_line/end_line 直接切分
     if ci_path.exists():
-        with open(ci_path, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f) or {}
-        ci_chapters = data.get("chapters", [])
-        if ci_chapters:
-            titles = []
-            if isinstance(ci_chapters[0], dict):
-                titles = [c.get("title", "") for c in ci_chapters]
-            else:
-                titles = [str(c) for c in ci_chapters]
-            titles = [t for t in titles if t]
+        try:
+            with open(ci_path, "r", encoding="utf-8") as f:
+                data = yaml.safe_load(f) or {}
+            ci_chapters = data.get("chapters", [])
 
-            if titles:
-                positions = []
-                for i, ch_title in enumerate(titles):
-                    match = re.search(re.escape(ch_title), source_text)
-                    if match:
-                        positions.append((i + 1, match.start()))
-
-                if len(positions) >= len(titles) * 0.8:
-                    # 80% 以上标题匹配成功，认为切分有效
+            if ci_chapters and isinstance(ci_chapters[0], dict):
+                # 检查是否有 start_line/end_line 字段
+                if 'start_line' in ci_chapters[0] and 'end_line' in ci_chapters[0]:
+                    lines = source_text.split('\n')
                     results = []
-                    for idx, (ch_num, ch_start) in enumerate(positions):
-                        ch_end = (
-                            positions[idx + 1][1]
-                            if idx + 1 < len(positions)
-                            else len(source_text)
-                        )
-                        results.append((ch_num, source_text[ch_start:ch_end]))
-                    total_chapters = max(ch for ch, _ in results) if results else 0
-                    return results, total_chapters
+                    for ch in ci_chapters:
+                        ch_num = ch.get('num', 0)
+                        start = ch.get('start_line', 1) - 1  # 转 0-index
+                        end = ch.get('end_line', len(lines))
+                        # 安全边界检查
+                        start = max(0, start)
+                        end = min(len(lines), end)
+                        ch_text = '\n'.join(lines[start:end])
+                        results.append((ch_num, ch_text))
 
-    # 退回正则表达式匹配：第X章、第X节、Chapter X
+                    total_chapters = len(results)
+                    if total_chapters > 0:
+                        print(f"  📖 使用 chapter_index.yaml 行号切分: {total_chapters} 章")
+                        return results, total_chapters
+
+                # 方案 2：用标题匹配（无行号字段时）
+                titles = [c.get("title", "") for c in ci_chapters]
+                titles = [t for t in titles if t]
+
+                if titles:
+                    positions = []
+                    for i, ch_title in enumerate(titles):
+                        match = re.search(re.escape(ch_title), source_text)
+                        if match:
+                            positions.append((i + 1, match.start()))
+
+                    if len(positions) >= len(titles) * 0.8:
+                        # 80% 以上标题匹配成功，认为切分有效
+                        results = []
+                        for idx, (ch_num, ch_start) in enumerate(positions):
+                            ch_end = (
+                                positions[idx + 1][1]
+                                if idx + 1 < len(positions)
+                                else len(source_text)
+                            )
+                            results.append((ch_num, source_text[ch_start:ch_end]))
+                        total_chapters = max(ch for ch, _ in results) if results else 0
+                        print(f"  📖 使用 chapter_index.yaml 标题匹配切分: {total_chapters} 章")
+                        return results, total_chapters
+        except yaml.YAMLError as e:
+            print(f"  ⚠️ chapter_index.yaml 解析失败: {e}", file=sys.stderr)
+
+    # 方案 3：退回正则表达式匹配（支持中文数字和空格）
     patterns = [
-        re.compile(r"第\s*(\d+)\s*章"),
-        re.compile(r"第\s*(\d+)\s*节"),
+        re.compile(r"第\s*[零一二三四五六七八九十百千万\d]+\s*章"),  # 支持空格和中文数字
+        re.compile(r"第\s*[零一二三四五六七八九十百千万\d]+\s*节"),
         re.compile(r"Chapter\s+(\d+)", re.IGNORECASE),
     ]
 
     positions = []
     for pattern in patterns:
-        positions = [(int(m.group(1)), m.start()) for m in pattern.finditer(source_text)]
+        for m in pattern.finditer(source_text):
+            # 提取章节号
+            num_match = re.search(r'[零一二三四五六七八九十百千万\d]+', m.group())
+            if num_match:
+                num_str = num_match.group()
+                if num_str.isdigit():
+                    num = int(num_str)
+                else:
+                    # 中文数字转换（简化版）
+                    num = _cn_to_int(num_str)
+                if num is not None:
+                    positions.append((num, m.start()))
+
         if len(positions) >= 10:
             break
 
     if not positions:
+        print(f"  ⚠️ 未检测到章节，视为单章")
         return [(1, source_text)], 1
 
     positions.sort(key=lambda x: x[1])
@@ -198,7 +232,36 @@ def split_source_by_chapters(source_text: str, base_dir: Path) -> tuple[list[tup
         results.append((ch_num, source_text[ch_start:ch_end]))
 
     total_chapters = max(ch for ch, _ in results) if results else 0
+    print(f"  📖 使用正则表达式切分: {total_chapters} 章")
     return results, total_chapters
+
+
+def _cn_to_int(cn: str) -> int | None:
+    """简化版中文数字 → 整数。支持一到九十九。"""
+    CN_MAP = {
+        '零': 0, '一': 1, '二': 2, '三': 3, '四': 4,
+        '五': 5, '六': 6, '七': 7, '八': 8, '九': 9,
+        '十': 10, '百': 100, '千': 1000,
+        '〇': 0, '两': 2,
+    }
+    if cn.isdigit():
+        return int(cn)
+    total = 0
+    for ch in cn:
+        val = CN_MAP.get(ch)
+        if val is None:
+            return None
+        if val >= 10:
+            if total == 0:
+                total = val
+            else:
+                total = total * val
+        else:
+            if total >= 10:
+                total += val
+            else:
+                total = total * 10 + val
+    return total
 
 
 def count_mentions_in_chapter(text: str, entity_name: str) -> int:
