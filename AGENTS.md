@@ -134,9 +134,14 @@
 - MUST 跨文件变更（重构/迁移/重命名）完成后，输出变更清单：改了哪些文件 + 验证了什么 + 还有什么风险
 - MUST API 限速：连续 Shell 调用间隔 ≥1s，避免触发 rate limit
 - MUST 粒度自适应：地理/势力 ≤3 用单文件，>3 用文件夹
+- MUST **阻断状态检测**：进入任何子流水线前，检查 `status=backfill-blocked` 时拒绝执行
+- MUST **refine 批次证据**：每批次完成必须写入证据列表（如 `hooks_verified_list`），空列表禁止标记完成
+- MUST **统计报告完整性**：stats.yaml/stats.md/stats.html 三者必须全部生成
 - NEVER 编造质量数据（无信号写 TBD）
 - NEVER 用脚本批量生成模板化事件文件（详见 `ARCHITECTURE.md` → Anti-Pattern）
 - NEVER 跨素材共享世界观/人物（每个素材独立）
+- NEVER **绕过阻断状态**：手动修改 status 绕过质量门控
+- NEVER **无证据标记完成**：refine 批次状态标记为 true 但证据列表为空
 
 ## 护栏
 

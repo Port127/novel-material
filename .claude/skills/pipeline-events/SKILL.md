@@ -191,31 +191,43 @@ python scripts/core/validate_completeness.py {material_id}
 
 运行 `validate_completeness.py` 后，根据结果判断：
 
-**阻断判断表**：
-| 条件 | 行为 |
-|------|------|
-| completeness_score < 0.3 | **强制阻断**：禁止进入 pipeline-finalize，必须执行 ai-backfill |
-| completeness_score 0.3-0.5 且 critical_count > 10 | **强制阻断**：必须执行 ai-backfill |
-| completeness_score 0.5-0.8 且 critical_count > 0 | **警告**：建议执行 ai-backfill，允许用户选择跳过 |
-| completeness_score ≥ 0.8 或 critical_count = 0 | 跳过补录，进入 finalize |
+**阻断判断表（强制执行）**：
 
-**阻断时的输出**：
+| 条件 | 阻断行为 |
+|------|---------|
+| completeness_score < 0.3 | **流程终止** + 状态自动设为 `backfill-blocked` |
+| completeness_score 0.3-0.5 且 critical_count > 10 | **流程终止** + 状态自动设为 `backfill-blocked` |
+| completeness_score 0.5-0.8 且 critical_count > 0 | **警告**（不阻断，建议执行 ai-backfill） |
+| completeness_score ≥ 0.8 或 critical_count = 0 | 通过，跳过补录，进入 finalize |
+
+**脚本阻断时的自动输出**：
 
 ```
-🚫 数据完整性不足，禁止进入精调阶段
+🚫 ========================================
+🚫 流程阻断：数据完整性不足
+🚫 ========================================
+🚫   completeness_score: {score}
+🚫   critical 遗漏项: {n}
+🚫
+🚫   必须: /ai-backfill {material_id}
+🚫   禁止: 继续执行 pipeline-finalize
+🚫   禁止: 手动修改 status 绕过阻断
+🚫 ========================================
 
-素材：{name}
-完备性评分：{score}
-遗漏项：critical {n} 项，warning {n} 项
-
-必须执行：/pipeline-events {id}（继续 ai-backfill 补录）
+  状态已自动设置为: backfill-blocked
+  请执行 ai-backfill 后重新验证
 ```
 
-**阻断后处理**：
-1. 更新 `meta.yaml`：`pipeline.current_stage: "backfill-blocked"`
-2. 读取并执行 `ai-backfill/SKILL.md`
-3. 每批处理 3-5 个实体，补录完成后重新验证
+**阻断后的必须操作**：
+1. 脚本已自动更新 `meta.yaml`：`status: backfill-blocked`
+2. 执行 `/ai-backfill {material_id}` 补录遗漏实体
+3. 补录完成后重新运行 `validate_completeness.py`
 4. 如果重新验证后 completeness_score ≥ 0.5 且 critical_count ≤ 5，解除阻断
+
+**阻断后的禁止操作**：
+- ❌ 继续执行 pipeline-finalize
+- ❌ 手动修改 status 绕过阻断
+- ❌ 跳过 ai-backfill 直接标记 backfill_done: true
 
 如果 completeness_report 中无 critical/warning，跳过此步骤。
 

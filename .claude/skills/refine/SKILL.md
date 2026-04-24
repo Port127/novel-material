@@ -139,13 +139,22 @@ cp tags.yaml tags.yaml.bak
 
 **不修改任何结构，只补充统计数据。**
 
-完成后更新 `meta.yaml`：
+完成后更新 `meta.yaml`（必须包含证据列表）：
 ```yaml
 refine_batches:
   current_batch: 2
   batches_completed: 1
-  stats_merged: true
+  batch_outputs:
+    batch_1:
+      completed_at: "2026-04-05T12:00:00Z"  # 必须有时间戳
+      stats_updated: [pacing_curve, characters_index]  # 必须有具体列表
+  stats_merged: true  # 仅当 stats_updated 非空时可标记 true
 ```
+
+**禁止行为**：
+- ❌ stats_updated 为空数组时标记 stats_merged: true
+- ❌ 无 completed_at 时间戳时标记批次完成
+- ❌ 编造 stats_updated 列表（必须写入实际更新的文件）
 
 ### 2. Batch-2：钩子验证与铆合链建立
 
@@ -184,13 +193,22 @@ refine_batches:
 
 **如果还有未处理的钩子**，保持 current_batch=2，提示用户继续下一批钩子验证。
 
-**如果全部钩子验证完成**，更新状态：
+**如果全部钩子验证完成**，更新状态（必须包含证据列表）：
 ```yaml
 refine_batches:
   current_batch: "2b"
   batches_completed: 2
-  hooks_verified: true
+  batch_outputs:
+    batch_2:
+      completed_at: "2026-04-05T12:00:00Z"
+      hooks_verified_list: [hook_001, hook_002, hook_003, ...]  # 实际验证的钩子 ID
+  hooks_verified: true  # 仅当 hooks_verified_list 非空时可标记 true
 ```
+
+**禁止行为**：
+- ❌ hooks_verified_list 为空数组时标记 hooks_verified: true
+- ❌ 无 completed_at 时间戳时标记批次完成
+- ❌ 编造 hook ID（必须写入实际验证的钩子）
 
 ### 2b. Batch-2b：线索交汇验证
 
@@ -321,16 +339,23 @@ refine_batches:
 - 如发现 `event_id: 待补充` → **保持 current_batch=3**，继续处理
 - 如发现 `event_id` 指向不存在的事件 → `adjust`：修正或删除该引用
 
-验证通过后，更新状态并**写入产出清单**：
+验证通过后，更新状态并写入产出清单（必须包含证据列表）：
 ```yaml
 refine_batches:
   current_batch: 4
   batches_completed: 3
-  characters_refined: true
-  batch_3_outputs:
-    profiles_updated: [ye_wenjie, wang_miao, ...]  # 实际更新的 profiles
-    key_events_filled: 25                          # 填充的 key_events 数量
+  batch_outputs:
+    batch_3:
+      completed_at: "2026-04-05T12:00:00Z"
+      profiles_updated: [ye_wenjie, wang_miao, ...]  # 实际更新的 profiles
+      key_events_filled: 25                           # 填充的 key_events 数量
+  characters_refined: true  # 仅当 profiles_updated 非空时可标记 true
 ```
+
+**禁止行为**：
+- ❌ profiles_updated 为空数组时标记 characters_refined: true
+- ❌ 无 completed_at 时间戳时标记批次完成
+- ❌ 编造 profiles_updated 列表
 
 ### 4. Batch-4：关系验证
 
@@ -345,13 +370,21 @@ refine_batches:
 
 **如果还有未验证的关系**，保持 current_batch=4。
 
-**如果全部关系验证完成**，更新状态：
+**如果全部关系验证完成**，更新状态（必须包含证据列表）：
 ```yaml
 refine_batches:
   current_batch: 5
   batches_completed: 4
-  relations_verified: true
+  batch_outputs:
+    batch_4:
+      completed_at: "2026-04-05T12:00:00Z"
+      relations_verified_list: [rel_001, rel_002, ...]  # 验证的关系 ID 列表
+  relations_verified: true  # 仅当 relations_verified_list 非空时可标记 true
 ```
+
+**禁止行为**：
+- ❌ relations_verified_list 为空数组时标记 relations_verified: true
+- ❌ 无 completed_at 时间戳时标记批次完成
 
 ### 5. Batch-5：世界观精调
 
@@ -391,13 +424,21 @@ refine_batches:
 
 **只读 `refine_input.json` 统计 + 个别事件**，不读全文。
 
-完成后更新状态：
+完成后更新状态（必须包含证据列表）：
 ```yaml
 refine_batches:
   current_batch: 6
   batches_completed: 5
-  worldbuilding_refined: true
+  batch_outputs:
+    batch_5:
+      completed_at: "2026-04-05T12:00:00Z"
+      worldbuilding_updated: [geography, factions, lore]  # 更新的世界观文件列表
+  worldbuilding_refined: true  # 仅当 worldbuilding_updated 非空时可标记 true
 ```
+
+**禁止行为**：
+- ❌ worldbuilding_updated 为空数组时标记 worldbuilding_refined: true
+- ❌ 无 completed_at 时间戳时标记批次完成
 
 ### 6. Batch-6：清理汇总
 
@@ -434,18 +475,22 @@ python scripts/core/extract_refine_data.py {material_id}
 
 脚本会自动将新的 `events_hash` 写入 `meta.yaml` 的 `refine_hash` 字段。
 
-更新 `meta.yaml` 其他字段：
+更新 `meta.yaml` 其他字段（必须包含证据列表）：
 ```yaml
 refine_batches:
   current_batch: 6
   batches_completed: 7
+  batch_outputs:
+    batch_6:
+      completed_at: "2026-04-21T12:00:00Z"
+      cleanup_items: [invalid_ref_1, invalid_ref_2, ...]  # 清理的项目列表
   stats_merged: true
   hooks_verified: true
   intersections_verified: true
   characters_refined: true
   relations_verified: true
   worldbuilding_refined: true
-  cleanup_done: true
+  cleanup_done: true  # 仅当 cleanup_items 非空时可标记 true
 
 pipeline:
   refined: true
@@ -466,6 +511,10 @@ pipeline:
     characters_enriched: {n}
     worldbuilding_enriched: {n}
 ```
+
+**禁止行为**：
+- ❌ 各批次 evidence_list 为空时标记对应状态为 true
+- ❌ 无 completed_at 时间戳时标记批次完成
 
 ## 输出格式
 

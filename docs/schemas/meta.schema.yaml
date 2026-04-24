@@ -16,13 +16,14 @@ author: 作者名
 source: source.txt
 added: YYYY-MM-DD
 
-# 状态流：raw → outlined → tagged → complete → refined
+# 状态流：raw → outlined → tagged → complete → backfill-blocked → refined
 #
-#   raw       仅有原文入库（source-format 完成后 pipeline.formatted: true，但 status 仍为 raw）
-#   outlined  pipeline-analyze 进行中或完成（outline + worldbuilding + characters）
-#   tagged    pipeline-analyze 完成（小说级标签已生成）。注意：事件尚未拆分
-#   complete  pipeline-events 完成（事件全部拆分 + 索引已构建）
-#   refined   pipeline-finalize 完成（精调 + 统计报告已生成）
+#   raw             仅有原文入库（source-format 完成后 pipeline.formatted: true，但 status 仍为 raw）
+#   outlined        pipeline-analyze 进行中或完成（outline + worldbuilding + characters）
+#   tagged          pipeline-analyze 完成（小说级标签已生成）。注意：事件尚未拆分
+#   complete        pipeline-events 完成（事件全部拆分 + 索引已构建）
+#   backfill-blocked 完整性验证阻断（completeness_score < 50%），必须执行 ai-backfill 后才能继续
+#   refined         pipeline-finalize 完成（精调 + 统计报告已生成）
 #
 status: raw
 
@@ -98,12 +99,36 @@ pipeline:
   refine_batches:            # refine 分批状态
     current_batch: 1         # 当前批次（1-6）
     batches_completed: 0     # 已完成批次数
-    stats_merged: false      # batch-1 完成
-    hooks_verified: false    # batch-2 完成
-    characters_refined: false # batch-3 完成
-    relations_verified: false # batch-4 完成
-    worldbuilding_refined: false # batch-5 完成
-    cleanup_done: false      # batch-6 完成
+
+    # 每批次完成必须有证据列表（审计字段）
+    batch_outputs:
+      batch_1:
+        completed_at: null       # 完成时间戳（null = 未执行）
+        stats_updated: []        # 更新的统计文件列表
+      batch_2:
+        completed_at: null
+        hooks_verified_list: []  # 实际验证的钩子 ID 列表（空 = 未执行）
+      batch_3:
+        completed_at: null
+        profiles_updated: []     # 更新的 profiles 文件列表
+        key_events_filled: 0     # 填充的 key_events 数量
+      batch_4:
+        completed_at: null
+        relations_verified_list: []  # 验证的关系 ID 列表
+      batch_5:
+        completed_at: null
+        worldbuilding_updated: []    # 更新的世界观文件列表
+      batch_6:
+        completed_at: null
+        cleanup_items: []           # 清理的项目列表
+
+    # 状态标记（必须有证据支撑，禁止无证据时标记 true）
+    stats_merged: false          # batch_1 完成且有 stats_updated 列表非空
+    hooks_verified: false        # batch_2 完成且有 hooks_verified_list 非空
+    characters_refined: false    # batch_3 完成且有 profiles_updated 非空
+    relations_verified: false    # batch_4 完成且有 relations_verified_list 非空
+    worldbuilding_refined: false # batch_5 完成且有 worldbuilding_updated 非空
+    cleanup_done: false          # batch_6 完成且有 cleanup_items 非空
 
   # ── novel-stats 阶段 ──
   stats_generated: false

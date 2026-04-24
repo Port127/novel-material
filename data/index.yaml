@@ -20,3 +20,10 @@ materials:
     folder: data/novels/nm_novel_20260423_k9m3
     status: refined
     added: 2026-04-23
+  - id: nm_novel_20260424_ap0z
+    type: novel
+    name: "《三体3》死神永生"
+    author: 刘慈欣
+    folder: data/novels/nm_novel_20260424_ap0z
+    status: raw
+    added: 2026-04-24

@@ -39,6 +39,53 @@ novel-pipeline（调度器）
 | pipeline-events | 完备性验证 | `validate_completeness.py {id}` | completeness_score ≥ 0.5 或 backfill_done=true |
 | pipeline-finalize | YAML schema 校验 | `validate_yaml.py outline {id}` + `validate_yaml.py characters {id}` | 0 error |
 
+## 阶段前置检查（防止绕过硬约束）
+
+每个子流水线开始前，必须执行前置检查并输出检查清单：
+
+### 检查模板
+
+```
+📋 进入 {阶段名} 前置检查
+
+必须确认：
+  [ ] 已读取完整 {阶段}/SKILL.md（≥ 前 200 行）
+  [ ] 已理解阻断规则（如有）
+  [ ] 已理解硬约束列表（MUST/NEVER）
+
+当前状态：
+  status: {status}
+  completeness_score: {score}
+  backfill_done: {backfill}
+
+{如有阻断} 🚫 检测到阻断状态，禁止继续
+{如有警告} ⚠️ 检测到警告状态，建议修复
+
+确认开始？(yes/no)
+```
+
+### 阻断状态检测（所有阶段通用）
+
+进入任何子流水线前，首先检查：
+
+| 条件 | 行为 |
+|------|------|
+| `status = backfill-blocked` | **拒绝执行**，输出明确阻断信息并退出 |
+| `completeness_score < 0.5` 且 `backfill_done=false` 且尝试进入 finalize | **拒绝执行**，输出阻断信息 |
+
+**阻断时的输出**：
+```
+🚫 ========================================
+🚫 拒绝执行 {阶段名}
+🚫 ========================================
+🚫   当前状态: {status}
+🚫   原因: 数据完整性不足
+🚫
+🚫   必须: 先执行 /ai-backfill {material_id}
+🚫   禁止: 绕过阻断直接进入下一阶段
+🚫 ========================================
+```
+
 ## 术语表
 
 | 术语 | 定义 | 出现位置 |

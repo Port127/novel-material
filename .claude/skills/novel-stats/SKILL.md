@@ -18,6 +18,31 @@ arguments: material_id
 2. 优先读取 `events_manifest.yaml`（如存在）
 3. 如需详细数据，分批读取 event YAML 文件
 
+## 输出文件完整性检查（强制）
+
+**必须生成全部 3 个文件**，缺一不可：
+
+| 文件 | 用途 | 必须存在 |
+|------|------|---------|
+| stats.yaml | 原始统计数据（唯一数据源） | ✅ 必须 |
+| stats.md | 轻量可视化报告（Mermaid） | ✅ 必须 |
+| stats.html | 交互版报告（ECharts） | ✅ 必须 |
+
+**禁止行为**：
+- ❌ 只生成 stats.yaml 就标记 stats_generated: true
+- ❌ 省略 stats.md 或 stats.html
+- ❌ 编造报告内容（无信号写 TBD）
+
+**完整性验证**：
+生成完成后，检查三个文件是否都存在：
+```
+✅ stats.yaml 存在 ({size} KB)
+✅ stats.md 存在 ({size} KB)
+✅ stats.html 存在 ({size} KB)
+
+如缺少任一文件 → 警告并补生成
+```
+
 ## 输出文件
 
 - `data/novels/{material_id}/stats.yaml` — 原始统计数据（**唯一数据源**）

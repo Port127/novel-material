@@ -18,7 +18,10 @@
       "WebSearch",
       "WebFetch(domain:github.com)",
       "WebFetch(domain:www.npmjs.com)",
-      "Bash(npm search *)"
+      "Bash(npm search *)",
+      "Bash(cp -r outline/ outline.bak/)",
+      "Bash(cp -r characters/ characters.bak/)",
+      "Bash(cp -r worldbuilding/ worldbuilding.bak/)"
     ]
   },
   "project": "novel-material",

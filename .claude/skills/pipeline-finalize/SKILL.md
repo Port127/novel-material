@@ -15,14 +15,29 @@ arguments: material_id
 ## 前置检查
 
 1. 读取 `data/novels/{material_id}/meta.yaml`
-2. 确认 `status` 为 `complete` 或更高
-3. 确认 `events_index.yaml` 或 `events_manifest.yaml` 存在
-4. 确认 `outline/_index.yaml`、`characters/_index.yaml`、`tags.yaml` 存在
-5. **检查完备性报告（新增）**：
+2. **阻断状态检测（优先）**：
+   - 如果 `status = backfill-blocked`
+     → **拒绝执行**：输出明确阻断信息并退出
+     ```
+     🚫 ========================================
+     🚫 拒绝执行 pipeline-finalize
+     🚫 ========================================
+     🚫   当前状态: backfill-blocked
+     🚫   原因: 数据完整性不足
+     🚫
+     🚫   必须: 先执行 /ai-backfill {material_id}
+     🚫   禁止: 绕过阻断直接进入精调
+     🚫 ========================================
+     ```
+3. 认 `status` 为 `complete` 或更高
+4. 确认 `events_index.yaml` 或 `events_manifest.yaml` 存在
+5. 确认 `outline/_index.yaml`、`characters/_index.yaml`、`tags.yaml` 存在
+6. **完备性报告检查**：
    - 读取 `completeness_report.yaml`（如存在）
    - 如果 `completeness_score < 0.5` 且 `backfill_done=false`
      → **拒绝执行**：输出「事件数据不完整，请先完成 ai-backfill」
-6. **检查章节覆盖率（新增）**：
+     → 并更新 `status: backfill-blocked`
+7. **章节覆盖率检查**：
    - 扫描所有事件的 `chapters` 字段
    - 如果主线连续未覆盖章节 > 3
      → **警告**：输出「主线覆盖不完整，精调结果可能不准确」
@@ -92,9 +107,12 @@ refine 分为 6 个批次（batch-1 到 batch-6），每批完成后立即写入
 
 读取 `novel-stats/SKILL.md` 并执行。主要产出：
 
-- `stats.yaml`（原始统计数据）
-- `stats.md`（Mermaid 可视化报告）
-- `stats.html`（ECharts 交互报告 + 关系图谱）
+- `stats.yaml`（原始统计数据）— **必须生成**
+- `stats.md`（Mermaid 可视化报告）— **必须生成**
+- `stats.html`（ECharts 交互报告 + 关系图谱）— **必须生成**
+
+**输出文件完整性检查**：
+生成完成后，验证三个文件是否都存在。如缺少任一文件，补生成后才可标记完成。
 
 ### 4. 更新状态
 

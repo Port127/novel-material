@@ -342,13 +342,36 @@ def main():
     completeness_score = report.get("completeness_score", 1.0)
     critical_count = report.get("summary", {}).get("critical", 0)
 
-    if completeness_score < args.fail_threshold or critical_count > 0:
-        print(f"\n🚫 阻断条件触发：")
+    # 阻断阈值判断
+    is_blocked = completeness_score < args.fail_threshold or critical_count > 0
+
+    if is_blocked:
+        # 阻断时自动设置 status 为 backfill-blocked
+        meta_path = Path(f"data/novels/{args.material_id}/meta.yaml")
+        if meta_path.exists():
+            with open(meta_path, "r", encoding="utf-8") as f:
+                meta = yaml.safe_load(f) or {}
+            meta["status"] = "backfill-blocked"
+            with open(meta_path, "w", encoding="utf-8") as f:
+                yaml.dump(meta, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+
+        # 输出明确阻断信息
+        print("\n")
+        print("🚫 " + "=" * 40)
+        print("🚫 流程阻断：数据完整性不足")
+        print("🚫 " + "=" * 40)
+        print(f"🚫   completeness_score: {completeness_score:.1%}")
         if completeness_score < args.fail_threshold:
-            print(f"  - 覆盖率 {completeness_score:.1%} < {args.fail_threshold:.1%}")
+            print(f"🚫   阈值要求: ≥ {args.fail_threshold:.1%}")
         if critical_count > 0:
-            print(f"  - 存在 {critical_count} 个 critical 问题")
-        print(f"\n  需执行 ai-backfill 后重新验证")
+            print(f"🚫   critical 遗漏项: {critical_count}")
+        print("🚫")
+        print("🚫   必须: /ai-backfill " + args.material_id)
+        print("🚫   禁止: 继续执行 pipeline-finalize")
+        print("🚫   禁止: 手动修改 status 绕过阻断")
+        print("🚫 " + "=" * 40)
+        print("\n  状态已自动设置为: backfill-blocked")
+        print("  请执行 ai-backfill 后重新验证")
         sys.exit(1)
 
     sys.exit(0)
