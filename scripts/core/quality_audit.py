@@ -55,6 +55,17 @@ def _as_list(val):
     return [str(val)]
 
 
+def _get_tension(event: dict, default: int = 0) -> int:
+    """统一读取张力，兼容 legacy tension_peak。"""
+    tension = event.get('tension')
+    if tension is None:
+        tension = event.get('tension_peak', default)
+    try:
+        return int(tension)
+    except (ValueError, TypeError):
+        return default
+
+
 def load_events(events_dir: Path, chapter_range: str = None):
     """Load event YAML files, optionally filtered by chapter range."""
     event_files = sorted(events_dir.glob("ev*.yaml"))
@@ -136,8 +147,7 @@ def compute_batch_quality(events: list) -> dict:
     # 3. Tension distribution
     tension_dist = Counter()
     for e in valid_events:
-        t = e.get('tension', 0)
-        tension_dist[int(t)] += 1
+        tension_dist[_get_tension(e, 0)] += 1
     tension_dist = dict(sorted(tension_dist.items()))
 
     # 4. Average tags per event

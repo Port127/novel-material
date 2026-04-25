@@ -1,211 +1,400 @@
 # event-unit.schema.yaml
-# 事件单元 schema
+# 事件单元 schema（v2.0）
 # 路径: data/novels/{material_id}/events/{event_id}.yaml
 # 命名: ev{线索}_{序号}.yaml  例: ev_main_001.yaml, ev_romance_A_001.yaml
 
-# ====================================================================
-# 字段说明
-# ====================================================================
-#
-# 事件单元 = 一个完整的戏剧动作（有起点、发展、结局）
-# 事件可能跨越 5-60 章，以事件完整性为切分依据。
-#
-# **多事件并行支持**：
-# - 同一章节可被多个事件覆盖（不同线索）
-# - chapters 可为不连续列表，如 [1, 3, 5, 7]
-# - thread 字段区分不同叙事线索
-#
-# R = 必填, O = 可选
-# 值域标记 "tags.yaml → xxx" 表示值必须从 tags.yaml 的对应维度选取
-
-id: ev_main_001                           # R | 事件ID，格式 ev{线索}_{序号}
-thread: main                              # R | 叙事线索（主线/支线/感情线等）
-chapters: [1, 2, 3, 4, 5]                 # R | 章节号列表（可不连续）
-chapter_titles:                           # R | 从 chapter_index.yaml 逐字拷贝对应章节
-  - '第1章 牢狱之灾'
-  - '第2章 妖物作祟'
-  - '第3章 仙侠世界一样能推理'
-  - '第4章 是时候表演真正的技术了'
-  - '第5章 解开谜题'
-title: 税银案破案自救                      # R | 有语义的事件概括
-summary: >-                               # R | 100-200字概括事件全过程
-  许七安穿越入狱，面临流放边陲的命运。
-  通过堂弟许新年获取税银案卷宗，运用推理分析，
-  发现案件疑点，成功破解税银失踪之谜。
-text_range: [18, 445]                     # O | source.txt 行号范围（仅本事件涉及的段落）
-event_type: 推理破案                       # R | tags.yaml → event_type
-event_stage: 开局困境→突破契机→成功破局    # R | tags.yaml → event_stage
-outcome: 成功自救                          # R | tags.yaml → outcome
-event_arc: 绝境→求卷宗→分析推理→破案自救   # O | 事件弧线简述
-characters:                               # R | 出场人物名列表
-  - 许七安
-  - 许新年
-  - 陈汉光
-  - 李玉春
-  - 采薇
-primary_character: 许七安                 # R | 事件主角
-relationship:                             # R | tags.yaml → relationship
-  - 兄弟姐妹
-  - 君臣
-interaction:                              # R | tags.yaml → interaction
-  - 告别
-  - 求助
-  - 讨论
-power_dynamic: 下对上                     # R | tags.yaml → power_dynamic
-character_moment:                         # R | tags.yaml → character_moment
-  - 性格展示
-  - 成长顿悟
-moral_spectrum: 正义                       # R | tags.yaml → moral_spectrum
-emotion_arc:                              # R | 情绪变化轨迹 [起点→中间→结局]
-  - 恐惧
-  - 挐扎
-  - 狂喜
-tension_peak: 5                           # R | 张力峰值 1-5
-tension_curve: [4, 3, 3, 4, 5]            # O | 分段张力值
-reader_effect:                            # R | tags.yaml → reader_effect
-  - 揪心
-  - 爽感
-  - 拍案叫绝
-plot_stage: 开篇                          # R | tags.yaml → plot_stage
-plot_function:                            # R | tags.yaml → plot_function
-  - 铺垫
-  - 转折
-  - 信息揭示
-pacing: 加速                              # R | tags.yaml → pacing
-technique:                                # R | tags.yaml → technique
-  - 闪回
-  - 细节放大
-  - 心理推理
-dialogue_type:                            # R | tags.yaml → dialogue_type
-  - 独白
-  - 讨论
-  - 审讯
-pov: 第三人称限制                         # R | tags.yaml → pov
-info_delivery:                            # R | tags.yaml → info_delivery
-  - 内心独白带出
-  - 对话带出
-  - 行动展示
-setting:                                  # R | tags.yaml → setting
-  - 监牢
-  - 衙门
-scale: 小团体                             # R | tags.yaml → scale
-time_weather:                             # R | tags.yaml → time_weather
-  - 白天
-conflict:                                 # R | tags.yaml → conflict
-  - 生死
-  - 利益
-stakes:                                   # R | tags.yaml → stakes
-  - 生死
-  - 自由
-  - 家族存亡
-highlights:                               # O | 精彩段落
-  - lines: [70, 80]
-    note: '许七安意识到破案自救的可能性，核心转折点'
-  - lines: [236, 270]
-    note: '推理突破时刻'
-sub_events: []                            # O | 子事件ID列表（可选）
-plot_threads: []                          # O | refine阶段补充
+schema_version: "2.0"
+document_type: event-unit
 
 # ====================================================================
-# 跨线索交汇字段（可选，仅当本事件与其他线索事件在同一章同时发生时使用）
+# 字段定义区（唯一真相来源）
 # ====================================================================
 #
-# 当同一章节被多个 thread 的事件覆盖时，标记为交汇点。
-# 用于建立主线与支线/感情线之间的关联纽带。
+# 校验脚本（validate_yaml.py）从此区提取字段规格。
+# 所有字段必须有 type 和 required 声明。
 #
-# 交汇类型说明：
-# - causal: 支线事件的结果直接影响主线走向
-# - emotional: 支线与主线在同一章产生情感层面的互动
-# - thematic: 不同线索指向同一主题
-# - parallel: 仅时间上的并行，无实质关联
+# 类型系统：
+#   str        → 字符串
+#   int        → 整数
+#   bool       → 布尔值
+#   list[str]  → 字符串列表
+#   list[int]  → 整数列表
+#   list[dict] → 字典列表
+#   dict       → 字典
+#
+# 值域引用语法：
+#   value_domain: "tags.yaml → {dimension}"
+#   表示值必须从 tags.yaml 的对应维度选取
+#
+# R = 必填（required: true）
+# O = 可选（required: false）
 
-intersects_mainline_at:                   # O | 与主线的交汇点（仅支线/感情线事件填写）
-  - chapter: 120                          # 交汇章节
-    intersecting_event: ev_main_005       # 同时发生的主线事件ID
-    integration_type: emotional           # causal / emotional / thematic / parallel
-    note: '怀庆暗助，推动主线破案'
-    confidence: medium                    # high（明确文本证据）/ medium（间接关联）/ low（推断）
+definitions:
+  # ── 核心字段 ──
+  core:
+    id:
+      type: str
+      required: true
+      pattern: "^ev_[a-z0-9_]+_[0-9]{3}$"
+      description: "事件ID，格式 ev{线索}_{序号}"
+
+    material_id:
+      type: str
+      required: true
+      description: "素材ID"
+
+    thread:
+      type: str
+      required: true
+      description: "叙事线索（main/romance_xxx/subplot_xxx/cast_xxx）"
+
+    title:
+      type: str
+      required: true
+      description: "事件标题（有语义概括，禁止纯编号）"
+
+    summary:
+      type: str
+      required: true
+      min_length: 50
+      max_length: 500
+      description: "事件全过程概括（50-500字）"
+
+    chapters:
+      type: list[int]
+      required: true
+      description: "章节号列表（可不连续，如 [1, 3, 5, 7]）"
+
+    chapter_titles:
+      type: list[str]
+      required: false
+      description: "从 chapter_index.yaml 拷贝对应章节标题"
+
+    text_range:
+      type: list[int]
+      required: false
+      length: 2
+      description: "source.txt 行号范围 [start, end]（仅本事件涉及的段落）"
+
+    lines:
+      type: list[int]
+      required: false
+      length: 2
+      description: "原文行号范围 [start, end]"
+
+    lines_approximate:
+      type: bool
+      required: false
+      default: false
+      description: "行号是否为估算值"
+
+    event_type:
+      type: list[str]
+      required: true
+      value_domain: "tags.yaml → event_type"
+      description: "事件类型（从 tags.yaml 选取，可多选）"
+
+    event_stage:
+      type: str
+      required: true
+      value_domain: "tags.yaml → event_stage"
+      description: "事件阶段（事件在全书中的发展位置）"
+
+    outcome:
+      type: str
+      required: true
+      value_domain: "tags.yaml → outcome"
+      description: "事件结果"
+
+    event_arc:
+      type: str
+      required: false
+      description: "事件弧线简述（起点→发展→结局）"
+
+  # ── 人物层 ──
+  characters:
+    characters:
+      type: list[str]
+      required: true
+      description: "出场人物名列表"
+
+    primary_character:
+      type: str
+      required: true
+      description: "事件主角"
+
+    relationship:
+      type: list[str]
+      required: true
+      value_domain: "tags.yaml → relationship"
+      description: "人物关系类型"
+
+    interaction:
+      type: list[str]
+      required: true
+      value_domain: "tags.yaml → interaction"
+      description: "互动方式"
+
+    power_dynamic:
+      type: str
+      required: true
+      value_domain: "tags.yaml → power_dynamic"
+      description: "权力位差"
+
+    character_moment:
+      type: list[str]
+      required: true
+      value_domain: "tags.yaml → character_moment"
+      description: "人物弧光时刻"
+
+    moral_spectrum:
+      type: str
+      required: true
+      value_domain: "tags.yaml → moral_spectrum"
+      description: "道德光谱"
+
+  # ── 情感层 ──
+  emotion:
+    emotion_arc:
+      type: list[str]
+      required: true
+      value_domain: "tags.yaml → emotion"
+      description: "情绪变化轨迹 [起点→中间→结局]"
+
+    tension:
+      type: int
+      required: true
+      min: 1
+      max: 5
+      description: "张力值（1-5）；legacy 别名: tension_peak"
+
+    tension_curve:
+      type: list[int]
+      required: false
+      description: "分段张力值（对应各章节或阶段）"
+
+    reader_effect:
+      type: list[str]
+      required: true
+      value_domain: "tags.yaml → reader_effect"
+      description: "期望读者感受"
+
+  # ── 结构层 ──
+  structure:
+    plot_stage:
+      type: str
+      required: true
+      value_domain: "tags.yaml → plot_stage"
+      description: "剧情阶段"
+
+    plot_function:
+      type: list[str]
+      required: true
+      value_domain: "tags.yaml → plot_function"
+      description: "情节功能"
+
+    pacing:
+      type: str
+      required: true
+      value_domain: "tags.yaml → pacing"
+      description: "节奏型"
+
+  # ── 技法层 ──
+  craft:
+    technique:
+      type: list[str]
+      required: true
+      value_domain: "tags.yaml → technique"
+      description: "叙事技法"
+
+    dialogue_type:
+      type: list[str]
+      required: true
+      value_domain: "tags.yaml → dialogue_type"
+      description: "对话类型"
+
+    pov:
+      type: str
+      required: true
+      value_domain: "tags.yaml → pov"
+      description: "视角"
+
+    info_delivery:
+      type: list[str]
+      required: true
+      value_domain: "tags.yaml → info_delivery"
+      description: "信息投放方式"
+
+  # ── 物理层 ──
+  physical:
+    setting:
+      type: list[str]
+      required: true
+      value_domain: "tags.yaml → setting"
+      description: "空间类型"
+
+    scale:
+      type: str
+      required: true
+      value_domain: "tags.yaml → scale"
+      description: "事件人数规模"
+
+    time_weather:
+      type: list[str]
+      required: true
+      value_domain: "tags.yaml → time_weather"
+      description: "时间与天气"
+
+  # ── 冲突与赌注 ──
+  conflict:
+    conflict:
+      type: list[str]
+      required: true
+      value_domain: "tags.yaml → conflict"
+      description: "冲突类型"
+
+    stakes:
+      type: list[str]
+      required: true
+      value_domain: "tags.yaml → stakes"
+      description: "赌注（事件中赌上了什么）"
+
+  # ── 可选扩展字段 ──
+  optional:
+    highlights:
+      type: list[dict]
+      required: false
+      description: "精彩段落标记"
+
+    sub_events:
+      type: list[str]
+      required: false
+      description: "子事件ID列表"
+
+    plot_threads:
+      type: list[str]
+      required: false
+      description: "refine阶段补充的剧情线索关联"
+
+    intersects_mainline_at:
+      type: list[dict]
+      required: false
+      description: "与主线的交汇点（仅支线/感情线事件填写）"
+
+    hooks:
+      type: any
+      required: false
+      description: "钩子标记（支持 dict 结构或 list[dict] 格式）"
+
+    # hooks 的两种格式：
+    # 格式A（dict）：{chapter_end: [], items_crossing: [], ...}
+    # 格式B（list）：[{hook_type: xxx, crossing_type: xxx, ...}]
 
 # ====================================================================
-# hooks 字段说明（可选，事件拆解时捕捉显性钩子）
+# 示例区（仅供参考，不参与校验）
 # ====================================================================
-#
-# 钩子是事件与事件的铆合点，使孤立事件形成有机叙事。
-# 分层处理：事件拆解捕捉显性钩子，refine验证隐性钩子。
-#
-# 钩子的四种铆合形式：
-# - 反转铆合：第一次理解为A，揭示后发现是B
-# - 悬念铆合：埋下疑问，驱动读者等待答案
-# - 期待铆合：建立期待，让读者等待某个事件兑现
-# - 因果铆合：前事件的元素成为后事件的关键
-#
-# 置信度规则：
-# - high: 道具钩子/悬念钩子，有明确行号引用
-# - medium: 人物钩子，需refine验证
-# - low: 信息钩子/情感钩子，需refine验证
 
-hooks:
-  # 章末悬念（本事件内的章节结尾钩子）
-  chapter_end:
-    - chapter: 5                          # 章节号
-      type: 悬念人物                      # 悬念人物/动作暂停/信息揭示/即时危险
-      hook_text: '门外传来不可能出现的声音'  # 钩子文本节选（≤30字）
-      lines: [450, 455]                   # 埋设行号范围
-      resolved_in: unknown                # 回收事件ID（已知时填写，未知填unknown）
-      crossing_type: 悬念铆合             # 铆合形式
+examples:
+  main_event:
+    id: ev_main_001
+    thread: main
+    chapters: [1, 2, 3, 4, 5]
+    chapter_titles:
+      - '第1章 牢狱之灾'
+      - '第2章 妖物作祟'
+      - '第3章 仙侠世界一样能推理'
+      - '第4章 是时候表演真正的技术了'
+      - '第5章 解开谜题'
+    title: 税银案破案自救
+    summary: >-
+      许七安穿越入狱，面临流放边陲的命运。
+      通过堂弟许新年获取税银案卷宗，运用推理分析，
+      发现案件疑点，成功破解税银失踪之谜。
+    text_range: [18, 445]
+    event_type: [推理破案]
+    event_stage: 开局困境→突破契机→成功破局
+    outcome: 成功自救
+    event_arc: 绝境→求卷宗→分析推理→破案自救
+    characters: [许七安, 许新年, 陈汉光, 李玉春, 采薇]
+    primary_character: 许七安
+    relationship: [兄弟姐妹, 君臣]
+    interaction: [告别, 求助, 讨论]
+    power_dynamic: 下对上
+    character_moment: [性格展示, 成长顿悟]
+    moral_spectrum: 正义
+    emotion_arc: [恐惧, 挐扎, 狂喜]
+    tension: 5
+    tension_curve: [4, 3, 3, 4, 5]
+    reader_effect: [揪心, 爽感, 拍案叫绝]
+    plot_stage: 开篇
+    plot_function: [铺垫, 转折, 信息揭示]
+    pacing: 加速
+    technique: [闪回, 细节放大, 心理推理]
+    dialogue_type: [独白, 讨论, 审讯]
+    pov: 第三人称限制
+    info_delivery: [内心独白带出, 对话带出, 行动展示]
+    setting: [监牢, 衙门]
+    scale: 小团体
+    time_weather: [白天]
+    conflict: [生死, 利益]
+    stakes: [生死, 自由, 家族存亡]
 
-  # 跨事件道具钩子（显性可识别）
-  items_crossing:
-    - item: 神秘石头                      # 物品名称
-      planted_chapter: 3                  # 埋设章节
-      planted_lines: [120, 125]           # 埋设行号范围
-      planted_event: ev_main_001          # 埋设事件（本事件ID）
-      role_in_event: 背景道具             # 本事件中的角色（关键道具/背景道具/携带物品）
-      expected_harvest: unknown           # 预计回收事件（已知时填写）
-      crossing_type: 因果铆合             # 因果铆合/反转铆合
-      confidence: high                    # high/medium/low
-
-  # 跨事件人物关联（显性可识别，置信度默认medium）
-  character_crossing:
-    - character: 热心路人                 # 人物名称
-      first_appearance: 3                 # 首次出场章节
-      first_event: ev_main_001            # 首次出场事件
-      behavior_hint: 出场时眼神有微妙异样  # 行为异常描述（可选）
-      expected_role_change: unknown       # 预计变化类型（已知时填写）
-      confidence: medium                  # 默认medium
-
-  # 信息钩子标记（低置信度，只标记疑似）
-  info_hint:
-    - detail: '城东的井水最近变苦了'      # 细节文本
-      chapter: 12                         # 出现章节
-      lines: [280, 285]                   # 行号范围
-      context: 闲聊对话                   # 出现语境（闲聊对话/背景描写/人物独白）
-      confidence: low                     # 默认low
+  romance_event:
+    id: ev_romance_怀庆_001
+    thread: romance_怀庆
+    chapters: [50]
+    title: 初遇怀庆
+    summary: >-
+      许七安在宫中偶遇怀庆公主，两人因税银案产生交集。
+      怀庆对许七安的推理能力产生兴趣，暗中留意。
+    event_type: [告别重逢]
+    event_stage: 关系转折
+    outcome: 关系确立
+    characters: [许七安, 怀庆公主]
+    primary_character: 许七安
+    relationship: [陌生人]
+    interaction: [暗中观察]
+    power_dynamic: 下对上
+    character_moment: [初次亮相]
+    moral_spectrum: 灰色
+    emotion_arc: [好奇, 惊讶, 平静]
+    tension: 2
+    reader_effect: [会心一笑]
+    plot_stage: 第一幕-发展
+    plot_function: [铺垫]
+    pacing: 喘息
+    technique: [对比]
+    dialogue_type: [寒暄下的暗斗]
+    pov: 第三人称限制
+    info_delivery: [对话带出]
+    setting: [宫殿]
+    scale: 双人戏
+    time_weather: [白天]
+    conflict: [立场]
+    stakes: [身份秘密]
 
 # ====================================================================
-# thread 字段说明
+# 文档说明（人类阅读）
 # ====================================================================
-#
-# thread 用于区分并行叙事线索，常见取值：
-#
-# | 线索类型 | 示例 thread 值 | 说明 |
-# |----------|----------------|------|
-# | 主线 | main | 主角核心叙事线 |
-# | 感情线 | romance_A, romance_B | A/B角色的感情发展 |
-# | 支线 | subplot_A, subplot_B | 重要支线剧情 |
-# | 群像线 | cast_A, cast_B | 其他角色的个人故事 |
-# | 世界观线 | world_politics, world_magic | 世界层面的叙事 |
-#
-# 命名规则：{类型}_{区分标识}
-# 例：romance_怀庆, romance_临安, subplot_云鹿书院
 
-# ====================================================================
-# YAML 书写安全规则
-# ====================================================================
-#
-# 1. 含中文引号（""）或英文引号的字符串值，整行用单引号包裹
-#    例: note: '许七安说"活下去"'
-#
-# 2. 数值字段（tension_peak, tension_curve, text_range）不加引号
-#
-# 3. summary 若超过一行，使用 >- 折叠标量
+documentation:
+  purpose: "事件单元 = 一个完整的戏剧动作（有起点、发展、结局）。事件可能跨越 5-60 章，以事件完整性为切分依据。同一章节可被多个事件覆盖，chapters 可为不连续列表。"
+
+  thread_types:
+    main: "主线 - 主角核心叙事线"
+    romance_xxx: "感情线 - 特定角色的感情发展"
+    subplot_xxx: "支线 - 重要支线剧情"
+    cast_xxx: "群像线 - 其他角色的个人故事"
+    world_xxx: "世界观线 - 世界层面的叙事"
+
+  hook_types:
+    chapter_end: "章末悬念"
+    items_crossing: "跨事件道具钩子"
+    character_crossing: "跨事件人物关联"
+    info_hint: "信息钩子标记"
+
+  yaml_safety_rules:
+    rule_1: "含中文引号的字符串值，整行用单引号包裹"
+    rule_2: "数值字段不加引号"
+    rule_3: "summary 超过一行使用 >- 折叠标量"
+    rule_4: "列表项破折号后必须有空格"

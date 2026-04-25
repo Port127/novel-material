@@ -1,172 +1,93 @@
 ---
 name: ai-backfill
-description: 根据 completeness_report 对遗漏实体进行 AI 定向补录（分批执行）
-when_to_use: 交叉验证后发现原文实体在事件记录中遗漏（completeness_report.yaml 中有 critical/warning 项）
-argument-hint: "[material_id] [--batch N]"
-arguments: material_id
+description: 根据 completeness_report 定向补录遗漏实体；按小批次回读相关章节，更新已有事件或新建事件
 ---
 
 # 任务
 
-根据 `completeness_report.yaml` 中的遗漏项，定向回读原文相关章节，
-补充到已有事件或新建事件，修复数据完整性。
+根据完整性报告中的遗漏项，定向补录事件数据。
 
-**核心原则：只读遗漏实体相关的章节，不读全文，控制上下文量。**
+## 边界
 
-## 上下文预算
+用于：
+- `completeness_report.yaml` 中存在 `critical` / `warning`
+- 需要补人物、地点、势力、物品或术语遗漏
 
-| 操作 | 最大读取量 | 说明 |
-|------|-----------|------|
-| 扫描章节标题 | 不限 | 只读标题行，不读正文 |
-| 单章阅读 | 单章全文 | 用于事件拆分/精调 |
-| 批量阅读 | ≤ 5 章/次 | 用于 outline 分段阅读 |
-| 补录阅读 | ≤ 3 章/次 | 只读遗漏实体相关章节 |
+不用于：
+- 全书重跑事件拆分
+- 大范围重读原文
 
-**禁止**：
-- 一次性读取 > 10 章正文
-- 在不分段的情况下读取全文
-- 将上一步的完整输出原样传递到下一步
+## 输入
 
-## 前置检查
+- `material_id`
 
-1. 读取 `data/novels/{material_id}/completeness_report.yaml`
-2. 确认 `issues` 字段中有 critical 或 warning 项
-3. 读取 `data/novels/{material_id}/meta.yaml`，确认状态
+## 默认执行路径
 
-## 恢复逻辑
+### 1. 前置检查
 
-| 状态 | 行为 |
-|------|------|
-| 无 completeness_report | 先运行 validate_completeness.py |
-| report 中无 critical/warning | 输出"无需补录" |
-| 有未处理项 | 从第 1 个 critical 项开始 |
-| backfill_progress.yaml 存在 | 从上次中断的项继续 |
+- `completeness_report.yaml` 存在
+- `issues` 非空
+- `source_entities.json` 可用
 
-## 执行步骤
+### 2. 小批次处理
 
-### 1. 预览
+每批只处理少量遗漏实体，默认 3-5 个。
 
-```
-📋 AI 补录预览
+对每个实体：
 
-素材：{name} ({material_id})
-遗漏项统计：
-  critical：{n} 项
-  warning：{n} 项
+1. 根据 `source_entities.json` 定位相关章节
+2. 只读相关章节，不读全文
+3. 判断是：
+   - 追加到已有事件
+   - 新建事件
+   - 仅背景提及，可标记跳过
 
-补录范围：
-  角色：{n} 个（如：叶文洁、汪淼）
-  地点：{n} 个
-  势力：{n} 个
-  物品：{n} 个
-  术语：{n} 个
-  章节：{n} 个范围
+### 3. 每批都要落盘
 
-将分批处理，每批 3-5 个实体。
-确认开始？(yes/no)
+每批完成后必须：
+
+- 更新事件文件
+- 写 `backfill_progress.yaml`
+- 记录本批处理结果
+
+### 4. 补录完成后复验
+
+全部处理完后，必须重新跑：
+
+```bash
+python scripts/core/validate_completeness.py {material_id}
 ```
 
-### 2. 分批补录
+### 5. 状态写回
 
-**每批处理 3-5 个遗漏实体**，执行以下流程：
+只有复验通过后，才写：
 
-#### 2a. 定位原文
+- `pipeline.backfill_done = true`
+- `pipeline.backfill_at`
 
-对每个遗漏实体：
-- 从 `source_entities.json` 读取其 `chapters` 列表
-- 读取 `source.txt` 中对应章节的原文
-- 每次只读少量章节（≤ 5 章），控制上下文量
+## 输出要求
 
-#### 2b. 判断补录方式
+至少输出：
 
-对每个实体，读取原文后判断：
+- 处理了多少实体
+- 追加了多少事件
+- 新建了多少事件
+- 跳过了多少背景提及
+- 覆盖率前后变化
 
-| 判断结果 | 操作 |
-|----------|------|
-| 实体在已有事件的章节范围内 | 追加到对应事件的 `characters`/`setting`/相关字段 |
-| 实体涉及的事件尚未创建 | 创建新事件 YAML，遵循 event-unit.schema.yaml |
-| 实体只是背景描写中提及，无需独立记录 | 跳过，标记为 resolved=background |
+## 关键硬约束
 
-#### 2c. 更新事件文件
+- 每次只读相关章节
+- 批次要小
+- 每批都更新进度
+- 补录后必须重新验证
+- 不能跳过 critical 项
 
-- 追加到已有事件：直接修改对应 `events/ev*.yaml`
-- 新建事件：创建 `events/ev_{thread}_{seq}.yaml`
-- 每补录一个实体，在 `backfill_progress.yaml` 中记录
+## 仅在需要时读取
 
-#### 2d. 批次完成
-
-每批完成后：
-- 输出进度
-- 更新 `backfill_progress.yaml`
-- 如果还有未处理的项，提示继续下一批
-
-```
-[批次 {n}] 已补录 {m} 个实体
-  - {entity1}: 追加到 ev_main_003
-  - {entity2}: 新建 ev_main_045
-  - {entity3}: 跳过（背景提及）
-
-剩余 {remaining} 个待处理。
-继续？(yes/no)
-```
-
-### 3. 补录完成后验证
-
-全部实体补录完成后：
-
-1. **重新运行交叉验证**：
-   ```bash
-   python scripts/core/validate_completeness.py {material_id}
-   ```
-
-2. **检查覆盖率是否提升**：
-   - 如果仍有 critical/warning → 继续补录
-   - 如果覆盖率达标 → 进入下一步
-
-3. **更新状态**：
-   ```yaml
-   pipeline:
-     backfill_done: true
-     backfill_at: {timestamp}
-     backfill_summary:
-       entities_backfilled: {n}
-       events_updated: {n}
-       events_created: {n}
-   ```
-
-### 4. 输出报告
-
-```
-✅ AI 补录完成
-
-素材：{name}
-补录统计：
-  处理实体总数：{n}
-  追加到已有事件：{n}
-  新建事件：{n}
-  跳过（背景提及）：{n}
-
-覆盖率变化：
-  补录前：{before}%
-  补录后：{after}%
-
-后续操作：
-  /pipeline-finalize {material_id}    # 进入精调阶段
-```
-
-## 硬约束
-
-- MUST 每次只读与当前遗漏实体相关的章节（≤ 5 章），绝不读全文
-- MUST 每批处理 3-5 个实体，控制上下文量
-- MUST 每批完成后更新 backfill_progress.yaml
-- MUST 补录完成后重新运行 validate_completeness.py 验证
-- MUST 新建事件时严格遵循 event-unit.schema.yaml
-- NEVER 因为补录而修改已精调完成的事件（除非确认为同一事件）
-- NEVER 跳过 critical 级别的遗漏项
-
-## References
-
-- [event-unit.schema.yaml](../../../docs/schemas/event-unit.schema.yaml)
-- [novel-events/SKILL.md](../novel-events/SKILL.md)
-- [build-index/SKILL.md](../build-index/SKILL.md)
-- [AGENTS.md](../../../AGENTS.md)
+- `../_shared/references/skill-conventions.md`
+- `references/decision-rules.md`
+- `../../../docs/schemas/event-unit.schema.yaml`
+- `../novel-events/SKILL.md`
+- `../build-index/SKILL.md`
+- `../../../AGENTS.md`

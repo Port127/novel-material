@@ -1,96 +1,91 @@
 ---
 name: pipeline-ingest
-description: 入库+格式清洗流水线（material-add → source-format）
-when_to_use: 用户有新文件要入库，或触发 full pipeline 的第一阶段
-argument-hint: "[文件路径]"
-arguments: path
+description: 处理新素材入库与格式清洗；串联 material-add 和 source-format，产出可分析的干净 source.txt
 ---
 
 # 任务
 
-将一个新素材文件入库并完成格式清洗，产出可供后续分析的干净 `source.txt`。
+把一个新素材安全入库，并完成格式清洗，产出：
 
-**串联 2 个子 skill：`material-add` → `source-format`。**
+- `meta.yaml`
+- `source.txt`
+- `chapter_index.yaml`
+- `format_report.yaml`
 
-## 前置检查
+## 适用边界
 
-1. 确认文件路径存在
-2. 读取 `data/index.yaml` 检查是否已入库（去重）
+用于：
+- 新文件首次入库
+- full pipeline 的第一阶段
 
-## 执行步骤
+不用于：
+- 跳过 `source-format`
+- 直接替代 `material-add` 或 `source-format`
 
-### 1. 预览
+## 输入
 
-```
-📋 入库流程预览
+- 文件路径
 
-素材：{文件路径}
+## 默认执行路径
 
-将执行：
-  1. material-add   → 入库（创建文件夹 + meta.yaml）
-  2. source-format  → 格式清洗（繁简/广告/引号/章节名/缺章检测）
+### 1. 前置检查
 
-确认开始？(yes/no)
-```
+- 文件路径存在
+- `data/index.yaml` 可读取
+- 如命中疑似重复，交给 `material-add` 自己处理冲突分支
 
-等待用户确认后执行。
+### 2. 执行顺序
 
-### 2. 执行 material-add
+严格按顺序调用：
 
-读取 `material-add/SKILL.md` 并按其指令执行。收集产出的 `material_id`。
+1. `material-add`
+2. `source-format`
 
-### 3. 执行 source-format
+`material-add` 未成功前，禁止进入 `source-format`。
 
-读取 `source-format/SKILL.md` 并按其指令执行，传入 `material_id`。
+### 3. 质量检查
 
-### 4. 更新 pipeline 状态
-
-在 `meta.yaml` 中记录：
-
-```yaml
-pipeline:
-  mode: ingest
-  stages_completed: [material-add, source-format]
-  formatted: true
-  format_date: {today}
-  chapters: {total_chapters}
-```
-
-### 4a. 质量检查
+完成后运行：
 
 ```bash
 python scripts/core/validate_yaml.py meta {material_id}
 ```
 
-如校验失败，停止并报告具体错误，不进入 pipeline-analyze。
+同时检查：
 
-同时检查 `format_report.yaml` 中的章节连续性，如有缺失章节需用户确认后再继续。
+- `format_report.yaml` 是否生成
+- `chapter_index.yaml` 是否生成
+- 章节连续性是否存在缺口
 
-### 5. 输出报告
+如果章节缺失属于明确异常，报告风险并停止后续阶段。
 
-```
-✅ 入库+清洗完成
+### 4. 状态写回
 
-📚 ID：{material_id}
-📄 名称：{name}
-📁 文件夹：data/novels/{material_id}/
-📊 清洗结果：{章节数}章，修复{N}处
-📑 章节索引：chapter_index.yaml 已生成
+在 `meta.yaml` 中至少写入：
 
-后续操作：
-  /pipeline-analyze {material_id}    # 生成大纲/世界观/人物/标签
-  /novel-pipeline continue {material_id}  # 继续完整流程
-```
+- `pipeline.mode = ingest`
+- `stages_completed = [material-add, source-format]`
+- `formatted = true`
 
-## 硬约束
+## 输出要求
 
-- MUST 先预览再执行
-- MUST 按顺序串联（material-add 成功后才执行 source-format）
-- MUST 记录 pipeline 状态到 meta.yaml
-- NEVER 跳过 source-format（即使原文看起来很干净）
+至少输出：
 
-## References
+- `material_id`
+- 入库后的目录
+- 清洗结果摘要
+- 是否存在章节异常
+- 下一步建议：`pipeline-analyze`
 
-- [material-add/SKILL.md](../material-add/SKILL.md)
-- [source-format/SKILL.md](../source-format/SKILL.md)
-- [AGENTS.md](../../../AGENTS.md)
+## 关键硬约束
+
+- 不跳过 `source-format`
+- 不在本 skill 内重复展开子 skill 细节
+- 非冲突场景下不做额外 yes/no 确认
+
+## 仅在需要时读取
+
+- `../_shared/references/skill-conventions.md`
+- `../material-add/SKILL.md`
+- `../source-format/SKILL.md`
+- `../../../AGENTS.md`

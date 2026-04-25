@@ -73,6 +73,23 @@ _NESTED_REMAP = {
 }
 
 
+def _normalize_tension(raw: dict, flat: dict) -> dict:
+    """统一 tension 字段，兼容 tension_peak / nested emotion。"""
+    if 'tension' in flat and flat['tension'] is not None:
+        return flat
+    if 'tension_peak' in flat and flat['tension_peak'] is not None:
+        flat['tension'] = flat['tension_peak']
+        return flat
+
+    emotion = raw.get('emotion')
+    if isinstance(emotion, dict):
+        if emotion.get('tension') is not None:
+            flat['tension'] = emotion['tension']
+        elif emotion.get('tension_peak') is not None:
+            flat['tension'] = emotion['tension_peak']
+    return flat
+
+
 def _flatten_event(raw: dict) -> dict:
     """Normalize nested event format to flat format for uniform DB ingestion.
 
@@ -94,10 +111,7 @@ def _flatten_event(raw: dict) -> dict:
                 if old_name in group and new_name not in flat:
                     flat[new_name] = group[old_name]
 
-    if 'tension' not in flat:
-        emo = raw.get('emotion')
-        if isinstance(emo, dict) and 'tension' in emo:
-            flat['tension'] = emo['tension']
+    flat = _normalize_tension(raw, flat)
 
     if 'characters' in flat and isinstance(flat['characters'], list):
         first = flat['characters'][0] if flat['characters'] else None
@@ -526,7 +540,7 @@ def ingest_novel(conn: sqlite3.Connection, material_id: str):
             chapter = event.get('chapter', '')
             title = event.get('title', '')
             summary = event.get('summary', '')
-            tension = event.get('tension', 0)
+            tension = _normalize_tension(event, dict(event)).get('tension', 0)
             pacing = _str_or_first(event.get('pacing', ''))
             pov = _str_or_first(event.get('pov', ''))
             power_dynamic = _str_or_first(event.get('power_dynamic', ''))

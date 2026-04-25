@@ -1,77 +1,41 @@
 ---
 name: source-format
-description: 清洗格式化入库原文（繁简转换、广告清理、章节标准化、缺章检测）
-when_to_use: 素材入库后、大纲生成前，需要清洗原文质量
-argument-hint: "[material_id]"
-arguments: material_id
+description: 清洗入库后的原文 source.txt，生成格式报告和章节索引；优先使用固化脚本 source_format.py
 ---
 
 # 任务
 
-对已入库的小说原文 `source.txt` 进行格式清洗，输出清洗后的文本和格式报告。
+对已入库原文做格式层清洗，产出：
 
-`source.txt` 由 `material-add` 从原始文件复制而来，**就是工作文件**，直接原地清洗，无需额外备份。
+- `source.txt`
+- `format_report.yaml`
+- `chapter_index.yaml`
 
-**优先使用固化脚本** `scripts/core/source_format.py`，仅在脚本不满足需求时动态补充。
+## 边界
 
-## 前置检查
+用于：
+- `material-add` 后的格式清洗
+- 大纲生成前的文本整理
 
-1. 读取 `data/index.yaml`，确认 material_id 存在且 status 为 `raw`
-2. 确认 `data/novels/{material_id}/source.txt` 存在
+不用于：
+- 修改剧情内容
+- 代替分析阶段
 
-## 执行步骤
+## 输入
 
-### 1. 运行固化脚本
+- `material_id`
 
-```bash
-python scripts/core/source_format.py \
-  data/novels/{material_id}/source.txt \
-  data/novels/{material_id}/source.txt \
-  data/novels/{material_id}/format_report.yaml
-```
+## 默认执行路径
 
-脚本原地清洗 `source.txt`（读取后覆盖写入）。
+### 1. 前置检查
 
-脚本覆盖的清洗操作：
+- `material_id` 存在
+- `source.txt` 存在
+- 当前状态允许格式化
 
-| 功能 | 实现方式 |
-|------|----------|
-| 章节结构分析（缺章/重复/短章） | 正则匹配 + 连续性检测 |
-| 章节名标准化（中文数字→阿拉伯、格式统一） | 中文数字转换 + 正则替换 |
-| 繁简转换 | `opencc` 库（需安装） |
-| 引号修复（双重引号、直引号→弯引号） | 字符串替换 + 奇偶配对 |
-| 广告/乱码清理 | 预置正则模式列表 |
-| 标点统一（省略号、破折号） | 正则替换 |
-| 空白格式标准化（多空行、行首空白） | 逐行处理 |
+### 2. 优先跑固化脚本
 
-首次运行前安装依赖：`pip install -r scripts/requirements.txt`
-
-### 2. 检查脚本输出
-
-读取脚本的 stdout 摘要和生成的 `format_report.yaml`，检查：
-
-- **opencc 是否可用**：如 stdout 含 `WARNING: opencc 未安装`，提示用户安装
-- **SUSPICIOUS 项**：逐条检查是否需要人工确认
-- **异常情况**：脚本未覆盖的特殊格式问题
-
-### 3. 动态补充处理（仅在需要时）
-
-如果脚本输出中发现以下情况，**才**动态生成补充脚本：
-
-| 事件 | 处理方式 |
-|------|----------|
-| 原文使用非标准章节格式（如自定义分卷、番外） | 动态生成针对性正则 |
-| 特殊引号风格（如日式「」混用） | 动态调整引号规则 |
-| 脚本未识别的广告模式 | 追加广告正则并重跑 |
-| 编码异常（非 UTF-8 源文件） | 动态检测编码并转换 |
-
-动态生成的补充脚本应写入 `scripts/generated/`（如 `scripts/generated/format_{小说简称}.py`），与预制脚本隔离。
-
-**如果脚本输出正常、无异常，跳过此步骤。**
-
-### 4. 章节索引自动生成
-
-脚本运行时传入 `--index` 参数，直接输出 `chapter_index.yaml`：
+默认执行：
 
 ```bash
 python scripts/core/source_format.py \
@@ -81,68 +45,56 @@ python scripts/core/source_format.py \
   --index data/novels/{material_id}/chapter_index.yaml
 ```
 
-**无需手动生成**，脚本自动确保标题单引号包裹，避免 YAML 中文引号解析问题。
+脚本负责：
 
-输出格式示例：
-```yaml
-total: 6
-chapters:
-  - num: 1
-    title: '第1章 《时间之外的往事》序言(节选)'
-    start_line: 41
-    end_line: 700
-```
+- 繁简转换
+- 广告清理
+- 引号修复
+- 标点统一
+- 章节标准化
+- 章节连续性检测
 
-### 5. 更新 meta.yaml
+### 3. 检查输出
 
-在 `meta.yaml` 的 `pipeline` 字段内增加格式化信息：
+至少检查：
 
-```yaml
-pipeline:
-  formatted: true
-  format_date: {today}
-  chapters: {total_chapters}
-```
+- `format_report.yaml` 已生成
+- `chapter_index.yaml` 已生成
+- 是否存在 `suspicious` / 缺章 / 重复章 / 短章
 
-**注意**：`formatted` 和 `format_date` 必须在 `pipeline` 内，不要在顶层重复定义。
+### 4. 必要时动态补充
 
-## 输出格式
+只有脚本明显不适配当前文本格式时，才额外补脚本或规则。
 
-```
-✅ 源文件格式化完成
+动态补充应写到 `scripts/generated/`，不要污染核心脚本。
 
-📚 素材：{name}
-📊 格式报告：
+### 5. 更新状态
 
-  章节：{total_chapters} 章
-  缺失：{missing} 章 {列表}
-  重复：{duplicate} 章
-  短章：{short} 章
+在 `meta.yaml` 的 `pipeline` 内写入：
 
-  修复统计：
-    繁简转换：{n} 处
-    引号修复：{n} 处
-    广告清除：{n} 处
-    章节名标准化：{n} 处
+- `formatted = true`
+- `format_date`
+- `chapters`
 
-  ⚠️ 需人工确认：
-    - 第233章：章节缺失，从232直接跳到234
-    - 第789章：字数仅120字，疑似截断
+## 输出要求
 
-📄 报告文件：data/novels/{id}/format_report.yaml
-📄 章节索引：data/novels/{id}/chapter_index.yaml
-```
+至少输出：
 
-## 注意事项
+- 章节数
+- 修复摘要
+- 是否有缺章 / 短章 / suspicious 项
+- 报告与章节索引位置
 
-- `source.txt` 由 `material-add` 从原始文件复制而来，直接原地清洗，**无需额外备份**
-- 不修改实际内容（剧情、对话等），只做格式层面清洗
-- 遇到无法自动判断的问题标记为 suspicious，交由用户确认
-- 固化脚本处理大文件无 token 限制，agent 只需读取脚本的输出摘要
+## 关键硬约束
 
-## References
+- 原地清洗 `source.txt`
+- 只做格式处理，不改剧情内容
+- 优先使用固化脚本
 
-- [scripts/core/source_format.py](../../../scripts/core/source_format.py) — 固化清洗脚本
-- [scripts/requirements.txt](../../../scripts/requirements.txt) — 脚本依赖
-- [format-report.schema.yaml](../../../docs/schemas/format-report.schema.yaml)
-- [AGENTS.md](../../../AGENTS.md)
+## 仅在需要时读取
+
+- `../_shared/references/skill-conventions.md`
+- `references/report-fields.md`
+- `../../../scripts/core/source_format.py`
+- `../../../docs/schemas/format-report.schema.yaml`
+- `../../../AGENTS.md`

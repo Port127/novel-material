@@ -60,7 +60,7 @@ python ../novel-material/scripts/core/search.py event --emotion 悲伤 --interac
 | `docs/` | 设计文档、schema 模板、标签指南、使用指南 |
 | `scripts/core/` | 预制脚本（检索/索引/校验/审计/清洗） |
 | `scripts/generated/` | 运行时自动生成的脚本（已 gitignore） |
-| `.claude/skills/` | Agent skill 定义 |
+| `.agents/skills/` | Agent skill 定义（`SKILL.md` + `references/`，共享约定见 `_shared/references/skill-conventions.md`） |
 
 ## 关键文档
 
@@ -68,3 +68,4 @@ python ../novel-material/scripts/core/search.py event --emotion 悲伤 --interac
 - [ARCHITECTURE.md](ARCHITECTURE.md) — 系统拓扑 + 标签体系 + ADR
 - [docs/USAGE-GUIDE.md](docs/USAGE-GUIDE.md) — 按事件的使用指南（含数据库查询）
 - [docs/TAG_GUIDE.md](docs/TAG_GUIDE.md) — 标签判断依据 + 易混淆对照
+- [.agents/skills/_shared/references/skill-conventions.md](.agents/skills/_shared/references/skill-conventions.md) — 跨 agent 的 skill 文档约定

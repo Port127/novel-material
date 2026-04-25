@@ -1,100 +1,91 @@
 ---
 name: material-search-event
-description: 按多维标签条件检索事件素材
-when_to_use: 用户描述写作需求，需要找参考事件
-argument-hint: "[自然语言需求描述]"
-arguments: query
+description: 将自然语言事件需求解析为标签组合，并按多维条件检索匹配事件
 ---
 
 # 任务
 
-将用户的自然语言需求解析为标签组合，在所有事件中检索匹配的素材。
+把自然语言需求映射成标签条件，检索事件级参考素材。
 
-## 前置检查
+这是**精确事件检索**入口，不负责写作上下文的扩展推断。
 
-1. 读取 `data/tags.yaml` 获取合法标签维度
-2. 读取 `data/index.yaml` 获取所有素材列表
+## 边界
 
-## 执行步骤
+用于：
+- “弱者反杀强者”
+- “雨中告别”
+- “恋人争吵但最后没分手”
 
-### 1. 解析需求为标签组合
+不用于：
+- 泛素材检索入口
+- 大段创作上下文的综合参考
 
-将用户的自然语言描述拆解为标签条件。
+## 输入
 
-示例：
-- "恋爱中吵架" → `relationship: 恋人` + `event_type: 争吵`
-- "弱者反杀强者" → `power_dynamic: 翻转` + `event_type: 对决`
-- "雨中告别" → `time_weather: 雨` + `event_type: 告别`
-- "催泪但不煽情" → `reader_effect: 催泪` + `technique: 留白`
-- "不知道怎么写对话" → 看上下文推断 `dialogue_type` + `relationship`
+- 自然语言需求描述
 
-向用户确认解析结果，或直接搜索。
+## 默认执行路径
 
-### 2. 检索事件
+### 1. 解析为标签组合
 
-**优先调用 search.py 查 SQLite**（如存在 `data/material.db`）：
+把输入映射到标签维度，例如：
+
+- `event_type`
+- `relationship`
+- `interaction`
+- `power_dynamic`
+- `emotion`
+- `reader_effect`
+- `technique`
+
+如存在多种合理解析，默认选最强主解释直接检索，不先停下来确认。
+
+### 2. 优先使用脚本检索
+
+先走：
 
 ```bash
-python scripts/core/search.py event --event-type 对决 --emotion 燃 --relationship 师徒 --limit 10
+python scripts/core/search.py event ...
 ```
 
-脚本自动完成 AND 交集、匹配度排序、结果精简，输出 YAML 格式结果。LLM 只需读脚本输出，不必加载索引文件。
+能力包括：
 
-支持的过滤参数（对应 tags.yaml 的所有维度）：
-- `--event-type`, `--conflict`, `--stakes`, `--emotion`, `--reader-effect`
-- `--relationship`, `--interaction`, `--character-moment`, `--power-dynamic`
-- `--plot-stage`, `--plot-function`, `--pacing`
-- `--technique`, `--dialogue-type`, `--pov`, `--info-delivery`
-- `--setting`, `--scale`, `--time-weather`
-- `--character`（人物名）, `--material`（限定小说）
-- `--tension-min`, `--tension-max`
+- AND 交集
+- 无结果时自动放宽
+- 匹配度排序
 
-AND 匹配无结果时，脚本自动放宽为 OR 并按匹配度排序。
+### 3. 回退路径
 
-**次选使用 YAML 倒排索引**（SQLite 不可用时）：
-1. 对每个标签条件，从 `events_index.yaml` 中查找匹配的 event_id 列表
-2. 对多个条件取交集（AND 逻辑）
-3. 只读取命中的 event YAML 获取详情
+脚本不可用时：
 
-**兜底遍历**（无索引时）：
-遍历 `data/novels/*/events/*.yaml`，对每个事件：
-- 匹配标签条件（AND 逻辑）
-- 计算匹配度（匹配的维度越多越靠前）
+1. 查 `events_index.yaml`
+2. 再必要时只读取命中 event YAML
+3. 最后才遍历事件文件
 
-### 3. 排序与返回
+### 4. 结果整理
 
-按匹配度降序排列，返回 Top-N 结果。
+返回时要说清楚：
 
-## 输出格式
+- 命中了哪些标签
+- 哪些是核心匹配
+- 哪些是放宽条件后的次优匹配
 
-```
-🔍 检索条件：{解析后的标签组合}
+## 输出要求
 
----
+至少输出：
 
-## 匹配 1 ⭐⭐⭐⭐⭐
-📚 来源：{novel_name}（{material_id}）
-🎬 事件：{event_title}（{event_id}）
-📖 章节：{chapter}
+- 解析后的标签组合
+- Top 结果
+- 匹配标签与原文定位
 
-> {summary}
+## 关键硬约束
 
-🏷️ 匹配标签：{matched_tags}
-📍 原文位置：source.txt 行 {start}-{end}
+- 优先用 `search.py`
+- 不要求用户先确认解析结果
+- 无结果时先自动放宽一层，不直接报空
 
----
+## 仅在需要时读取
 
-## 匹配 2 ⭐⭐⭐⭐
-...
-
----
-
-📊 共找到 {count} 个匹配事件
-```
-
-## 注意事项
-
-- 自然语言解析要宽容，用户不会用精确标签名搜索
-- 如果匹配结果为空，放宽条件（去掉最弱的一个维度）重试
-- 返回 summary 和原文定位，让用户可以去看原文
-- 如果用户描述涉及剧情结构，也参考 `plot_index.yaml`
+- `../_shared/references/skill-conventions.md`
+- `references/query-mapping.md`
+- `../../../AGENTS.md`

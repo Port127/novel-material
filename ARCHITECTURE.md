@@ -401,4 +401,4 @@ python ../novel-material/scripts/core/search.py text --query 告别
 
 **代价**：每个流水线阶段之间增加 1-2 次脚本调用（< 10 秒）。对于低质量产出，agent 需要额外补切事件。但这是正确的反馈，总比基于垃圾数据生成完整但错误的产物好。
 
-**可移植性**：此模式已抽象为全局 skill `~/.cursor/skills/ai-pipeline-gates/SKILL.md`，适用于任何由 agent 执行的多步骤流水线。
+**可移植性**：此模式在本仓库内已沉淀为共享约定 `.agents/skills/_shared/references/skill-conventions.md`；若迁移到别的 agent 运行环境，优先复用这份约定而不是复制零散规则。

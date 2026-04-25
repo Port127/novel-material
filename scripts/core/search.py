@@ -49,6 +49,11 @@ def get_conn():
     return sqlite3.connect(str(DB_PATH))
 
 
+def _fetch_event_pairs(conn, query: str, params: tuple) -> set[tuple[str, str]]:
+    cursor = conn.execute(query, params)
+    return {(row[0], row[1]) for row in cursor}
+
+
 def search_events(args):
     conn = get_conn()
     conn.row_factory = sqlite3.Row
@@ -71,70 +76,79 @@ def search_events(args):
         print("ERROR: 请至少提供一个筛选条件", file=sys.stderr)
         sys.exit(1)
 
-    # Strategy: intersect event_ids from each tag filter
+    # Strategy: intersect (event_id, material_id) pairs from each filter
     candidate_sets = []
 
     for dim, val in tag_filters.items():
-        cursor = conn.execute(
-            "SELECT DISTINCT event_id FROM event_tags WHERE dimension = ? AND value = ?",
-            (dim, val)
+        event_pairs = _fetch_event_pairs(
+            conn,
+            "SELECT DISTINCT event_id, material_id FROM event_tags WHERE dimension = ? AND value = ?",
+            (dim, val),
         )
-        event_ids = {row[0] for row in cursor}
-        candidate_sets.append(event_ids)
+        candidate_sets.append(event_pairs)
 
     if character_filter:
-        cursor = conn.execute(
-            "SELECT DISTINCT event_id FROM event_characters WHERE character_name = ?",
-            (character_filter,)
+        event_pairs = _fetch_event_pairs(
+            conn,
+            "SELECT DISTINCT event_id, material_id FROM event_characters WHERE character_name = ?",
+            (character_filter,),
         )
-        event_ids = {row[0] for row in cursor}
-        candidate_sets.append(event_ids)
+        candidate_sets.append(event_pairs)
 
     if material_filter:
-        cursor = conn.execute(
-            "SELECT event_id FROM events WHERE material_id = ?",
-            (material_filter,)
+        event_pairs = _fetch_event_pairs(
+            conn,
+            "SELECT event_id, material_id FROM events WHERE material_id = ?",
+            (material_filter,),
         )
-        event_ids = {row[0] for row in cursor}
-        candidate_sets.append(event_ids)
+        candidate_sets.append(event_pairs)
 
     # Intersect all sets (AND logic)
     if candidate_sets:
-        result_ids = candidate_sets[0]
+        result_pairs = candidate_sets[0]
         for s in candidate_sets[1:]:
-            result_ids &= s
+            result_pairs &= s
     else:
-        result_ids = set()
+        result_pairs = set()
 
-    if not result_ids:
+    if not result_pairs:
         # Relaxation: try OR on the weakest filters
         if len(candidate_sets) > 1:
             print(f"# AND 匹配: 0 个，尝试放宽...", file=sys.stderr)
             # Union all, then rank by match count
-            all_ids = {}
+            all_pairs = {}
             for cs in candidate_sets:
-                for sid in cs:
-                    all_ids[sid] = all_ids.get(sid, 0) + 1
+                for pair in cs:
+                    all_pairs[pair] = all_pairs.get(pair, 0) + 1
             # Sort by match count desc
-            ranked = sorted(all_ids.items(), key=lambda x: -x[1])
-            result_ids = {sid for sid, _ in ranked[:limit * 2]}
-        if not result_ids:
-            print("results: []")
-            print("total: 0")
-            conn.close()
-            return
+            ranked = sorted(all_pairs.items(), key=lambda x: -x[1])
+            result_pairs = {pair for pair, _ in ranked[:limit * 2]}
+
+    only_tension_filter = not candidate_sets and (tension_min is not None or tension_max is not None)
+
+    if not result_pairs and not only_tension_filter:
+        print("results: []")
+        print("total: 0")
+        conn.close()
+        return
 
     # Fetch event details
-    placeholders = ','.join('?' * len(result_ids))
-    query = f"""
+    query = """
         SELECT s.event_id, s.material_id, s.chapter, s.title, s.summary,
                s.tension, s.pacing, s.plot_stage, s.power_dynamic, s.scale,
                n.name as novel_name
         FROM events s
         LEFT JOIN novels n ON s.material_id = n.material_id
-        WHERE s.event_id IN ({placeholders})
     """
-    params = list(result_ids)
+    params = []
+
+    if result_pairs:
+        pair_clauses = ["(s.event_id = ? AND s.material_id = ?)"] * len(result_pairs)
+        query += f" WHERE {' OR '.join(pair_clauses)}"
+        for event_id, material_id in sorted(result_pairs):
+            params.extend([event_id, material_id])
+    else:
+        query += " WHERE 1=1"
 
     if tension_min is not None:
         query += " AND s.tension >= ?"
@@ -143,7 +157,7 @@ def search_events(args):
         query += " AND s.tension <= ?"
         params.append(tension_max)
 
-    query += " ORDER BY s.tension DESC, s.event_id"
+    query += " ORDER BY s.tension DESC, s.material_id, s.event_id"
     query += f" LIMIT {limit}"
 
     cursor = conn.execute(query, params)
@@ -153,11 +167,12 @@ def search_events(args):
     results = []
     for row in rows:
         event_id = row['event_id']
+        material_id = row['material_id']
 
         # Get all tags for this event
         tag_cursor = conn.execute(
-            "SELECT dimension, value FROM event_tags WHERE event_id = ?",
-            (event_id,)
+            "SELECT dimension, value FROM event_tags WHERE event_id = ? AND material_id = ?",
+            (event_id, material_id)
         )
         event_tags = {}
         for tr in tag_cursor:
@@ -166,8 +181,8 @@ def search_events(args):
 
         # Get characters
         char_cursor = conn.execute(
-            "SELECT character_name FROM event_characters WHERE event_id = ?",
-            (event_id,)
+            "SELECT character_name FROM event_characters WHERE event_id = ? AND material_id = ?",
+            (event_id, material_id)
         )
         chars = [cr[0] for cr in char_cursor]
 
@@ -187,8 +202,8 @@ def search_events(args):
 
         results.append({
             'event_id': event_id,
-            'material_id': row['material_id'],
-            'novel': row['novel_name'] or row['material_id'],
+            'material_id': material_id,
+            'novel': row['novel_name'] or material_id,
             'chapter': row['chapter'],
             'title': row['title'],
             'summary': row['summary'],
@@ -276,8 +291,8 @@ def search_characters(args):
 
         # Count event appearances
         count_cursor = conn.execute(
-            "SELECT COUNT(*) FROM event_characters WHERE character_name = ?",
-            (row['name'],)
+            "SELECT COUNT(*) FROM event_characters WHERE character_name = ? AND material_id = ?",
+            (row['name'], row['material_id'])
         )
         item['appearance_count'] = count_cursor.fetchone()[0]
 

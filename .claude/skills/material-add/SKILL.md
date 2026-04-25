@@ -1,119 +1,83 @@
 ---
 name: material-add
-description: 添加素材到共享素材库
-when_to_use: 用户想要添加参考素材
-argument-hint: "[路径] [--type novel|image|reference]"
-arguments: path
+description: 将新素材添加到共享素材库，生成唯一 material_id、目录结构和基础 meta.yaml
 ---
 
 # 任务
 
-添加素材到共享素材库，创建独立文件夹。
+把原始素材注册进库，创建最小可用目录结构。
 
-## 输入参数
+## 边界
 
-- `$0` (path): 素材文件路径
-- `--type`: 类型（novel/image/reference），默认 novel
+用于：
+- 新素材首次入库
+- 仅注册原文，不做分析
 
-## 执行步骤
+不用于：
+- 直接导入已分析文件夹（交给 `material-import`）
+- 跳过去重检查
 
-### 1. 检查素材
+## 输入
 
-- 确认文件存在
-- 确认类型
+- 文件路径
+- 可选类型参数
+
+## 默认执行路径
+
+### 1. 基础检查
+
+- 文件存在
+- 能判断素材类型
 
 ### 2. 去重检查
 
-读取 `data/index.yaml`，对现有 materials 逐条检查：
+读取 `data/index.yaml` 做两类检查：
 
-- **书名匹配**：新素材的书名（从文件名提取）与已有 `name` 字段相似
-- **文件名匹配**：新素材文件路径与已入库的任何文件路径相同
+- 书名相似
+- 文件路径重复
 
-如果发现疑似重复：
+去重默认是**提醒，不是阻断**。  
+只有发现明显冲突时，才在最终回复里要求用户确认是否作为新版本继续入库。
 
-```
-⚠️ 疑似重复素材
+### 3. 生成 ID
 
-已有记录：
-  ID：nm_novel_20260405_k8m2
-  名称：《三体1》地球往事（实体版拆分）
-  状态：raw
+格式必须是：
 
-当前素材：
-  文件：/path/to/三体1.txt
+`nm_{type}_{YYYYMMDD}_{random4}`
 
-是否仍要入库？(yes/no)
-```
+生成后仍需检查是否撞 ID。
 
-用户确认后才继续。如果确认入库，说明是同书不同版本，正常创建新 ID。
+### 4. 建目录并写基础文件
 
-### 3. 生成素材 ID
+最少创建：
 
-格式：`nm_{type}_{YYYYMMDD}_{random4}`
+- `data/novels/{material_id}/`
+- `meta.yaml`
+- `source.txt`
+- `events/`
 
-生成后检查 `data/index.yaml` 确认 ID 不冲突（极小概率的 random4 碰撞）。
+### 5. 更新全局索引
 
-### 4. 创建文件夹结构
+把素材路由信息写入 `data/index.yaml`。
 
-```bash
-data/novels/{material_id}/
-├── meta.yaml
-├── source.txt     # 复制原文
-└── events/        # 空目录
-```
+## 输出要求
 
-### 5. 写入 meta.yaml
+至少输出：
 
-参照 `docs/schemas/meta.schema.yaml`：
+- `material_id`
+- 名称
+- 目标目录
+- 当前状态 `raw`
+- 下一步建议
 
-```yaml
-material_id: {id}
-type: novel
-name: "《书名》"
-author: 作者名
-source: source.txt
-added: {today}
-status: raw
-```
+## 关键硬约束
 
-### 6. 更新 index.yaml
+- 必须生成新 ID
+- 去重只提醒，不擅自阻断
+- 不把已分析素材误当作 raw 导入
 
-在 `data/index.yaml` 的 `materials` 列表追加：
+## 仅在需要时读取
 
-```yaml
-- id: {id}
-  type: novel
-  name: "《书名》"
-  author: 作者名
-  folder: data/novels/{id}
-  status: raw
-  added: {today}
-```
-
-## 输出格式
-
-```
-✅ 素材已入库
-
-📚 ID：{id}
-📄 名称：{name}
-📁 文件夹：data/novels/{id}/
-📋 状态：raw
-
-后续步骤：
-  /source-format {id}          # 格式清洗（推荐先执行）
-  /pipeline-analyze {id}       # 生成大纲/世界观/人物/标签
-  /novel-pipeline continue {id} # 继续完整流程
-```
-
-## 注意事项
-
-- 大文件直接存入 source.txt，不做切分
-- ID 跨项目唯一，生成后需验证不冲突
-- 入库后 status=raw，等待后续 skill 处理
-- 同一部小说的不同版本（如实体版/网络版）可以各自入库，去重检查只做提醒不做阻断
-
-## References
-
-- [meta.schema.yaml](../../../docs/schemas/meta.schema.yaml)
-- [AGENTS.md](../../../AGENTS.md)
+- `../_shared/references/skill-conventions.md`
+- `../../../docs/schemas/meta.schema.yaml`
+- `../../../AGENTS.md`

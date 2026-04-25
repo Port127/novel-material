@@ -2,7 +2,7 @@
 """
 verify_refine_state.py — 验证 refine 状态证据一致性
 
-检查 meta.yaml 中 refine_batches 的状态标记与实际证据列表是否一致。
+检查 meta.yaml 中 pipeline.refine_batches 的状态标记与实际证据列表是否一致。
 防止 Agent 无证据标记完成。
 
 检查规则：
@@ -26,6 +26,28 @@ from pathlib import Path
 import yaml
 
 
+def _load_refine_batches(meta: dict) -> tuple[dict, bool]:
+    """优先读取 pipeline.refine_batches；兼容 legacy 顶层 refine_batches。"""
+    pipeline = meta.get("pipeline")
+    if isinstance(pipeline, dict) and isinstance(pipeline.get("refine_batches"), dict):
+        return pipeline["refine_batches"], False
+    legacy = meta.get("refine_batches")
+    if isinstance(legacy, dict):
+        return legacy, True
+    return {}, False
+
+
+def _save_refine_batches(meta: dict, refine_batches: dict):
+    """统一写回到 pipeline.refine_batches，并清理 legacy 顶层路径。"""
+    pipeline = meta.get("pipeline")
+    if not isinstance(pipeline, dict):
+        pipeline = {}
+        meta["pipeline"] = pipeline
+    pipeline["refine_batches"] = refine_batches
+    if "refine_batches" in meta:
+        del meta["refine_batches"]
+
+
 def verify_refine_state(material_id: str, fix: bool = False) -> dict:
     """验证 refine 状态证据一致性。"""
     base_dir = Path(f"data/novels/{material_id}")
@@ -38,7 +60,7 @@ def verify_refine_state(material_id: str, fix: bool = False) -> dict:
     with open(meta_path, "r", encoding="utf-8") as f:
         meta = yaml.safe_load(f) or {}
 
-    refine_batches = meta.get("refine_batches", {})
+    refine_batches, using_legacy_path = _load_refine_batches(meta)
     batch_outputs = refine_batches.get("batch_outputs", {})
 
     issues = []
@@ -208,6 +230,8 @@ def verify_refine_state(material_id: str, fix: bool = False) -> dict:
     print(f"    relations_verified: {relations_verified}")
     print(f"    worldbuilding_refined: {worldbuilding_refined}")
     print(f"    cleanup_done: {cleanup_done}")
+    if using_legacy_path:
+        print("  ⚠️ 检测到 legacy 路径: meta.refine_batches（建议迁移到 pipeline.refine_batches）")
 
     if issues:
         print(f"\n🚫 发现 {len(issues)} 个证据不一致问题:")
@@ -221,7 +245,7 @@ def verify_refine_state(material_id: str, fix: bool = False) -> dict:
             for i in issues:
                 refine_batches[i["status_field"]] = False
 
-            meta["refine_batches"] = refine_batches
+            _save_refine_batches(meta, refine_batches)
             with open(meta_path, "w", encoding="utf-8") as f:
                 yaml.dump(meta, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
             print("✅ 已修复状态标记")
@@ -231,6 +255,11 @@ def verify_refine_state(material_id: str, fix: bool = False) -> dict:
             print("\n💡 建议: 使用 --fix 参数自动修复状态标记")
             sys.exit(1)
     else:
+        if using_legacy_path and fix:
+            _save_refine_batches(meta, refine_batches)
+            with open(meta_path, "w", encoding="utf-8") as f:
+                yaml.dump(meta, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+            print("✅ 已将 legacy refine_batches 迁移到 pipeline.refine_batches")
         print(f"\n✅ 所有状态标记与证据一致")
 
     return {"material_id": material_id, "issues": issues, "valid": len(issues) == 0}

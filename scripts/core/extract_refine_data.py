@@ -28,6 +28,17 @@ from pathlib import Path
 import yaml
 
 
+def _get_tension(data: dict, default: int = 0) -> int:
+    """统一读取张力，兼容 legacy tension_peak。"""
+    tension = data.get("tension")
+    if tension is None:
+        tension = data.get("tension_peak", default)
+    try:
+        return int(tension)
+    except (ValueError, TypeError):
+        return default
+
+
 def hash_events_directory(events_dir: Path) -> str:
     """
     计算 events 目录下所有 YAML 文件的 hash。
@@ -160,15 +171,10 @@ def extract_refine_data(material_id: str, output_path: Path | None = None, updat
                         char_appearances[name]["moments"].append(str(moment))
 
         # tension
-        tension = data.get("tension", 0)
-        if tension:
-            try:
-                t_val = int(tension)
-            except (ValueError, TypeError):
-                t_val = 0
-            if t_val:
-                for ch in ch_nums:
-                    tension_by_chapter[ch].append(t_val)
+        t_val = _get_tension(data, 0)
+        if t_val:
+            for ch in ch_nums:
+                tension_by_chapter[ch].append(t_val)
 
         # 钩子
         hooks = data.get("hooks", {})

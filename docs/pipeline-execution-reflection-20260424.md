@@ -3,6 +3,7 @@
 **素材**：nm_novel_20260424_ap0z（《三体3》死神永生）
 **日期**：2026-04-24
 **执行者**：Claude (GLM-5)
+**说明**：本文是执行反思记录，引用的 skill 路径保留当时写法；当前生效 skill 目录为 `.agents/skills/`，共享约定见 `.agents/skills/_shared/references/skill-conventions.md`。
 
 ---
 

@@ -3,6 +3,7 @@
 > **创建时间**：2026-04-22
 > **来源对话**：[transcript](../.cursor/projects/Users-kiki-Documents-Project-my-github-novel-novel-material/agent-transcripts/2b69eb24-8707-4a5a-9fb5-43fcafd7fce7/2b69eb24-8707-4a5a-9fb5-43fcafd7fce7.jsonl)
 > **案例素材**：`nm_novel_20260422_a1b2`（《三体1》地球往事，36 章，2725 行）
+> **说明**：本文是历史修复计划，正文保留创建时的路径与行数记录；当前生效 skill 目录为 `.agents/skills/`，共享约定见 `.agents/skills/_shared/references/skill-conventions.md`。
 
 ---
 

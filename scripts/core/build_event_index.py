@@ -45,6 +45,21 @@ def _as_list(val):
     return [val]
 
 
+def _get_tension(event: dict, default: int = 2) -> int:
+    """统一读取事件张力，兼容 tension_peak / tension / legacy nested emotion。"""
+    if event.get('tension') is not None:
+        return event['tension']
+    if event.get('tension_peak') is not None:
+        return event['tension_peak']
+    emotion = event.get('emotion')
+    if isinstance(emotion, dict):
+        if emotion.get('tension') is not None:
+            return emotion['tension']
+        if emotion.get('tension_peak') is not None:
+            return emotion['tension_peak']
+    return default
+
+
 def build_index(material_id: str):
     base_dir = Path(f"data/novels/{material_id}")
     events_dir = base_dir / "events"
@@ -93,7 +108,7 @@ def build_index(material_id: str):
             'summary': summary_short,
             'event_type': _as_list(event.get('event_type')),
             'conflict': _as_list(event.get('conflict')),
-            'tension': event.get('tension', 2),
+            'tension': _get_tension(event),
             'pacing': event.get('pacing', ''),
             'plot_function': _as_list(event.get('plot_function')),
             'characters': _as_list(event.get('characters')),
@@ -114,7 +129,7 @@ def build_index(material_id: str):
         for c in _as_list(event.get('characters')):
             index['character'][c].append(event_id)
 
-        tension_val = event.get('tension', 2)
+        tension_val = _get_tension(event)
         index['tension'][tension_val].append(event_id)
 
     index = {k: dict(v) for k, v in index.items()}

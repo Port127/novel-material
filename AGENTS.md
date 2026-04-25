@@ -19,6 +19,7 @@
 | 标签标注时查判断依据 | `docs/TAG_GUIDE.md` |
 | 查数据 schema | `docs/schemas/` |
 | 直接查数据库 | `docs/USAGE-GUIDE.md` §七 |
+| 查 skill 文档共享约定 | `.agents/skills/_shared/references/skill-conventions.md` |
 
 ## Quick Start
 
@@ -58,6 +59,8 @@
 ```
 
 ## Skills
+
+> Skill 文档统一采用 `SKILL.md + references/` 结构；跨 agent 的共享约定集中在 `.agents/skills/_shared/references/skill-conventions.md`，避免把同一套规则散写到每个 skill。
 
 ### 调度层
 

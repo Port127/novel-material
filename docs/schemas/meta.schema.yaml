@@ -22,7 +22,8 @@ added: YYYY-MM-DD
 #   outlined        pipeline-analyze 进行中或完成（outline + worldbuilding + characters）
 #   tagged          pipeline-analyze 完成（小说级标签已生成）。注意：事件尚未拆分
 #   complete        pipeline-events 完成（事件全部拆分 + 索引已构建）
-#   backfill-blocked 完整性验证阻断（completeness_score < 50%），必须执行 ai-backfill 后才能继续
+#   backfill-blocked 完整性验证阻断（completeness_score < fail_threshold 或 critical_count > 0），
+#                    必须执行 ai-backfill 后才能继续
 #   refined         pipeline-finalize 完成（精调 + 统计报告已生成）
 #
 status: raw
