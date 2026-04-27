@@ -21,7 +21,17 @@
       "Bash(npm search *)",
       "Bash(cp -r outline/ outline.bak/)",
       "Bash(cp -r characters/ characters.bak/)",
-      "Bash(cp -r worldbuilding/ worldbuilding.bak/)"
+      "Bash(cp -r worldbuilding/ worldbuilding.bak/)",
+      "Bash(iconv -f GBK -t UTF-8 \"/Users/kiki/Documents/Project/my-github/novel/novel-material/material/《诡秘之主》（精校版全本）作者：爱潜水的乌贼.txt\")",
+      "Bash(iconv -f GBK -t UTF-8 \"/Users/kiki/Documents/Project/my-github/novel/novel-material/material/《万族之劫》（校对版全本）作者：老鹰吃小鸡.txt\")",
+      "Bash(iconv -f GBK -t UTF-8 \"/Users/kiki/Documents/Project/my-github/novel/novel-material/material/《大奉打更人》（校对版全本）作者：卖报小郎君.txt\")",
+      "Bash(mkdir -p docs/research docs/reviews)",
+      "Bash(mv docs/event-segmentation-reflection-20260427.md docs/research/)",
+      "Bash(mv docs/pipeline-execution-review-20260423.md docs/reviews/)",
+      "Bash(mv docs/pipeline-execution-review-三体3-20260423.md docs/reviews/)",
+      "Bash(mv docs/pipeline-execution-reflection-20260424.md docs/reviews/)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)"
     ]
   },
   "project": "novel-material",

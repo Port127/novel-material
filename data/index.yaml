@@ -34,3 +34,10 @@ materials:
     folder: data/novels/nm_novel_20260424_v7n8
     status: raw
     added: 2026-04-24
+  - id: nm_novel_20260426_x7q9
+    type: novel
+    name: "《三体3》死神永生(第四版)"
+    author: 刘慈欣
+    folder: data/novels/nm_novel_20260426_x7q9
+    status: raw
+    added: 2026-04-26
