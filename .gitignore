@@ -1,9 +1,35 @@
-data/novels/
-data/material.db
-data/.config/llm_config.json
-.DS_Store
-feature.md
-material/
-zxcs_downloads/
+# Python
 __pycache__/
-scripts/generated/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+
+# 环境
+.env
+venv/
+.env.local
+
+# 数据库
+*.db
+*.db-journal
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 日志
+*.log
+
+# 数据（可选，看需要）
+data/novels/*/source.txt.bak
+
+material/

@@ -1,71 +1,51 @@
-# Novel Material
+# Novel Material V2
 
-独立的小说素材管理库，为 AI 辅助小说写作系统提供共享素材检索服务。
+小说写作参考检索库。提供跨小说的素材检索服务，帮助创作者在写作前期规划和章节写作阶段快速获取高质量参考样例。
 
-提供 **Agent CLI** 自动化流水线处理。
+## 定位
 
-## 功能
+不是训练系统，而是**检索参考库**。Agent 自行理解模式，本项目负责检索 + 展示。
 
-- **多维标签搜索**（支持多选）、全文搜索、人物搜索
-- **4 段子流水线**：入库清洗 → 骨架分析 → 事件拆分+索引 → 精调+统计
-- **外部导入**：支持导入已按 schema 分析好的素材，自动校验+注册+建索引
-- **多维标签体系**：6 层 20 维事件标签 + 7 维小说标签，共 418 个标签值
-- **SQLite 查询层**：结构化多维检索，支持跨小说搜索事件、人物、全文
-- **批次质量审计**：自动检测标签多样性、质量漂移、失败批次
-- **跨对话恢复**：长小说事件拆分可跨多次对话，每批进度持久化
+## 核心能力
 
-## 快速开始
+| 场景 | 触发时机 | 返回内容 |
+|------|----------|----------|
+| 世界观检索 | 前期规划 | 力量体系 + 势力关系 + 地理空间 + 设定亮点 |
+| 大纲检索 | 前期规划 | 完整的大纲结构树（幕 → 序列 → 节拍） |
+| 细纲检索 | 前期规划 | 序列级/节拍级的结构对比 |
+| 章纲检索 | 章节写作 | 章节摘要 + 章节功能标签 + 结构信息 |
+| 人物检索 | 人物写作 | 人物小传 + 关键出场章节 + 互动模式 |
+| 事件检索 | 事件写作 | 匹配的章节摘要 + 上下文信息 |
 
-```bash
-# ── 入库一本小说 ──
-
-# 方式 1：全自动（短篇推荐）
-/novel-pipeline full /path/to/novel.txt
-
-# 方式 2：分段调用（大书推荐，每次开新对话）
-/pipeline-ingest /path/to/novel.txt        # ① 入库+清洗
-/pipeline-analyze nm_novel_20260408_xxxx   # ② 大纲+世界观+人物+标签
-/pipeline-events nm_novel_20260408_xxxx    # ③ 全书事件（可跨对话恢复）
-/pipeline-finalize nm_novel_20260408_xxxx  # ④ 精调+统计报告
-
-# 方式 3：导入已分析好的素材
-/material-import /path/to/analyzed_folder
-
-# ── 检索素材 ──
-
-/material-search-event 恋人在雨中告别
-python scripts/core/search.py event --event-type 对决 --emotion 燃 --tension-min 4
-```
-
-详细使用指南见 [docs/USAGE-GUIDE.md](docs/USAGE-GUIDE.md)。
-
-## 与小说项目的关系
-
-本库独立存在，`../novel` 项目通过脚本调用检索素材：
+## Quick Start
 
 ```bash
-python ../novel-material/scripts/core/search.py event --emotion 悲伤 --interaction 告别 --limit 5
+# 安装依赖
+pip install -r requirements.txt
+
+# 初始化数据库
+python scripts/core/init_db.py
+
+# 入库新小说
+python scripts/pipeline.py ingest path/to/novel.txt
+
+# 检索
+python scripts/search/search_chapter.py --query "开局困境写法" --genre 修仙 --limit 10
 ```
 
-没有本库时，`novel` 项目照常工作，检索精度下降。
+## 目录结构
 
-## 目录说明
+```
+├── scripts/                    # 处理脚本（core/analyze/search/utils）
+├── data/                       # 数据（novels/ 索引/标签字典）
+├── docs/                       # 文档（schemas/tag-system/research）
+├── config/                     # 配置文件
+└── .agents/skills/             # Agent 操作手册
+```
 
-| 目录 | 内容 |
-|------|------|
-| `data/novels/` | 每部小说独立文件夹（原文+大纲+人物+事件+索引） |
-| `data/index.yaml` | 素材路由表 |
-| `data/tags.yaml` | 标签维度字典（20 维事件标签 + 7 维小说标签） |
-| `data/material.db` | SQLite 查询索引（从 YAML 派生，可重建） |
-| `docs/` | 设计文档、schema 模板、标签指南、使用指南 |
-| `scripts/core/` | 预制脚本（检索/索引/校验/审计/清洗） |
-| `scripts/generated/` | 运行时自动生成的脚本（已 gitignore） |
-| `.agents/skills/` | Agent skill 定义（`SKILL.md` + `references/`，共享约定见 `_shared/references/skill-conventions.md`） |
+## 设计原则
 
-## 关键文档
-
-- [AGENTS.md](AGENTS.md) — Skill 路由表 + 硬规则
-- [ARCHITECTURE.md](ARCHITECTURE.md) — 系统拓扑 + 标签体系 + ADR
-- [docs/USAGE-GUIDE.md](docs/USAGE-GUIDE.md) — 按事件的使用指南（含数据库查询）
-- [docs/TAG_GUIDE.md](docs/TAG_GUIDE.md) — 标签判断依据 + 易混淆对照
-- [.agents/skills/_shared/references/skill-conventions.md](.agents/skills/_shared/references/skill-conventions.md) — 跨 agent 的 skill 文档约定
+1. 以章节为最小分析单元（边界完全可控）
+2. 数据用于检索参考，不是学习材料
+3. YAML 是 Source of Truth，数据库是派生查询层
+4. PostgreSQL + pgvector 支撑千万级检索

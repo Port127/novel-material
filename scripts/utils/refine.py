@@ -1,0 +1,208 @@
+#!/usr/bin/env python
+"""精调工具：基于章级分析数据调整 outline/characters/worldbuilding/tags。"""
+import os
+import sys
+import yaml
+import json
+import time
+from pathlib import Path
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+
+from dotenv import load_dotenv
+load_dotenv()
+
+def load_config():
+    config_dir = Path("config")
+    with open(config_dir / "llm.yaml", "r", encoding="utf-8") as f:
+        return yaml.safe_load(f)
+
+def call_llm(system_prompt, user_prompt, config):
+    from openai import OpenAI
+
+    client = OpenAI(
+        api_key=config["llm"]["api_key"],
+        base_url=config["llm"].get("base_url")
+    )
+
+    response = client.chat.completions.create(
+        model=config["llm"]["model"],
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ],
+        temperature=config["llm"].get("temperature", 0.3),
+        max_tokens=config["llm"].get("max_tokens", 4096),
+        response_format={"type": "json_object"}
+    )
+
+    return json.loads(response.choices[0].message.content)
+
+def refine_outline(material_id, chapters_data):
+    """基于章级数据精调大纲。"""
+    novel_dir = Path("data/novels") / material_id
+    outline_dir = novel_dir / "outline"
+    outline_index_file = outline_dir / "_index.yaml"
+
+    if not outline_index_file.exists():
+        print("跳过大纲精调：outline/_index.yaml 不存在")
+        return False
+
+    with open(outline_index_file, "r", encoding="utf-8") as f:
+        outline_index = yaml.safe_load(f) or {}
+
+    with open(outline_dir / "structure.yaml", "r", encoding="utf-8") as f:
+        structure = yaml.safe_load(f) or {}
+
+    # 提取章节功能分布
+    function_counts = {}
+    tension_avg = 0
+    for ch in chapters_data:
+        funcs = ch.get("chapter_function", [])
+        for f in funcs:
+            function_counts[f] = function_counts.get(f, 0) + 1
+        tension_avg += ch.get("tension_level", 0)
+
+    tension_avg = tension_avg / max(len(chapters_data), 1)
+
+    # 统计钩子
+    hooks_count = sum(1 for ch in chapters_data if "章末悬念" in ch.get("chapter_function", []))
+
+    # 更新 outline index
+    outline_index["hook_count"] = hooks_count
+    outline_index["avg_tension"] = round(tension_avg, 2)
+    outline_index["refined_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+
+    with open(outline_index_file, "w", encoding="utf-8") as f:
+        yaml.dump(outline_index, f, allow_unicode=True, default_flow_style=False)
+
+    print(f"大纲精调完成: {hooks_count} 个钩子, 平均张力 {tension_avg:.2f}")
+    return True
+
+def refine_characters(material_id, chapters_data):
+    """基于章级数据精调人物。"""
+    novel_dir = Path("data/novels") / material_id
+    char_dir = novel_dir / "characters"
+    profiles_dir = char_dir / "profiles"
+    char_index_file = char_dir / "_index.yaml"
+
+    if not char_index_file.exists():
+        print("跳过人物精调：characters/_index.yaml 不存在")
+        return False
+
+    with open(char_index_file, "r", encoding="utf-8") as f:
+        char_index = yaml.safe_load(f) or {}
+
+    # 统计人物出场
+    appearance_counts = {}
+    chapter_appearances = {}
+
+    for ch in chapters_data:
+        ch_num = ch.get("chapter", 0)
+        chars = ch.get("characters_appear", [])
+        for c in chars:
+            appearance_counts[c] = appearance_counts.get(c, 0) + 1
+            if c not in chapter_appearances:
+                chapter_appearances[c] = []
+            chapter_appearances[c].append(ch_num)
+
+    # 更新每个人物小传
+    for profile_file in profiles_dir.glob("*.yaml"):
+        with open(profile_file, "r", encoding="utf-8") as f:
+            profile = yaml.safe_load(f) or {}
+
+        name = profile.get("name", "")
+        if name in appearance_counts:
+            profile["appearance_count"] = appearance_counts[name]
+            profile["first_appearance_chapter"] = min(chapter_appearances[name])
+            profile["last_appearance_chapter"] = max(chapter_appearances[name])
+
+        with open(profile_file, "w", encoding="utf-8") as f:
+            yaml.dump(profile, f, allow_unicode=True, default_flow_style=False)
+
+    # 更新索引
+    char_index["refined_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+
+    with open(char_index_file, "w", encoding="utf-8") as f:
+        yaml.dump(char_index, f, allow_unicode=True, default_flow_style=False)
+
+    print(f"人物精调完成: 更新了 {len(appearance_counts)} 个人物的出场统计")
+    return True
+
+def refine_tags(material_id, chapters_data):
+    """基于章级数据精调标签。"""
+    novel_dir = Path("data/novels") / material_id
+    tags_file = novel_dir / "tags.yaml"
+
+    if not tags_file.exists():
+        print("跳过标签精调：tags.yaml 不存在")
+        return False
+
+    with open(tags_file, "r", encoding="utf-8") as f:
+        tags = yaml.safe_load(f) or {}
+
+    # 统计章节功能分布
+    function_counts = {}
+    for ch in chapters_data:
+        for f in ch.get("chapter_function", []):
+            function_counts[f] = function_counts.get(f, 0) + 1
+
+    # 找出最常见的功能标签
+    top_functions = sorted(function_counts.items(), key=lambda x: x[1], reverse=True)[:5]
+    tags["top_chapter_functions"] = [{"function": f, "count": c} for f, c in top_functions]
+    tags["refined_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+
+    with open(tags_file, "w", encoding="utf-8") as f:
+        yaml.dump(tags, f, allow_unicode=True, default_flow_style=False)
+
+    print(f"标签精调完成: 更新了章节功能分布")
+    return True
+
+def refine(material_id):
+    """主精调函数：调整 outline/characters/tags。"""
+    novel_dir = Path("data/novels") / material_id
+    if not novel_dir.exists():
+        print(f"错误: 小说目录不存在: {novel_dir}")
+        return
+
+    # 读取章级数据
+    chapters_file = novel_dir / "chapters.yaml"
+    if not chapters_file.exists():
+        print("错误: chapters.yaml 不存在，无法精调")
+        return
+
+    with open(chapters_file, "r", encoding="utf-8") as f:
+        chapters_data = yaml.safe_load(f) or []
+
+    print(f"开始精调: {material_id} ({len(chapters_data)} 章)")
+    print("=" * 60)
+
+    # 精调各模块
+    refined = {
+        "outline": refine_outline(material_id, chapters_data),
+        "characters": refine_characters(material_id, chapters_data),
+        "tags": refine_tags(material_id, chapters_data)
+    }
+
+    # 更新 meta 状态
+    meta_file = novel_dir / "meta.yaml"
+    with open(meta_file, "r", encoding="utf-8") as f:
+        meta = yaml.safe_load(f)
+
+    meta["refined_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+
+    with open(meta_file, "w", encoding="utf-8") as f:
+        yaml.dump(meta, f, allow_unicode=True, default_flow_style=False)
+
+    print("=" * 60)
+    print("精调完成")
+    for module, success in refined.items():
+        status = "已精调" if success else "跳过"
+        print(f"  {module}: {status}")
+
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("用法: python refine.py <material_id>")
+        sys.exit(1)
+
+    refine(sys.argv[1])

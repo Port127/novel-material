@@ -1,0 +1,6 @@
+# Novel Material V2 - 数据库配置
+database:
+  url: "postgresql://user:password@localhost:5432/novel_material"
+  pool_size: 5
+  max_overflow: 10
+  echo: false  # 开发时可设为 true，打印 SQL

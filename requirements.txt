@@ -1,0 +1,20 @@
+# Novel Material V2 - Python Dependencies
+
+# Database
+psycopg2-binary>=2.9.9
+sqlalchemy>=2.0.25
+pgvector>=0.2.5
+
+# YAML
+pyyaml>=6.0.1
+
+# Embedding
+openai>=1.10.0
+tiktoken>=0.5.2
+
+# Utilities
+pydantic>=2.5.0
+rich>=13.7.0
+click>=8.1.7
+python-dotenv>=1.0.0
+jieba>=0.42.1
