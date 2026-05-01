@@ -1,11 +1,13 @@
 #!/usr/bin/env python
 """标签合法性校验工具：检查事件/章节标签是否在字典范围内。"""
-import os
 import sys
 import yaml
 from pathlib import Path
+from scripts.core.paths import NOVELS_DIR, TAGS_FILE
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
 
 VALID_DIMENSIONS = [
     "channel",      # L0 频道
@@ -20,7 +22,7 @@ VALID_DIMENSIONS = [
 
 def load_tags_dict():
     """加载标签字典。"""
-    tags_file = Path("data/tags.yaml")
+    tags_file = TAGS_FILE
     if not tags_file.exists():
         print("错误: 标签字典不存在")
         return None
@@ -53,7 +55,7 @@ def check_dimension(dimension):
 
     # 扫描所有章节文件，收集使用的标签
     used_tags = set()
-    novels_dir = Path("data/novels")
+    novels_dir = NOVELS_DIR
     for novel_dir in novels_dir.iterdir():
         chapters_file = novel_dir / "chapters.yaml"
         if chapters_file.exists():
@@ -74,7 +76,7 @@ def check_dimension(dimension):
 
 def suggest_expand(dimension, new_tag):
     """提示用户是否扩展标签字典。"""
-    tags_file = Path("data/tags.yaml")
+    tags_file = TAGS_FILE
     with open(tags_file, "r", encoding="utf-8") as f:
         tags_dict = yaml.safe_load(f) or {}
 

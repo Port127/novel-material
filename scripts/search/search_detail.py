@@ -6,8 +6,11 @@ import yaml
 import psycopg2
 from pathlib import Path
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
 
+import click
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -81,5 +84,14 @@ def search_detail(genre=None, act=None, description_query=None, limit=10):
             print(f"  [{b['beat']}] {b['title']} (章{b['chapter']}) - 张力:{b['tension']}")
         print()
 
+@click.command()
+@click.option("--genre", default=None, help="按题材过滤")
+@click.option("--act", default=None, help="幕号（1/2/3）")
+@click.option("--query", default=None, help="序列描述关键词")
+@click.option("--limit", default=10, help="返回结果数")
+def main(genre, act, description_query, limit):
+    search_detail(genre=genre, act=act, description_query=description_query, limit=limit)
+
+
 if __name__ == "__main__":
-    search_detail(genre="悬疑", act=2, limit=5)
+    main()

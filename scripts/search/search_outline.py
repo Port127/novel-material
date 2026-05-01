@@ -6,8 +6,11 @@ import yaml
 import psycopg2
 from pathlib import Path
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
 
+import click
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -58,5 +61,15 @@ def search_outlines(genre=None, element=None, structure_type=None, premise_query
         print(f"前提: {r['premise']}")
         print()
 
+@click.command()
+@click.option("--genre", default=None, help="按题材过滤")
+@click.option("--element", default=None, help="元素标签（如：重生、系统）")
+@click.option("--structure", default=None, help="叙事结构（三幕式/英雄之旅）")
+@click.option("--query", default=None, help="前提关键词")
+@click.option("--limit", default=5, help="返回结果数")
+def main(genre, element, structure_type, premise_query, limit):
+    search_outlines(genre=genre, element=element, structure_type=structure_type, premise_query=premise_query, limit=limit)
+
+
 if __name__ == "__main__":
-    search_outlines(genre="修仙", limit=3)
+    main()

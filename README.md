@@ -2,8 +2,8 @@
 
 小说写作参考检索库。本项目旨在通过 LLM 对小说进行结构化解析（大纲、世界观、章级分析等），并将数据存入 YAML 与 PostgreSQL 中，供大模型 Agent 在写作时进行语义和结构化检索。
 
-> ⚠️ **项目当前状态：开发中期（高危阶段）**
-> 核心框架和流水线脚本已经搭建，但代码中存在**大量严重的业务 Bug 和 0 容错的 LLM 调用**。请勿在未经修复的情况下投入海量数据进行生产级构建，否则将面临 API 费用浪费和数据崩溃的风险。
+> ℹ️ **项目当前状态：核心修复已完成，待集成验证**
+> 阶段一至六的修复工作已完成：LLM 重试/断点续传、文本预处理、Schema 验证、向量化集成、CLI 参数解析均已就位。**系统尚未进行全链路集成验证**，建议在准备好数据库环境后先用少量章节试跑。
 > 详情请见：[缺陷与路线图 (DEFECTS & ROADMAP)](docs/DEFECTS_AND_ROADMAP.md)
 
 ## 核心设计理念
@@ -14,13 +14,12 @@
 
 ## 当前可用能力
 
-目前代码库**已经跑通或搭建好骨架**的部分：
-
-*   **入库 (Ingest)**：能对文本文档进行初步的章节切分（*注：目前仅支持阿拉伯数字章节正则*）。
-*   **骨架分析 (Analyze)**：能够通过调用 LLM（需配置 OpenAI API）初步生成小说设定、人物图谱和大纲。
-*   **章级分析 (Chapter Analyze)**：能对单章生成摘要并打上结构标签。
-*   **数据库同步 (Sync)**：提供脚本将部分 YAML 数据同步至 PostgreSQL 中。
-*   **检索路由 (Search)**：已建立各个维度的检索 CLI 入口脚本。
+*   **入库 (Ingest)**：文本预处理（NFC 归一化、去广告水印、中文数字→阿拉伯数字）+ 章节正则切分，生成 `chapter_index.yaml`。
+*   **章级分析 (Chapter Analyze)**：LLM 逐章生成摘要、出场人物、功能标签、张力值，支持断点续传，自动重试，完成后触发 Schema 质量校验。
+*   **骨架分析 (Analyze)**：基于章级摘要池生成大纲、世界观、人物图谱、小说级标签（不再依赖原文截断）。
+*   **向量化 (Embed)**：章级摘要向量化，写入 `chapter_embeddings.yaml`，并随数据库同步持久化。
+*   **数据库同步 (Sync)**：将 YAML 数据同步至 PostgreSQL，同步前执行 Schema 预检门控。
+*   **检索 (Search)**：6 个维度的检索脚本，均支持 `click` CLI 参数解析。
 
 ## 运行方式 (Quick Start)
 
@@ -46,32 +45,31 @@ python scripts/core/init_db.py
 
 ### 3. 流水线执行
 
-> **注意**：执行前请确保您的网文源文件使用的是 `第1章`、`第1回` 等阿拉伯数字格式，否则会直接切分失败。
-
 ```bash
-# [高危] 完整流水线（入库 → LLM分析 → 同步数据库）
-# 极易因为 LLM 网络超时而崩溃，建议慎用
+# 独立入库（预处理 + 章节切分）
+python scripts/pipeline.py ingest path/to/novel.txt
+
+# 完整流水线（入库 → 章级分析 → 向量化 → 骨架分析 → 精调 → 同步）
 python scripts/pipeline.py full path/to/novel.txt
 
-# 分步执行：针对已入库素材进行 LLM 分析
+# 分步：仅分析（章级 → 大纲 → 世界观 → 人物 → 标签）
 python scripts/pipeline.py analyze <material_id>
 
-# 分步执行：精调 + 同步数据库
+# 分步：精调 + 同步数据库
 python scripts/pipeline.py finalize <material_id>
 ```
 
-> ⚠️ **当前不存在独立的 `ingest` 子命令**。入库操作目前只能通过 `full` 触发，或直接调用底层函数 `scripts/core/ingest.py`。
+> **注意**：中文章节标题（如"第一百零三章"）会在预处理阶段自动转换为阿拉伯数字格式，无需手动处理。LLM 调用支持自动重试（最多 5 次指数退避），章级分析支持断点续传。
 
 ### 4. 检索调用
 
-检索脚本位于 `scripts/search/` 下。
-
-> ⚠️ **当前所有 search 脚本均未实现 CLI 参数解析**（无 argparse/click），`__main__` 中的查询条件为硬编码示例。实际使用需修改源码中的函数调用参数，或作为 Python 模块 import 使用。
-
-```python
-# 示例：在 Python 中调用
-from scripts.search.search_chapter import search_chapters
-search_chapters(query="开局困境写法", genre="修仙", limit=10)
+```bash
+python scripts/search/search_chapter.py "开局困境写法" --limit 10
+python scripts/search/search_world.py --type faction --genre 修仙 --limit 10
+python scripts/search/search_outline.py --genre 修仙 --query "废柴逆袭"
+python scripts/search/search_character.py --archetype 导师 --genre 修仙
+python scripts/search/search_event.py "雨中告别的写法" --limit 10
+python scripts/search/search_detail.py --genre 悬疑 --act 2
 ```
 
 ## 文档导航

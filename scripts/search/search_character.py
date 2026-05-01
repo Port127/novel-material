@@ -6,8 +6,11 @@ import yaml
 import psycopg2
 from pathlib import Path
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
 
+import click
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -71,5 +74,15 @@ def search_characters(archetype=None, role=None, genre=None, name_query=None, li
         print(f"出场次数: {r['appearance_count']}")
         print()
 
+@click.command()
+@click.option("--archetype", default=None, help="人物原型（如：英雄、导师）")
+@click.option("--role", default=None, help="角色类型（protagonist/antagonist/supporting）")
+@click.option("--genre", default=None, help="按题材过滤")
+@click.option("--name", default=None, help="人物名字关键词")
+@click.option("--limit", default=10, help="返回结果数")
+def main(archetype, role, genre, name_query, limit):
+    search_characters(archetype=archetype, role=role, genre=genre, name_query=name_query, limit=limit)
+
+
 if __name__ == "__main__":
-    search_characters(archetype="导师", genre="修仙", limit=10)
+    main()

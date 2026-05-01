@@ -1,165 +1,164 @@
 # 缺陷与修复路线图 (DEFECTS & ROADMAP)
 
-> **本文档的目标读者**：即将对本代码库进行修改的开发者或 AI Agent。
-> 在动手写任何新功能之前，请先通读本文档，理解当前系统的真实状态。
+> **目标读者**：即将修改本代码库的开发者或 AI Agent。动手前请先通读本文档。
 
-> [!CAUTION]
-> 当前代码库存在**架构设计缺陷**和**多处致命代码 Bug**。在这些问题修复之前，请绝对不要将大规模生产数据投入 Pipeline，否则将引发系统崩溃并产生大量无效 API 费用。
+> [!WARNING]
+> 阶段一至六已完成，原始 P0 致命 Bug、主要架构问题和 Schema 验证均已修复。**系统尚未经过集成验证（阶段七），在准备好数据库环境后，建议先用少量章节小规模试跑，而非直接投入全量生产数据。**
 
 ---
 
-## 一、架构层缺陷（Architectural Issues）
+## 一、当前状态
 
-以下问题不是某行代码写错了，而是整体设计上的结构性问题。它们会随着项目规模扩大而持续恶化，必须在功能开发之前解决。
+| 类别 | 状态 |
+|------|------|
+| 架构问题 A1-A4 | ✅ 已修复 |
+| P0 致命 Bug C1-C3 | ✅ 已修复 |
+| P1 严重缺陷 C4-C9 | ✅ 已修复 |
+| 标签体系激活 T1 | ❌ 未做 |
+| 集成验证 阶段七 | ❌ 未做，需数据库环境 |
+| A5 配置割裂 / A6 `material/` 归属 | ⏳ 待决策 |
 
-### A1. 流水线执行顺序存在逻辑矛盾
+---
 
-当前 `pipeline_full()` 的执行顺序为：
+## 二、下一步行动
 
-```
-ingest → outline → worldbuilding → characters → tags → chapter_analyze → sync
-```
+### 阶段七：集成验证（Integration Testing）
 
-**问题**：`generate_outline.py` 只读取全书前 5000 个字符来判断三幕式结构和全书基调。但真正能提供全书视角的章级摘要（`chapters.yaml`）要等到 `chapter_analyze` 完成后才会存在。这等于让一个人读了两页序言就来写全书大纲。
+*前置条件：PostgreSQL + pgvector 就绪，LLM API Key 配置完毕。*
 
-**正确的顺序应为**：
+| 任务 | 目标 |
+|------|------|
+| 使用 `material/` 下的真实网文跑完全链路 | 验证端到端闭环 |
+| 监控 API 消耗与重试触发情况 | 确认 LLM 调度健壮性 |
+| 在数据库层验证结构化 + 向量混合查询 | 确认检索能力 |
+| 将 YAML 数据对照 `data/schemas/` 进行结构验证 | 确认 schema 门控实际效果 |
+
+---
+
+### T1. 激活 `data/tag-system/` 标签分类学
+
+`data/tag-system/` 包含 10 篇完整的标签分类学文档（600+ 标签值，含定义、示例、使用规则），目前**没有任何脚本使用它**。`tags.yaml` 只是它的简化摘录，且两者不同步（`chapter_function` 在 Markdown 中有 40+ 值，`tags.yaml` 中只有 20 个）。
+
+**核心影响：**
+- `chapter_analyze.py` 让 LLM 选 `chapter_function` 标签，但未提供合法值列表 → LLM 自由发挥 → `quality_check` 大量报"非法标签"
+- `generate_tags.py` 已正确注入 `tags.yaml`，但源头值不完整
+
+**建议方案（按需注入，非整个文件夹）：**
+
+| 脚本 | 注入文件 | 目的 |
+|------|---------|------|
+| `chapter_analyze.py` | `09-chapter-function.md` | 让 LLM 知道哪些章节功能标签合法 |
+| `generate_outline.py` | `07-structure.md` | 结构标签上下文 |
+| `generate_characters.py` | `05-character.md` | 角色标签上下文 |
+
+同时需要将 `tags.yaml` 补全至与 Markdown 一致，消除断层。
+
+---
+
+### 待决策项（不阻塞其他阶段）
+
+| 项目 | 问题 | 需要的决策 |
+|------|------|-----------|
+| **A5** 配置割裂 | `config/database.yaml` 无人读取；`requirements.txt` 有 sqlalchemy 但代码用 psycopg2 | 是否统一到单一配置入口，是否切换 ORM |
+| **A6** `material/` 归属 | 根目录有原始网文目录，不在 `.gitignore`，不被脚本引用 | 明确用途：作为 ingest 暂存区并加入 `.gitignore`？还是删除？ |
+
+---
+
+## 三、已完成的缺陷修复
+
+### 架构层缺陷（Architectural Issues）
+
+以下问题不是某行代码写错了，而是整体设计上的结构性问题。
+
+#### ~~A1. 流水线执行顺序存在逻辑矛盾~~ ✅ 已修复
+
+`pipeline_full()` 和 `pipeline_analyze()` 的执行顺序已修正为：
+
 ```
 ingest → chapter_analyze → outline/worldbuilding/characters/tags（基于章级摘要）→ refine → sync
 ```
 
-先完成章级分析，再用摘要池作为大模型的全局视角输入，才能生成有意义的大纲和世界观。
+`generate_outline.py` 现在读取章级摘要池（`chapters.yaml` 中所有章的摘要拼接，最多 6000 token）作为全局视角输入，原文前 5000 字方案已废弃（保留兜底逻辑：若 chapters.yaml 尚未生成则回退）。`generate_worldbuilding.py` 和 `generate_characters.py` 同步改为优先读取章级摘要池。
 
-### A2. LLM 调用代码被复制粘贴了 6 次
+#### ~~A2. LLM 调用代码被复制粘贴了 6 次~~ ✅ 已修复
 
-`call_llm()` 和 `load_config()` 这两个完全相同的函数分别出现在以下 6 个文件中：
+已抽取为 `scripts/core/llm_client.py`，提供统一的 `load_config()` 和 `call_llm()`。原 6 个文件中的重复实现全部删除，改为 `from scripts.core.llm_client import load_config, call_llm`。
 
-- `scripts/core/chapter_analyze.py`
-- `scripts/analyze/generate_outline.py`
-- `scripts/analyze/generate_worldbuilding.py`
-- `scripts/analyze/generate_characters.py`
-- `scripts/analyze/generate_tags.py`
-- `scripts/utils/refine.py`
+#### ~~A3. 所有文件路径硬编码且依赖工作目录~~ ✅ 已修复
 
-**后果**：当我们需要引入重试机制（`tenacity`）、Token 计算（`tiktoken`）、或统一的错误处理时，必须修改 6 个地方。漏改任何一个，那个脚本就会继续裸调 API。
+已建立 `scripts/core/paths.py`，提供 `PROJECT_ROOT`、`DATA_DIR`、`NOVELS_DIR`、`CONFIG_DIR`、`TAGS_FILE`、`INDEX_FILE` 等常量，全部基于 `__file__` 计算。全项目 15 处 `sys.path.insert(0, os.path.join(...))` hack 已替换为基于 `__file__` 的标准 bootstrap，所有 `Path("data/...")` 硬编码已替换为常量引用。脚本现可从任意目录运行。
 
-**解决方案**：抽取为 `scripts/core/llm_client.py`，所有脚本统一 import。
+#### ~~A4. Schema 定义从未被代码验证~~ ✅ 已修复
 
-### A3. 所有文件路径硬编码且依赖工作目录
+`data/schemas/` 下有 YAML Schema 定义文件，规定了 `meta.yaml`、`chapters.yaml` 等的字段格式。但原先没有一行代码读取这些 schema 并校验数据，`quality_check.py` 只做了摘要长度检查。
 
-全项目 18 处 `sys.path.insert(0, ...)` hack，以及大量 `Path("data/novels")`、`Path("config")` 等相对于 CWD 的硬编码路径。
-
-**后果**：所有脚本**必须从项目根目录运行**。如果从 `scripts/` 目录或任何其他位置执行，会静默找不到文件或找到错误的文件。
-
-**解决方案**：建立 `scripts/core/paths.py`，基于 `__file__` 自动定位项目根目录，统一提供 `PROJECT_ROOT`、`DATA_DIR`、`CONFIG_DIR` 等常量。
-
-### A4. Schema 定义从未被代码验证
-
-`data/schemas/` 下有 11 份 YAML Schema 定义文件，规定了 `meta.yaml`、`chapters.yaml` 等的字段格式。但纵观全项目，**没有一行代码读取这些 schema 并校验数据**。`quality_check.py` 只做了摘要长度检查，远未达到 schema 级别的结构验证。
-
-**后果**：schema 是空头支票。LLM 生成的 YAML 可能缺少必填字段、类型错误，但系统毫无感知，脏数据会一路流入数据库。
-
-### A5. 配置体系割裂
-
-| 配置来源 | 使用方 | 格式 |
-|----------|--------|------|
-| `.env` | `sync_db.py`、search 脚本 | `DATABASE_URL` 环境变量 |
-| `config/llm.yaml` | 6 个 LLM 调用脚本 | YAML |
-| `config/embedding.yaml` | `embedding.py` | YAML |
-| `config/database.yaml` | 无人使用 | YAML |
-
-`requirements.txt` 中引入了 `sqlalchemy`，但实际代码全部使用裸 `psycopg2`。`config/database.yaml` 定义了连接池参数（`pool_size: 5`），但没有任何代码读取它。
-
-### A6. 根目录存在未纳管的 `material/` 目录
-
-项目根目录有一个 `material/` 文件夹，内含两本网文原文 txt（约 20MB）。它不在 `data/` 中，不被任何脚本引用，不在 `.gitignore` 中，也不在任何文档中出现。需要明确其归属：是原始素材的暂存区？还是被遗忘的测试文件？
+**修复方案：**
+- 新建 `scripts/utils/schema_validator.py`（pydantic 模型：`MetaModel` / `ChapterEntryModel` / `NovelTagsModel`）
+- 重写 `quality_check.py`：schema 结构校验 + 覆盖率检查 + 摘要质量检查三层叠加
+- `chapter_analyze.py` 全部分析完成后自动调用 `run_quality_check()`
+- `sync_db.py` 同步前调用 `_precheck_schema()`，schema 不通过则终止同步
 
 ---
 
-## 二、代码层致命缺陷（P0 — 阻断主流程）
+### 代码层致命缺陷（P0 — 阻断主流程）
 
-以下 Bug 会直接导致程序崩溃或数据无法写入，必须最优先修复。
+#### ~~C1. `ingest.py`：缺少文本预处理层~~ ✅ 已修复
 
-### C1. `ingest.py`：缺少文本预处理层，章节正则直接裸匹配原文
+已新建 `scripts/core/preprocess.py`，实现完整预处理流水线：编码归一化（NFC）→ 去广告水印 → 中文数字转阿拉伯数字（支持到亿级）→ 空白清理。`ingest.py` 在章节正则匹配前调用 `preprocess()`，正则层本身保持简洁。
 
-**位置**：`scripts/core/ingest.py` → `detect_chapter_pattern()`
+#### ~~C2. `ingest.py`：未定义变量导致崩溃~~ ✅ 已修复
 
-正则 `r"^\s*(?:第\s*\d+\s*[章节回卷篇]|楔子|引子|序章|终章|尾声)\s*"` 中的 `\d+` 只匹配阿拉伯数字。
+`print(f"入库完成: {material_dir}")` → `print(f"入库完成: {novel_dir}")`
 
-**影响**：使用“第一百二十三章”格式的中文网文（占绝大多数）会被判定为无章节，切分失败，整个 Pipeline 停摆。
+#### ~~C3. `sync_db.py`：JSONB 字段写入 YAML 格式字符串~~ ✅ 已修复
 
-**根因**：`ingest.py` 缺少文本预处理层。正确的设计不是“让正则兼容所有格式”，而是在正则匹配之前新增一个预处理步骤：
-
-```
-原文 → 预处理（中文数字→阿拉伯、去广告、统一编码）→ 章节正则匹配 → 切分
-```
-
-这样正则层保持简洁，脏活由预处理层承担。
-
-### C2. `ingest.py`：未定义变量导致崩溃
-
-**位置**：`scripts/core/ingest.py` 第 123 行
-
-`print(f"入库完成: {material_dir}")` 中的 `material_dir` 从未被定义（正确变量名为 `novel_dir`），必然抛出 `NameError`。
-
-### C3. `sync_db.py`：JSONB 字段写入 YAML 格式字符串
-
-**位置**：`scripts/core/sync_db.py` 多处
-
-向 PostgreSQL 的 `JSONB` 字段插入数据时使用了 `yaml.dump()`。YAML 格式字符串（含换行、缩进）并非合法 JSON，数据库会直接拒绝写入并回滚事务。
-
-**修复**：替换为 `json.dumps(..., ensure_ascii=False)`。
+所有 `yaml.dump(...)` 替换为 `json.dumps(..., ensure_ascii=False)`，涉及 `tags`、`psychology`、`properties` 三个 JSONB 字段。同时将单一大事务拆分为按模块独立提交（meta / chapters / outline / characters / worldbuilding 各自 commit），章节同步进一步按 50 章批量提交。
 
 ---
 
-## 三、代码层严重缺陷（P1 — 高业务风险）
+### 代码层严重缺陷（P1 — 高业务风险）
 
-以下问题不会立即崩溃，但会导致数据质量严重下降或产生巨额浪费。
+#### ~~C4. `chapter_analyze.py`：LLM 裸调 + 零容错 + 无断点续传~~ ✅ 已修复
 
-### C4. `chapter_analyze.py`：LLM 裸调 + 零容错 + 无断点续传
+- **重试**：`llm_client.call_llm` 引入 `tenacity` 指数退避重试，最多 5 次，覆盖网络超时/限流/5xx
+- **断点续传**：每章分析完立即调用 `_append_chapter()` 写入磁盘；重启时自动跳过已完成章节
+- **单章失败不中断**：`try/except` 捕获耗尽重试的异常，打印警告后继续处理下一章
 
-在 `for` 循环中逐章调用 OpenAI API，无 `try/except`，无重试。所有结果全部在内存中累积，循环结束后才一次性写入 `chapters.yaml`。
+#### ~~C5. `chapter_analyze.py`：3000 字符硬截断~~ ✅ 已修复
 
-**后果**：处理 500 章的小说时，如果第 499 章遇到 API 限流或网络超时，之前所有章的 Token 费和时间全部作废。
+`llm_client.truncate_to_tokens()` 使用 tiktoken 精确计算 Token 数（上限 1800 tokens），按语义单元截断，不在词语中间截断。不再有硬截字符的方式。
 
-### C5. `chapter_analyze.py`：3000 字符硬截断
+#### ~~C6. `generate_outline.py`：5000 字定终身~~ ✅ 已修复（随 A1 修复同步解决）
 
-`content[:3000]` 直接砍掉章节末尾。网文章末通常包含最重要的"钩子"和转折，截断后 LLM 无法准确判断 `tension_level` 和 `key_plot_point`。
+`generate_outline.py` 现在读取章级摘要池（`_build_summary_pool()`），最多 6000 tokens，覆盖全书摘要。与 A1 流水线顺序修正配合，大纲生成时已有完整全书视角。
 
-### C6. `generate_outline.py`：5000 字定终身
+#### ~~C7. 向量化工具已就绪但未被集成~~ ✅ 已修复
 
-`source_text = f.read()[:5000]` — 用全书开头 5000 字符判断整部小说的结构类型和主题基调。这个问题与 A1 相关联：即使修复了截断长度，只要执行顺序不改，大纲提取永远缺乏全局视野。
+新建 `scripts/core/embed_chapters.py`，支持断点续传、批量向量化，写入 `chapter_embeddings.yaml`。流水线在 `chapter_analyze` 之后加入 `embed_chapters` 步骤。`sync_db.py` 的 `_sync_chapters()` 读取向量文件并写入数据库 `embedding` 字段（向量不存在时跳过该字段，向后兼容）。
 
-### C7. 向量化工具已就绪但未被集成
+#### ~~C8. 检索脚本无 CLI 参数解析~~ ✅ 已修复
 
-`scripts/core/embedding.py` 提供了完整的 `get_embedding()` 和 `get_embeddings_batch()` 函数（支持 OpenAI 和 BGE 两种 provider）。但没有任何流水线步骤调用它，`sync_db.py` 也未将向量写入数据库的 `vector(1024)` 字段。语义检索能力完全悬空。
+6 个 `scripts/search/` 脚本均已加入 `click` 装饰器，实现完整 CLI 参数解析。带位置参数的脚本（`search_chapter.py`、`search_event.py`）使用 `@click.argument`，其余使用 `@click.option`，所有脚本支持 `--help`。
 
-### C8. 检索脚本无 CLI 参数解析
+#### ~~C9. `pipeline.py` 缺少 `ingest` 子命令~~ ✅ 已修复
 
-`scripts/search/` 下 6 个脚本的 `__main__` 均为硬编码的函数调用示例，未使用 `argparse` 或 `click`。Agent 按照 `AGENTS.md` 中记载的命令行格式调用时，参数不会被解析。
-
-### C9. `pipeline.py` 缺少 `ingest` 子命令
-
-`pipeline.py` 只有 `full`、`analyze`、`finalize` 三个模式。无法单独执行入库操作，与 `AGENTS.md` 中记载的 `python scripts/pipeline.py ingest [路径]` 直接矛盾。
+已添加 `pipeline_ingest()` 函数和 `ingest` 子命令，现可通过 `python scripts/pipeline.py ingest <路径>` 独立执行入库操作。
 
 ---
 
-## 四、修复路线图 (Roadmap)
+## 四、修复路线图（已完成阶段）
 
-基于以上全部缺陷，我们当前的首要目标**不是添加新功能，而是让系统能真正跑完一个闭环**。以下按依赖关系排列，必须严格按顺序执行。
-
-### 阶段一：基础设施整固（Infrastructure）
+### ~~阶段一：基础设施整固（Infrastructure）~~ ✅ 已完成
 
 *目标：消灭复制粘贴，统一路径和配置，为后续所有修复打下基础。*
-
-这是其他所有阶段的前置条件。如果不先完成基础设施整固，后续每个修复都会在 6 个文件中重复操作。
 
 | 任务 | 解决的缺陷 |
 |------|-----------|
 | 抽取 `scripts/core/llm_client.py`（统一 `call_llm` + `load_config`）| A2 |
 | 建立 `scripts/core/paths.py`（项目根路径自动定位）| A3 |
-| 所有脚本改为从共享模块 import，移除 18 处 `sys.path.insert` | A3 |
+| 所有脚本改为从共享模块 import，移除 15 处 `sys.path.insert` | A3 |
 
-### 阶段二：打通输入输出管道（Core Pipeline）
+### ~~阶段二：打通输入输出管道（Core Pipeline）~~ ✅ 已完成
 
 *目标：让数据能进来（ingest）、能存进去（sync）。*
 
@@ -171,11 +170,9 @@ ingest → chapter_analyze → outline/worldbuilding/characters/tags（基于章
 | 拆分数据库大事务为按章节批量提交 | 架构优化 |
 | 为 `pipeline.py` 添加 `ingest` 子命令 | C9 |
 
-### 阶段三：LLM 调用工业化（LLM Resiliency）
+### ~~阶段三：LLM 调用工业化（LLM Resiliency）~~ ✅ 已完成
 
 *目标：所有大模型调用具备重试、断点续传和智能上下文管理能力。*
-
-由于阶段一已经抽取了共享的 `llm_client.py`，以下改造只需在一个地方完成：
 
 | 任务 | 解决的缺陷 |
 |------|-----------|
@@ -185,21 +182,51 @@ ingest → chapter_analyze → outline/worldbuilding/characters/tags（基于章
 | **修正流水线执行顺序**：章级分析前置，大纲/世界观/人物/标签后置 | A1, C6 |
 | `generate_outline.py` 改为读取章级摘要池，而非前 5000 字原文 | C6 |
 
-### 阶段四：补齐向量与 CLI（Embeddings & CLI）
+### ~~阶段四：补齐向量与 CLI（Embeddings & CLI）~~ ✅ 已完成
 
 *目标：语义检索从空壳变为可用，所有脚本真正支持命令行调用。*
 
 | 任务 | 解决的缺陷 |
 |------|-----------|
-| 在流水线中新增 embedding 步骤，集成已有的 `embedding.py` | C7 |
-| `sync_db.py` 中填入 `vector(1024)` 字段 | C7 |
+| 新建 `embed_chapters.py`，流水线加入 embedding 步骤 | C7 |
+| `sync_db.py` 中写入 `embedding` 向量字段 | C7 |
 | 为所有 `scripts/search/` 脚本引入 `click` CLI 参数解析 | C8 |
 
-### 阶段五：集成验证（Integration Testing）
+### ~~阶段五：补全 A1 修复 + 文档同步（A1 Completion & Docs）~~ ✅ 已完成
 
-| 任务 | 目标 |
+*目标：让 A1 的修复效果覆盖所有骨架分析脚本，并清理已过期的文档描述。*
+
+| 任务 | 关联问题 |
+|------|---------|
+| `generate_worldbuilding.py` 改为读取章级摘要池（兜底逻辑与 outline 一致）| A1 补全 |
+| `generate_characters.py` 改为读取章级摘要池 | A1 补全 |
+| 更新 `AGENTS.md` 中 4 处过期 `[WIP]` 标记 | 文档同步 |
+| 更新文档顶部横幅，反映当前真实状态 | 文档同步 |
+
+### ~~阶段六：Schema 数据验证（Schema Validation）~~ ✅ 已完成
+
+*目标：让 `data/schemas/` 下的 schema 真正发挥约束作用，LLM 输出的脏数据在写入磁盘前被拦截。*
+
+| 任务 | 解决的缺陷 |
+|------|-----------|
+| 新建 `scripts/utils/schema_validator.py`（pydantic 模型）| A4 |
+| 重写 `quality_check.py`，整合 schema 结构校验 + 覆盖率 + 摘要质量 | A4 |
+| `chapter_analyze.py` 完成后自动调用 `run_quality_check()` | A4 |
+| `sync_db.py` 同步前调用 `_precheck_schema()`，不通过则终止 | A4 |
+
+---
+
+## 五、附录：Schema 清理记录
+
+从 `data/schemas/` 移除 2 份 V1 遗产（移至 `docs/research/` 归档）：
+
+| 文件 | 原因 |
 |------|------|
-| 使用 `material/` 下的真实网文跑完全链路 | 验证端到端闭环 |
-| 监控 API 消耗与重试触发情况 | 确认 LLM 调度健壮性 |
-| 在数据库层验证结构化 + 向量混合查询 | 确认检索能力 |
-| 将 YAML 数据对照 `data/schemas/` 进行结构验证 | A4 |
+| `event-unit.schema.yaml` | 定义 `ev_xxx.yaml` 事件文件，V2 硬规则禁止事件粒度拆分 |
+| `plot-index.schema.yaml` | 依赖事件计数统计，V2 不产出此数据 |
+
+新增 V2 缺失的核心 schema：
+
+| 文件 | 描述 |
+|------|------|
+| `data/schemas/chapters.schema.yaml` | 定义 `chapters.yaml` 字段结构，对应 `ChapterEntryModel` |

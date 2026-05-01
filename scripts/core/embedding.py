@@ -1,12 +1,17 @@
 #!/usr/bin/env python
 """Embedding 工具：将文本转换为向量。"""
-import os
+import sys
 import yaml
 from pathlib import Path
 
+_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
+from scripts.core.paths import CONFIG_DIR
+
 def load_embedding_config():
-    config_dir = Path("config")
-    with open(config_dir / "embedding.yaml", "r", encoding="utf-8") as f:
+    with open(CONFIG_DIR / "embedding.yaml", "r", encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 def get_embedding(text, config=None):

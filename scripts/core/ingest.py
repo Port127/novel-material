@@ -1,13 +1,18 @@
 #!/usr/bin/env python
 """小说入库：格式清洗 + 章节切分。"""
-import os
 import sys
 import yaml
 import re
 from datetime import datetime
 from pathlib import Path
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
+from scripts.core.paths import NOVELS_DIR, INDEX_FILE
+from scripts.core.preprocess import preprocess
+
 
 def generate_material_id():
     """生成唯一的 material_id: nm_novel_YYYYMMDD_xxxx"""
@@ -17,14 +22,22 @@ def generate_material_id():
     random_str = "".join(random.choices(string.ascii_lowercase + string.digits, k=4))
     return f"nm_novel_{date_str}_{random_str}"
 
+
 def detect_chapter_pattern(lines):
-    """检测章节名模式，返回章节行号列表。"""
-    chapter_pattern = re.compile(r"^\s*(?:第\s*\d+\s*[章节回卷篇]|楔子|引子|序章|终章|尾声)\s*")
+    """检测章节名模式，返回章节行号列表。
+
+    注意：此函数期望接收经过 preprocess() 处理的文本，
+    中文数字已转为阿拉伯数字，因此正则只需匹配 \\d+。
+    """
+    chapter_pattern = re.compile(
+        r"^\s*(?:第\s*\d+\s*[章节回卷篇]|楔子|引子|序章|终章|尾声)\s*"
+    )
     chapter_lines = []
     for i, line in enumerate(lines):
         if chapter_pattern.match(line):
             chapter_lines.append(i)
     return chapter_lines
+
 
 def split_chapters(lines, chapter_lines):
     """按检测到的章节行切分。"""
@@ -42,6 +55,7 @@ def split_chapters(lines, chapter_lines):
         })
     return chapters
 
+
 def ingest_file(file_path):
     """入库单本小说。"""
     file_path = Path(file_path).resolve()
@@ -50,7 +64,7 @@ def ingest_file(file_path):
         return None
 
     material_id = generate_material_id()
-    novel_dir = Path("data/novels") / material_id
+    novel_dir = NOVELS_DIR / material_id
     novel_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"正在处理: {file_path.name}")
@@ -58,13 +72,13 @@ def ingest_file(file_path):
 
     # 读取原文
     with open(file_path, "r", encoding="utf-8") as f:
-        content = f.read()
+        raw_content = f.read()
 
-    # 保存原始 source（不保留，V2 不再保留 source.txt）
-    # 直接清洗后保存
+    # 预处理：编码归一化 → 去广告 → 中文数字转换 → 空白清理
+    content = preprocess(raw_content)
     lines = content.split("\n")
 
-    # 章节切分
+    # 章节切分（正则此时只需匹配阿拉伯数字，预处理已完成转换）
     chapter_lines = detect_chapter_pattern(lines)
     if not chapter_lines:
         print("警告: 未检测到章节名，请检查文件格式")
@@ -120,12 +134,13 @@ def ingest_file(file_path):
     # 更新全局路由表
     update_global_index(material_id, meta)
 
-    print(f"入库完成: {material_dir}")
+    print(f"入库完成: {novel_dir}")
     return material_id
+
 
 def update_global_index(material_id, meta):
     """更新全局索引。"""
-    index_file = Path("data/index.yaml")
+    index_file = INDEX_FILE
     if index_file.exists():
         with open(index_file, "r", encoding="utf-8") as f:
             index = yaml.safe_load(f) or {}
@@ -140,6 +155,7 @@ def update_global_index(material_id, meta):
 
     with open(index_file, "w", encoding="utf-8") as f:
         yaml.dump(index, f, allow_unicode=True, default_flow_style=False)
+
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:

@@ -1,53 +1,29 @@
 #!/usr/bin/env python
 """标签生成：LLM 为整部小说生成宏观标签（类型/基调/叙事结构/风格/长板/套路识别）。"""
-import os
 import sys
 import yaml
-import json
 import time
 from pathlib import Path
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
 
 from dotenv import load_dotenv
 load_dotenv()
 
-def load_config():
-    config_dir = Path("config")
-    with open(config_dir / "llm.yaml", "r", encoding="utf-8") as f:
-        return yaml.safe_load(f)
+from scripts.core.paths import NOVELS_DIR, TAGS_FILE
+from scripts.core.llm_client import load_config, call_llm
 
 def load_tags_dict():
-    tags_file = Path("data/tags.yaml")
-    if tags_file.exists():
-        with open(tags_file, "r", encoding="utf-8") as f:
+    if TAGS_FILE.exists():
+        with open(TAGS_FILE, "r", encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
     return {}
 
-def call_llm(system_prompt, user_prompt, config):
-    from openai import OpenAI
-
-    client = OpenAI(
-        api_key=config["llm"]["api_key"],
-        base_url=config["llm"].get("base_url")
-    )
-
-    response = client.chat.completions.create(
-        model=config["llm"]["model"],
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
-        ],
-        temperature=config["llm"].get("temperature", 0.3),
-        max_tokens=config["llm"].get("max_tokens", 2048),
-        response_format={"type": "json_object"}
-    )
-
-    return json.loads(response.choices[0].message.content)
-
 def generate_tags(material_id):
     """为整部小说生成多维标签。"""
-    novel_dir = Path("data/novels") / material_id
+    novel_dir = NOVELS_DIR / material_id
     if not novel_dir.exists():
         print(f"错误: 小说目录不存在: {novel_dir}")
         return

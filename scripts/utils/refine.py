@@ -1,46 +1,23 @@
 #!/usr/bin/env python
 """精调工具：基于章级分析数据调整 outline/characters/worldbuilding/tags。"""
-import os
 import sys
 import yaml
-import json
 import time
 from pathlib import Path
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
 
 from dotenv import load_dotenv
 load_dotenv()
 
-def load_config():
-    config_dir = Path("config")
-    with open(config_dir / "llm.yaml", "r", encoding="utf-8") as f:
-        return yaml.safe_load(f)
-
-def call_llm(system_prompt, user_prompt, config):
-    from openai import OpenAI
-
-    client = OpenAI(
-        api_key=config["llm"]["api_key"],
-        base_url=config["llm"].get("base_url")
-    )
-
-    response = client.chat.completions.create(
-        model=config["llm"]["model"],
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
-        ],
-        temperature=config["llm"].get("temperature", 0.3),
-        max_tokens=config["llm"].get("max_tokens", 4096),
-        response_format={"type": "json_object"}
-    )
-
-    return json.loads(response.choices[0].message.content)
+from scripts.core.paths import NOVELS_DIR
+from scripts.core.llm_client import load_config, call_llm
 
 def refine_outline(material_id, chapters_data):
     """基于章级数据精调大纲。"""
-    novel_dir = Path("data/novels") / material_id
+    novel_dir = NOVELS_DIR / material_id
     outline_dir = novel_dir / "outline"
     outline_index_file = outline_dir / "_index.yaml"
 
@@ -81,7 +58,7 @@ def refine_outline(material_id, chapters_data):
 
 def refine_characters(material_id, chapters_data):
     """基于章级数据精调人物。"""
-    novel_dir = Path("data/novels") / material_id
+    novel_dir = NOVELS_DIR / material_id
     char_dir = novel_dir / "characters"
     profiles_dir = char_dir / "profiles"
     char_index_file = char_dir / "_index.yaml"
@@ -131,7 +108,7 @@ def refine_characters(material_id, chapters_data):
 
 def refine_tags(material_id, chapters_data):
     """基于章级数据精调标签。"""
-    novel_dir = Path("data/novels") / material_id
+    novel_dir = NOVELS_DIR / material_id
     tags_file = novel_dir / "tags.yaml"
 
     if not tags_file.exists():
@@ -160,7 +137,7 @@ def refine_tags(material_id, chapters_data):
 
 def refine(material_id):
     """主精调函数：调整 outline/characters/tags。"""
-    novel_dir = Path("data/novels") / material_id
+    novel_dir = NOVELS_DIR / material_id
     if not novel_dir.exists():
         print(f"错误: 小说目录不存在: {novel_dir}")
         return

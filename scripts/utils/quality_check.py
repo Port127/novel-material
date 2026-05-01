@@ -1,123 +1,130 @@
 #!/usr/bin/env python
-"""质量校验脚本：检查章级分析结果的完整性。"""
-import os
+"""质量校验脚本：结合结构校验（schema）与内容质量校验（摘要长度、标签合法性等）。
+
+用法:
+    python scripts/utils/quality_check.py <material_id>
+
+退出码：
+    0 = 全部通过
+    1 = 存在错误
+"""
 import sys
 import yaml
 from pathlib import Path
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
 
-def validate_chapters(material_id):
-    """校验章级分析结果。"""
-    novel_dir = Path("data/novels") / material_id
-    chapters_file = novel_dir / "chapters.yaml"
+from scripts.core.paths import NOVELS_DIR, TAGS_FILE
+from scripts.utils.schema_validator import validate_material
 
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 内容质量校验（独立于 pydantic 结构校验）
+# ──────────────────────────────────────────────────────────────────────────────
+
+def check_summary_quality(material_id: str) -> tuple[list[str], list[str]]:
+    """检查摘要质量（过长警告），返回 (errors, warnings)。"""
+    chapters_file = NOVELS_DIR / material_id / "chapters.yaml"
     if not chapters_file.exists():
-        print(f"错误: chapters.yaml 不存在: {chapters_file}")
-        return False
+        return [], []
 
     with open(chapters_file, "r", encoding="utf-8") as f:
         chapters = yaml.safe_load(f) or []
 
-    if not chapters:
-        print(f"警告: {material_id} 没有章节分析数据")
-        return False
-
-    errors = []
-    warnings = []
+    errors: list[str] = []
+    warnings: list[str] = []
 
     for ch in chapters:
+        if not isinstance(ch, dict):
+            continue
         ch_num = ch.get("chapter", "?")
-        title = ch.get("title", "?")
-
-        # 摘要长度
         summary = ch.get("summary", "")
-        if len(summary) < 20:
-            errors.append(f"  第{ch_num}章: 摘要过短 ({len(summary)}字)")
-        elif len(summary) > 200:
-            warnings.append(f"  第{ch_num}章: 摘要过长 ({len(summary)}字)")
-
-        # 张力等级
-        tension = ch.get("tension_level")
-        if tension is None:
-            errors.append(f"  第{ch_num}章: 缺失 tension_level")
-        elif not (1 <= tension <= 5):
-            errors.append(f"  第{ch_num}章: tension_level={tension} 不在 1-5 范围")
-
-        # 出场人物
-        chars = ch.get("characters_appear", [])
-        if not chars:
-            errors.append(f"  第{ch_num}章: 未识别到出场人物")
-
-        # 章节功能
+        if len(summary) > 200:
+            warnings.append(f"第{ch_num}章: 摘要过长（{len(summary)}字，建议 ≤200）")
         funcs = ch.get("chapter_function", ch.get("chapter_functions", []))
         if not funcs:
-            warnings.append(f"  第{ch_num}章: 未标注章节功能")
+            warnings.append(f"第{ch_num}章: 未标注章节功能（chapter_function 为空）")
 
-    if errors:
-        print(f"\n发现 {len(errors)} 个错误:")
-        for e in errors:
-            print(e)
+    return errors, warnings
 
-    if warnings:
-        print(f"\n发现 {len(warnings)} 个警告:")
-        for w in warnings:
-            print(w)
 
-    if not errors:
-        print(f"校验通过: {material_id} ({len(chapters)}章)")
-        return True
-    else:
-        print(f"校验失败: {len(errors)} 个错误需要修复")
-        return False
-
-def load_tags_dict():
-    """加载标签字典。"""
-    tags_file = Path("data/tags.yaml")
-    if tags_file.exists():
-        with open(tags_file, "r", encoding="utf-8") as f:
-            return yaml.safe_load(f) or {}
-    return {}
-
-def validate_tags(material_id):
-    """校验标签是否都在字典范围内。"""
-    tags_dict = load_tags_dict()
-    if not tags_dict:
-        print("警告: 标签字典不存在，跳过标签校验")
-        return True
-
-    novel_dir = Path("data/novels") / material_id
+def check_coverage(material_id: str) -> list[str]:
+    """检查分析覆盖率：chapters.yaml 章节数 vs chapter_index.yaml 章节数。"""
+    novel_dir = NOVELS_DIR / material_id
+    index_file = novel_dir / "chapter_index.yaml"
     chapters_file = novel_dir / "chapters.yaml"
 
-    if not chapters_file.exists():
-        return False
+    if not index_file.exists() or not chapters_file.exists():
+        return []
 
+    with open(index_file, "r", encoding="utf-8") as f:
+        index = yaml.safe_load(f) or []
     with open(chapters_file, "r", encoding="utf-8") as f:
         chapters = yaml.safe_load(f) or []
 
-    invalid_tags = []
-    for ch in chapters:
-        funcs = ch.get("chapter_function", ch.get("chapter_functions", []))
-        for func in funcs:
-            # 检查是否在 chapter_function 标签维度中
-            valid_funcs = tags_dict.get("chapter_function", [])
-            if isinstance(valid_funcs, list) and func not in valid_funcs:
-                invalid_tags.append(f"  第{ch.get('chapter', '?')}章: '{func}' 不在字典中")
+    total = len(index)
+    analyzed = len([c for c in chapters if isinstance(c, dict)])
+    missing = total - analyzed
 
-    if invalid_tags:
-        print(f"\n发现 {len(invalid_tags)} 个非法标签:")
-        for t in invalid_tags:
-            print(t)
-        return False
+    if missing > 0:
+        return [f"覆盖率不足：总章数 {total}，已分析 {analyzed}，缺少 {missing} 章"]
+    return []
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 统一入口
+# ──────────────────────────────────────────────────────────────────────────────
+
+def run_quality_check(material_id: str) -> bool:
+    """运行完整质量校验，返回 True 表示通过。
+
+    流程：
+      1. pydantic schema 结构校验（meta + chapters + tags）
+      2. 摘要质量 + 章节功能覆盖
+      3. 分析覆盖率
+    """
+    print(f"\n{'='*50}")
+    print(f"质量校验：{material_id}")
+    print(f"{'='*50}")
+
+    # ── 1. Schema 结构校验 ──
+    print("\n[Schema 结构校验]")
+    schema_ok = validate_material(material_id, verbose=True)
+
+    # ── 2. 内容质量校验 ──
+    print("\n[内容质量校验]")
+    content_errors, content_warnings = check_summary_quality(material_id)
+    coverage_errors = check_coverage(material_id)
+
+    all_content_errors = content_errors + coverage_errors
+    for err in all_content_errors:
+        print(f"  ✗ {err}")
+    for warn in content_warnings:
+        print(f"  ⚠ {warn}")
+    if not all_content_errors and not content_warnings:
+        print("  ✓ 内容质量校验通过")
+    elif not all_content_errors:
+        print(f"  ✓ 通过（{len(content_warnings)} 个警告）")
+
+    # ── 汇总 ──
+    passed = schema_ok and len(all_content_errors) == 0
+    print(f"\n{'─'*50}")
+    if passed:
+        print(f"✅ 全部通过：{material_id}")
     else:
-        print("标签校验通过")
-        return True
+        total_errs = (0 if schema_ok else 1) + len(all_content_errors)
+        print(f"❌ 校验失败：{material_id}（需修复后重新运行）")
+
+    return passed
+
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("用法: python quality_check.py <material_id>")
+        print("用法: python scripts/utils/quality_check.py <material_id>")
         sys.exit(1)
 
     material_id = sys.argv[1]
-    validate_chapters(material_id)
-    validate_tags(material_id)
+    ok = run_quality_check(material_id)
+    sys.exit(0 if ok else 1)

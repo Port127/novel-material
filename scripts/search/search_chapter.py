@@ -7,8 +7,11 @@ import json
 import psycopg2
 from pathlib import Path
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
 
+import click
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -78,12 +81,17 @@ def search_chapters(query, genre=None, chapter_function=None, chapter_num=None, 
         print(f"人物: {r['characters_appear']}")
         print()
 
+@click.command()
+@click.argument("query")
+@click.option("--genre", default=None, help="按题材过滤（如：修仙、都市）")
+@click.option("--function", default=None, help="章节功能标签（如：开局困境）")
+@click.option("--chapter", default=None, help="精确章节号")
+@click.option("--tension-min", default=None, help="张力最小值（1-5）")
+@click.option("--tension-max", default=None, help="张力最大值（1-5）")
+@click.option("--limit", default=10, help="返回结果数")
+def main(query, genre, chapter_function, chapter_num, tension_min, tension_max, limit):
+    search_chapters(query=query, genre=genre, chapter_function=chapter_function, chapter_num=chapter_num, tension_min=tension_min, tension_max=tension_max, limit=limit)
+
+
 if __name__ == "__main__":
-    # 示例用法
-    search_chapters(
-        query="开局困境写法",
-        genre="修仙",
-        chapter_function="开局困境",
-        chapter_num=1,
-        limit=10
-    )
+    main()

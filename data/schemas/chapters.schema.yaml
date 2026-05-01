@@ -1,0 +1,73 @@
+# chapters.yaml schema
+# 每部小说的章级分析结果
+# 路径: data/novels/{material_id}/chapters.yaml
+#
+# 由 pipeline-analyze 的 chapter_analyze.py 生成
+# 特性：断点续传，每章分析完立即追加写入；重启后自动跳过已完成章节
+#
+# 此文件是 V2 系统的核心产出，是 outline/worldbuilding/characters 分析的上游输入。
+
+# ====================================================================
+# 字段说明
+# ====================================================================
+#
+# R = 必填（required），O = 可选（optional）
+#
+# chapter 和 title 由代码从 chapter_index.yaml 直接写入；
+# 其余字段由 LLM 生成，通过 quality_check.py 校验后保留。
+
+# ====================================================================
+# 条目结构（chapters.yaml 为条目列表）
+# ====================================================================
+
+- chapter: 1                                      # R | 章节号（整数，≥1，与 chapter_index.yaml 对应）
+  title: "第1章 牢狱之灾"                          # R | 章节标题（从 chapter_index.yaml 拷贝）
+
+  # ── LLM 生成字段 ──
+
+  summary: "许七安穿越入狱，面临流放边陲的命运..."   # R | 章节摘要（20-500字，包含关键事件/情感基调/人物互动）
+  word_count: 3200                                # O | 本章字数（LLM 估算值）
+
+  characters_appear:                             # R | 出场人物名字列表（非空）
+    - 许七安
+    - 许新年
+
+  chapter_function:                              # R | 章节功能标签（从 tags.yaml → chapter_function 选取，可多选）
+    - 铺垫
+    - 人物出场
+
+  tension_level: 4                               # R | 章节张力值（整数，1-5；1=低张力铺垫，5=高潮冲突）
+
+  pacing: 加速                                   # O | 节奏型（快 / 慢 / 喘息 / 加速）
+
+  setting:                                       # O | 场景类型列表（空间描述，如 监牢/宫殿/荒野）
+    - 监牢
+    - 衙门
+
+  key_plot_point: inciting_incident              # O | 关键节点标记（留空则表示普通章节）
+                                                 #     合法值：inciting_incident / first_turning_point /
+                                                 #             midpoint / second_turning_point /
+                                                 #             climax / resolution
+
+# ====================================================================
+# 约束规则
+# ====================================================================
+#
+# 1. summary 长度：20-500字（< 20 为 ERROR，> 200 为 WARNING）
+# 2. tension_level：必须为 1-5 的整数
+# 3. characters_appear：必须为非空列表
+# 4. chapter_function 中的值必须在 tags.yaml → chapter_function 字典中
+# 5. pacing 值域：快 / 慢 / 喘息 / 加速
+# 6. 章节号必须唯一，与 chapter_index.yaml 中的 chapter 字段一一对应
+#
+# 校验脚本：scripts/utils/quality_check.py（pydantic ChapterEntryModel）
+# 校验时机：① chapter_analyze.py 全部完成后自动触发
+#           ② sync_db.py 同步前 _precheck_schema() 拦截
+
+# ====================================================================
+# 相关文件
+# ====================================================================
+#
+# chapter_index.yaml  → 章节目录（start_line / end_line / title），ingest 阶段生成
+# chapters.yaml       → 本文件，chapter_analyze 阶段填充
+# chapter_embeddings.yaml → 向量文件，embed_chapters 阶段生成（与本文件同步更新）

@@ -1,57 +1,39 @@
 #!/usr/bin/env python
-"""章级分析：LLM 为每章生成摘要、出场人物、功能标签等。"""
-import os
+"""章级分析：LLM 为每章生成摘要、出场人物、功能标签等。
+
+特性：
+- 断点续传：每章分析完立即追加写入 chapters.yaml，中断后重启自动跳过已完成章节
+- tiktoken 动态截断：按 Token 数限制章节输入，不再硬截字符
+- 重试由 llm_client.call_llm 统一处理（tenacity 指数退避）
+"""
 import sys
 import yaml
-import json
 import time
 from pathlib import Path
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
 
 from dotenv import load_dotenv
 load_dotenv()
 
-# ============================================================
-# 配置加载
-# ============================================================
-def load_config():
-    config_dir = Path("config")
-    with open(config_dir / "llm.yaml", "r", encoding="utf-8") as f:
-        return yaml.safe_load(f)
+from scripts.core.paths import NOVELS_DIR, TAGS_FILE
+from scripts.core.llm_client import load_config, call_llm, truncate_to_tokens
+from scripts.utils.quality_check import run_quality_check
 
-# ============================================================
-# LLM 调用
-# ============================================================
-def call_llm(system_prompt, user_prompt, config):
-    """调用 LLM API 进行章级分析。"""
-    from openai import OpenAI
+# 每章送给 LLM 的最大 Token 数（章末钩子/转折通常在后半段，保留完整内容）
+_MAX_CHAPTER_TOKENS = 1800
 
-    client = OpenAI(
-        api_key=config["llm"]["api_key"],
-        base_url=config["llm"].get("base_url")
-    )
 
-    response = client.chat.completions.create(
-        model=config["llm"]["model"],
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
-        ],
-        temperature=config["llm"].get("temperature", 0.3),
-        max_tokens=config["llm"].get("max_tokens", 500),
-        response_format={"type": "json_object"}
-    )
-
-    return json.loads(response.choices[0].message.content)
-
-# ============================================================
-# 章级分析主逻辑
-# ============================================================
-def analyze_chapter(content, chapter_info, config):
-    """分析单章内容。"""
+def analyze_chapter(content: str, chapter_info: dict, config: dict) -> dict:
+    """分析单章内容，返回结构化数据。"""
     llm_config = config.get("chapter_analyze", {})
     system_prompt = llm_config.get("system_prompt", "")
+    model = config["llm"]["model"]
+
+    # 动态截断：按 Token 数而非字符数
+    truncated = truncate_to_tokens(content, _MAX_CHAPTER_TOKENS, model=model)
 
     user_prompt = f"""请分析以下章节：
 
@@ -59,7 +41,7 @@ def analyze_chapter(content, chapter_info, config):
 标题：{chapter_info.get('title', 'N/A')}
 
 内容：
-{content[:3000]}  # 限制长度，避免超出 token 限制
+{truncated}
 
 请返回 JSON 格式：
 {{
@@ -75,8 +57,9 @@ def analyze_chapter(content, chapter_info, config):
 
     return call_llm(system_prompt, user_prompt, config)
 
-def validate_chapter_analysis(result, chapter_info):
-    """校验章级分析结果。"""
+
+def validate_chapter_analysis(result: dict, chapter_info: dict) -> list[str]:
+    """校验章级分析结果，返回错误列表。"""
     errors = []
 
     summary = result.get("summary", "")
@@ -84,7 +67,7 @@ def validate_chapter_analysis(result, chapter_info):
         errors.append(f"章节{chapter_info['chapter']}: 摘要过短({len(summary)}字)")
 
     tension = result.get("tension_level")
-    if tension and not (1 <= tension <= 5):
+    if tension is not None and not (1 <= tension <= 5):
         errors.append(f"章节{chapter_info['chapter']}: tension_level 不在 1-5 范围")
 
     if not result.get("characters_appear"):
@@ -92,69 +75,105 @@ def validate_chapter_analysis(result, chapter_info):
 
     return errors
 
-def load_tags_dict():
-    """加载标签字典用于校验。"""
-    tags_file = Path("data/tags.yaml")
-    if tags_file.exists():
-        with open(tags_file, "r", encoding="utf-8") as f:
-            return yaml.safe_load(f)
-    return {}
 
-def chapter_analyze(material_id):
-    """对指定小说进行章级分析。"""
-    novel_dir = Path("data/novels") / material_id
+def _load_existing_chapters(chapters_file: Path) -> dict[int, dict]:
+    """加载已存在的章节分析结果，返回 {chapter_num: data} 映射。"""
+    if not chapters_file.exists():
+        return {}
+    with open(chapters_file, "r", encoding="utf-8") as f:
+        existing = yaml.safe_load(f) or []
+    return {ch["chapter"]: ch for ch in existing if isinstance(ch, dict) and "chapter" in ch}
+
+
+def _append_chapter(chapters_file: Path, chapter_data: dict) -> None:
+    """将单章数据追加写入 chapters.yaml（断点续传的核心）。"""
+    existing = []
+    if chapters_file.exists():
+        with open(chapters_file, "r", encoding="utf-8") as f:
+            existing = yaml.safe_load(f) or []
+
+    # 更新或追加
+    updated = False
+    for i, ch in enumerate(existing):
+        if isinstance(ch, dict) and ch.get("chapter") == chapter_data["chapter"]:
+            existing[i] = chapter_data
+            updated = True
+            break
+    if not updated:
+        existing.append(chapter_data)
+
+    with open(chapters_file, "w", encoding="utf-8") as f:
+        yaml.dump(existing, f, allow_unicode=True, default_flow_style=False)
+
+
+def chapter_analyze(material_id: str) -> None:
+    """对指定小说进行章级分析（支持断点续传）。"""
+    novel_dir = NOVELS_DIR / material_id
     if not novel_dir.exists():
         print(f"错误: 小说目录不存在: {novel_dir}")
         return
 
-    # 加载配置
     config = load_config()
 
-    # 读取章节索引
     with open(novel_dir / "chapter_index.yaml", "r", encoding="utf-8") as f:
         chapter_index = yaml.safe_load(f)
 
-    # 读取原文
     with open(novel_dir / "source.txt", "r", encoding="utf-8") as f:
         full_text = f.read()
 
-    # 按章节切分原文（复用章节索引中的行号）
     lines = full_text.split("\n")
-    chapters_data = []
+    chapters_file = novel_dir / "chapters.yaml"
 
+    # 加载已完成的章节（断点续传）
+    done = _load_existing_chapters(chapters_file)
+    if done:
+        print(f"断点续传：已完成 {len(done)} 章，从第 {max(done.keys()) + 1} 章继续")
+
+    total = len(chapter_index)
     rate_limit = config["llm"].get("rate_limit_seconds", 1)
+    completed = 0
+    skipped = 0
 
     for i, ch_info in enumerate(chapter_index):
         ch_num = ch_info["chapter"]
+
+        # 跳过已完成章节
+        if ch_num in done:
+            skipped += 1
+            continue
+
         start_line = ch_info["start_line"]
         end_line = ch_info["end_line"]
-
-        # 提取章节内容
         chapter_text = "\n".join(lines[start_line:end_line + 1])
 
-        print(f"正在分析第{ch_num}章: {ch_info['title']}")
+        print(f"[{ch_num}/{total}] 分析: {ch_info['title']}")
 
-        # 调用 LLM
-        result = analyze_chapter(chapter_text, ch_info, config)
+        try:
+            result = analyze_chapter(chapter_text, ch_info, config)
+        except Exception as e:
+            print(f"  错误（已重试耗尽）: {e}")
+            print(f"  跳过第 {ch_num} 章，继续处理后续章节")
+            continue
 
-        # 校验
         errors = validate_chapter_analysis(result, ch_info)
-        if errors:
-            for e in errors:
-                print(f"  警告: {e}")
+        for err in errors:
+            print(f"  警告: {err}")
 
-        # 添加章节号
         result["chapter"] = ch_num
         result["title"] = ch_info["title"]
-        chapters_data.append(result)
 
-        # 速率限制
-        if i < len(chapter_index) - 1:
+        # 每章立即写入磁盘（断点续传关键）
+        _append_chapter(chapters_file, result)
+        completed += 1
+
+        if i < total - 1:
             time.sleep(rate_limit)
 
-    # 写入 chapters.yaml
-    with open(novel_dir / "chapters.yaml", "w", encoding="utf-8") as f:
-        yaml.dump(chapters_data, f, allow_unicode=True, default_flow_style=False)
+    print(f"\n章级分析完成: 新分析 {completed} 章，跳过已完成 {skipped} 章，共 {total} 章")
+
+    # 质量门控：分析完成后自动校验（失败只警告，不阻断写入）
+    print("\n执行章级分析质量校验...")
+    run_quality_check(material_id)
 
     # 更新 meta 状态
     meta_file = novel_dir / "meta.yaml"
@@ -164,7 +183,6 @@ def chapter_analyze(material_id):
     with open(meta_file, "w", encoding="utf-8") as f:
         yaml.dump(meta, f, allow_unicode=True, default_flow_style=False)
 
-    print(f"章级分析完成: {len(chapters_data)} 章")
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:

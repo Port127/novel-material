@@ -1,14 +1,16 @@
 #!/usr/bin/env python
 """导入外部已分析好的素材目录，重新生成 material_id 并注册。"""
-import os
 import sys
 import yaml
 import shutil
 import time
 from pathlib import Path
 from datetime import datetime
+from scripts.core.paths import NOVELS_DIR, TAGS_FILE, INDEX_FILE
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
 
 def generate_material_id():
     """生成唯一的 material_id: nm_novel_YYYYMMDD_xxxx"""
@@ -20,7 +22,7 @@ def generate_material_id():
 
 def load_tags_dict():
     """加载标签字典。"""
-    tags_file = Path("data/tags.yaml")
+    tags_file = TAGS_FILE
     if tags_file.exists():
         with open(tags_file, "r", encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
@@ -67,7 +69,7 @@ def import_material(source_path):
 
     # 生成新的 material_id
     new_id = generate_material_id()
-    target_dir = Path("data/novels") / new_id
+    target_dir = NOVELS_DIR / new_id
 
     print(f"正在导入: {source_path}")
     print(f"新 material_id: {new_id}")
@@ -105,7 +107,7 @@ def import_material(source_path):
             print("标签校验通过")
 
     # 更新全局索引
-    index_file = Path("data/index.yaml")
+    index_file = INDEX_FILE
     if index_file.exists():
         with open(index_file, "r", encoding="utf-8") as f:
             index = yaml.safe_load(f) or {}

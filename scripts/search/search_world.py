@@ -6,8 +6,11 @@ import yaml
 import psycopg2
 from pathlib import Path
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
 
+import click
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -67,5 +70,15 @@ def search_worldbuilding(entity_type=None, genre=None, importance=None, name_que
         print(f"描述: {r['description']}")
         print()
 
+@click.command()
+@click.option("--type", default=None, help="实体类型（factions/regions/power_systems）")
+@click.option("--genre", default=None, help="按题材过滤")
+@click.option("--importance", default=None, help="重要性（primary/secondary/minor）")
+@click.option("--name", default=None, help="名称关键词")
+@click.option("--limit", default=10, help="返回结果数")
+def main(entity_type, genre, importance, name_query, limit):
+    search_worldbuilding(entity_type=entity_type, genre=genre, importance=importance, name_query=name_query, limit=limit)
+
+
 if __name__ == "__main__":
-    search_worldbuilding(entity_type="faction", genre="修仙", limit=10)
+    main()

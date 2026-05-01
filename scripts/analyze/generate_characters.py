@@ -1,65 +1,69 @@
 #!/usr/bin/env python
-"""人物提取：LLM 从原文提取人物名册、关系网和人物弧线。"""
-import os
+"""人物提取：LLM 基于章级摘要池提取人物名册、关系网和人物弧线。
+
+注意：此脚本在 chapter_analyze 完成后运行，需要 chapters.yaml 作为全书视角输入。
+"""
 import sys
 import yaml
-import json
 import time
 from pathlib import Path
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
 
 from dotenv import load_dotenv
 load_dotenv()
 
-def load_config():
-    config_dir = Path("config")
-    with open(config_dir / "llm.yaml", "r", encoding="utf-8") as f:
-        return yaml.safe_load(f)
+from scripts.core.paths import NOVELS_DIR
+from scripts.core.llm_client import load_config, call_llm, truncate_to_tokens
 
-def call_llm(system_prompt, user_prompt, config):
-    from openai import OpenAI
+_MAX_SUMMARY_TOKENS = 5000
 
-    client = OpenAI(
-        api_key=config["llm"]["api_key"],
-        base_url=config["llm"].get("base_url")
-    )
 
-    response = client.chat.completions.create(
-        model=config["llm"]["model"],
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
-        ],
-        temperature=config["llm"].get("temperature", 0.3),
-        max_tokens=config["llm"].get("max_tokens", 4096),
-        response_format={"type": "json_object"}
-    )
+def _build_context(novel_dir: Path, model: str) -> tuple[str, str]:
+    """构建分析上下文，优先使用章级摘要池，兜底读原文片段。"""
+    chapters_file = novel_dir / "chapters.yaml"
+    if chapters_file.exists():
+        chapters_data = yaml.safe_load(chapters_file.read_text(encoding="utf-8")) or []
+        if chapters_data:
+            lines = []
+            for ch in chapters_data:
+                summary = ch.get("summary", "")
+                if summary:
+                    lines.append(f"第{ch.get('chapter', '?')}章《{ch.get('title', '')}》：{summary}")
+            if lines:
+                pool = truncate_to_tokens("\n".join(lines), _MAX_SUMMARY_TOKENS, model=model)
+                return pool, f"章级摘要池（共 {len(chapters_data)} 章）"
 
-    return json.loads(response.choices[0].message.content)
+    print("警告: chapters.yaml 不存在或为空，回退到原文前 8000 字（质量受限）")
+    with open(novel_dir / "source.txt", "r", encoding="utf-8") as f:
+        return f.read()[:8000], "原文摘录（前 8000 字）"
+
 
 def generate_characters(material_id):
     """提取人物体系。"""
-    novel_dir = Path("data/novels") / material_id
+    novel_dir = NOVELS_DIR / material_id
     if not novel_dir.exists():
         print(f"错误: 小说目录不存在: {novel_dir}")
         return
 
     config = load_config()
+    model = config["llm"]["model"]
     char_dir = novel_dir / "characters"
     char_dir.mkdir(exist_ok=True)
     profiles_dir = char_dir / "profiles"
     profiles_dir.mkdir(exist_ok=True)
 
-    # 读取原文（取前 8000 字）
-    with open(novel_dir / "source.txt", "r", encoding="utf-8") as f:
-        source_text = f.read()[:8000]
-
     # 读取 meta
     with open(novel_dir / "meta.yaml", "r", encoding="utf-8") as f:
         meta = yaml.safe_load(f)
 
-    system_prompt = """你是专业的小说人物分析师。请从原文中提取主要人物，返回 JSON 格式：
+    # 构建分析上下文（章级摘要池 > 原文片段）
+    context_text, context_label = _build_context(novel_dir, model)
+    print(f"使用 {context_label} 作为分析基础")
+
+    system_prompt = """你是专业的小说人物分析师。请根据提供的内容提取主要人物，返回 JSON 格式：
 {
   "characters": [
     {
@@ -97,8 +101,8 @@ def generate_characters(material_id):
 
 类型：{meta.get('theme', ['未知'])}
 
-原文摘录（前 8000 字）：
-{source_text}
+{context_label}：
+{context_text}
 
 请返回 JSON 格式如上。"""
 

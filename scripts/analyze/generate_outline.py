@@ -1,61 +1,60 @@
 #!/usr/bin/env python
-"""大纲生成：LLM 生成故事大纲结构（幕/序列/节拍/钩子网络）。"""
-import os
+"""大纲生成：LLM 基于章级摘要池生成故事大纲结构（幕/序列/节拍/钩子网络）。
+
+注意：此脚本必须在 chapter_analyze 完成后运行，需要 chapters.yaml 作为全局视角输入。
+"""
 import sys
 import yaml
-import json
 import time
 from pathlib import Path
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
 
 from dotenv import load_dotenv
 load_dotenv()
 
-# ============================================================
-# 配置加载
-# ============================================================
-def load_config():
-    config_dir = Path("config")
-    with open(config_dir / "llm.yaml", "r", encoding="utf-8") as f:
-        return yaml.safe_load(f)
+from scripts.core.paths import NOVELS_DIR
+from scripts.core.llm_client import load_config, call_llm, truncate_to_tokens
 
-# ============================================================
-# LLM 调用
-# ============================================================
-def call_llm(system_prompt, user_prompt, config):
-    """调用 LLM API。"""
-    from openai import OpenAI
+# 摘要池送给 LLM 的最大 Token 数（覆盖全书摘要）
+_MAX_SUMMARY_TOKENS = 6000
 
-    client = OpenAI(
-        api_key=config["llm"]["api_key"],
-        base_url=config["llm"].get("base_url")
-    )
 
-    response = client.chat.completions.create(
-        model=config["llm"]["model"],
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
-        ],
-        temperature=config["llm"].get("temperature", 0.3),
-        max_tokens=config["llm"].get("max_tokens", 4096),
-        response_format={"type": "json_object"}
-    )
+def _build_summary_pool(chapters_data: list, max_tokens: int, model: str) -> str:
+    """从章级摘要构建全局视角文本，按 Token 数限制。
 
-    return json.loads(response.choices[0].message.content)
+    格式：「第N章《标题》：摘要」逐行拼接，超出 Token 限制时截断。
+    """
+    lines = []
+    for ch in chapters_data:
+        ch_num = ch.get("chapter", "?")
+        title = ch.get("title", "")
+        summary = ch.get("summary", "")
+        if summary:
+            lines.append(f"第{ch_num}章《{title}》：{summary}")
+
+    full_text = "\n".join(lines)
+    return truncate_to_tokens(full_text, max_tokens, model=model)
+
 
 # ============================================================
 # 大纲生成
 # ============================================================
 def generate_outline(material_id):
-    """生成大纲：结构 + 序列 + 节拍 + 钩子网络。"""
-    novel_dir = Path("data/novels") / material_id
+    """生成大纲：结构 + 序列 + 节拍 + 钩子网络。
+
+    使用章级摘要池作为全局视角（而非原文前 5000 字），
+    需要 chapters.yaml 已经存在（在 chapter_analyze 之后运行）。
+    """
+    novel_dir = NOVELS_DIR / material_id
     if not novel_dir.exists():
         print(f"错误: 小说目录不存在: {novel_dir}")
         return
 
     config = load_config()
+    model = config["llm"]["model"]
     outline_dir = novel_dir / "outline"
     outline_dir.mkdir(exist_ok=True)
 
@@ -63,9 +62,19 @@ def generate_outline(material_id):
     with open(novel_dir / "chapter_index.yaml", "r", encoding="utf-8") as f:
         chapter_index = yaml.safe_load(f)
 
-    # 读取清洗后原文（前 5000 字用于生成 premise）
-    with open(novel_dir / "source.txt", "r", encoding="utf-8") as f:
-        source_text = f.read()[:5000]
+    # 读取章级摘要（全书视角）
+    chapters_file = novel_dir / "chapters.yaml"
+    if not chapters_file.exists() or not yaml.safe_load(chapters_file.read_text(encoding="utf-8")):
+        print("警告: chapters.yaml 不存在或为空，回退到原文前 5000 字（质量受限）")
+        with open(novel_dir / "source.txt", "r", encoding="utf-8") as f:
+            context_text = f.read()[:5000]
+        context_label = "原文摘录（前 5000 字）"
+    else:
+        with open(chapters_file, "r", encoding="utf-8") as f:
+            chapters_data = yaml.safe_load(f) or []
+        context_text = _build_summary_pool(chapters_data, _MAX_SUMMARY_TOKENS, model)
+        context_label = f"章级摘要池（共 {len(chapters_data)} 章）"
+        print(f"使用章级摘要池作为分析基础（{len(chapters_data)} 章）")
 
     # 生成 premise（一句话核心前提）
     system_prompt = """你是专业的小说结构分析师。请根据提供的内容，生成以下 JSON：
@@ -77,9 +86,10 @@ def generate_outline(material_id):
   "tone": ["基调1", "基调2"]
 }"""
 
-    user_prompt = f"""请分析以下小说的开头部分，提炼核心前提和整体结构：
+    user_prompt = f"""请分析以下小说，提炼核心前提和整体结构：
 
-{source_text}
+{context_label}：
+{context_text}
 
 返回 JSON 格式如上。"""
 

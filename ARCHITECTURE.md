@@ -61,7 +61,7 @@ graph TD
 1.  **`raw`**：初始状态，尚未处理。
 2.  **`clean`**：经过 `ingest.py` 格式清洗和章节切分，拥有了 `chapter_index.yaml`。
 3.  **`analyzed`**：经过 LLM 抽取，大纲、世界观、章级摘要等均已生成（YAML 落盘完毕）。
-4.  **`indexed`**：向量数据生成完毕（注：*目前代码尚未实现*），且全部映射写入 PostgreSQL。
+4.  **`indexed`**：向量数据生成完毕（`embed_chapters.py` 写入 `chapter_embeddings.yaml`），且全部映射写入 PostgreSQL。
 
 ## 4. 技术栈映射关系
 
@@ -98,12 +98,13 @@ graph TD
 *   **`data/schemas/`**：包含 11 份 YAML Schema 定义文件（如 `meta.schema.yaml`、`outline.schema.yaml`、`characters.schema.yaml` 等），是所有 YAML 数据文件的字段格式契约。任何新增或修改 YAML 字段均应先更新对应的 Schema。
 *   **`data/tag-system/`**：包含从频道层到章节功能层的完整 10 篇标签分类学规格，是 `data/tags.yaml` 的设计来源，也是 LLM 在执行标签标注时应当被注入 Prompt 的分类学依据。
 
-## 8. 当前实现的架构妥协（技术债）
+## 8. 已知的遗留问题与待决策项
 
-目前的架构代码存在为了跑通主流程而做出的妥协，开发者在介入前需明确：
-*   **内存聚合风险**：章级分析 (`chapter_analyze.py`) 目前是在内存中跑完全书数百章后一次性写入 YAML。
-*   **事务粒度**：`sync_db.py` 使用了巨型数据库事务，这不符合生产规范。
-*   **向量化未集成**：`scripts/core/embedding.py` 工具函数已就绪（支持 OpenAI 和 BGE 两种 provider），但未被任何流水线步骤调用，`sync_db.py` 也未写入向量字段。
-*   **检索脚本无 CLI**：`scripts/search/` 下所有脚本的 `__main__` 均为硬编码示例调用，未实现命令行参数解析。
+阶段一至六的修复工作已完成，以下是当前尚存的未解决问题：
 
-> **修复指引**：关于这些技术债的详细排查与修复计划，请查阅 [DEFECTS_AND_ROADMAP.md](docs/DEFECTS_AND_ROADMAP.md)。
+*   **标签体系未激活**：`data/tag-system/` 包含 10 篇完整分类学文档（600+ 标签值），但没有任何脚本将其注入 LLM Prompt。`chapter_analyze.py` 让 LLM 选章节功能标签时，未提供合法值列表，导致 LLM 自由发挥后频繁触发校验报错。（详见 DEFECTS_AND_ROADMAP.md T1）
+*   **配置体系割裂**：`config/database.yaml` 无人读取；`requirements.txt` 中有 `sqlalchemy` 但实际代码全部使用裸 `psycopg2`。（待决策）
+*   **`material/` 目录归属不明**：根目录有一个未纳管的网文原文目录，不在 `.gitignore` 中，不被任何脚本引用。（待决策）
+*   **集成验证尚未执行**：所有修复均为代码层面，全链路端到端验证（含真实 LLM 调用和数据库写入）尚未进行。
+
+> **完整问题清单与下一步行动**：请查阅 [DEFECTS_AND_ROADMAP.md](docs/DEFECTS_AND_ROADMAP.md)。

@@ -7,16 +7,19 @@ import shutil
 import psycopg2
 from pathlib import Path
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
 
 from dotenv import load_dotenv
+from scripts.core.paths import NOVELS_DIR, INDEX_FILE
 load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 def delete_material(material_id, confirm=True):
     """删除指定素材。"""
-    novel_dir = Path("data/novels") / material_id
+    novel_dir = NOVELS_DIR / material_id
 
     if not novel_dir.exists():
         print(f"错误: 小说目录不存在: {novel_dir}")
@@ -72,7 +75,7 @@ def delete_material(material_id, confirm=True):
             print("请手动清理数据库")
 
     # 3. 更新全局索引
-    index_file = Path("data/index.yaml")
+    index_file = INDEX_FILE
     if index_file.exists():
         with open(index_file, "r", encoding="utf-8") as f:
             index = yaml.safe_load(f) or {}

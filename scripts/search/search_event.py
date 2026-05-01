@@ -6,8 +6,11 @@ import yaml
 import psycopg2
 from pathlib import Path
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
 
+import click
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -71,5 +74,14 @@ def search_events(query, setting=None, emotion=None, limit=10):
         print(f"人物: {r['characters_appear']}")
         print()
 
+@click.command()
+@click.argument("query")
+@click.option("--setting", default=None, help="场景类型")
+@click.option("--emotion", default=None, help="情绪基调")
+@click.option("--limit", default=10, help="返回结果数")
+def main(query, setting, emotion, limit):
+    search_events(query=query, setting=setting, emotion=emotion, limit=limit)
+
+
 if __name__ == "__main__":
-    search_events("雨中告别", limit=10)
+    main()
