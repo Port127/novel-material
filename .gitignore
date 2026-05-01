@@ -4,5 +4,6 @@ data/.config/llm_config.json
 .DS_Store
 feature.md
 material/
+zxcs_downloads/
 __pycache__/
 scripts/generated/
