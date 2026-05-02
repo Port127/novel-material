@@ -2,7 +2,8 @@
 
 特性：
 - 指数退避自动重试（tenacity）：网络超时、限流、服务端 5xx 均自动重试
-- 最多重试 5 次，初始等待 2 秒，最长等待 60 秒
+- 429 速率限制：优先读取 Retry-After 响应头，保证按服务商要求等待
+- 最多重试 8 次，其他错误指数退避（2→4→8→…→120s）
 - tiktoken 动态 Token 截断工具（truncate_to_tokens）
 """
 import sys
@@ -35,6 +36,10 @@ def load_config():
             "max_tokens": int(os.getenv("LLM_MAX_TOKENS", "500")),
             "temperature": float(os.getenv("LLM_TEMPERATURE", "0.3")),
             "rate_limit_seconds": int(os.getenv("LLM_RATE_LIMIT_SECONDS", "10")),
+            # 每次 API 调用批量处理的章节数（减少调用次数）
+            # 30 章/次：1600章 → ~54次调用，输出约 4500 tokens/批（每章 ~150 tokens）
+            # 上下文受限的小模型可设为 1（逐章模式），大模型可按输出上限调高
+            "chapter_batch_size": int(os.getenv("LLM_CHAPTER_BATCH_SIZE", "30")),
         }
     }
 
@@ -79,6 +84,43 @@ def truncate_to_tokens(text: str, max_tokens: int, model: str = "gpt-4o-mini") -
 # LLM 调用（带重试）
 # ──────────────────────────────────────────────
 
+def _retry_wait(retry_state) -> float:
+    """自适应等待策略：429 优先读取 Retry-After 头，其他错误指数退避。
+
+    服务商在 429 响应头中通常会通过 Retry-After 或
+    x-ratelimit-reset-requests 告知需要等待的秒数。
+    直接使用该值可避免"等待太短→再次 429→重试次数耗尽"的循环。
+    """
+    from openai import APIStatusError
+    exc = retry_state.outcome.exception()
+
+    if isinstance(exc, APIStatusError) and exc.status_code == 429:
+        # 尝试从响应头读取 Retry-After
+        headers = {}
+        try:
+            headers = dict(exc.response.headers) if exc.response else {}
+        except Exception:
+            pass
+
+        for header in ("retry-after", "x-ratelimit-reset-requests", "ratelimit-reset"):
+            val = headers.get(header) or headers.get(header.lower())
+            if val:
+                try:
+                    wait = float(val)
+                    logger.warning(f"速率限制（429），按服务商要求等待 {wait:.0f}s（来自 {header}）")
+                    return wait
+                except (TypeError, ValueError):
+                    pass
+
+        # 无头信息时保守等待 60s
+        logger.warning("速率限制（429），未找到 Retry-After 头，默认等待 60s")
+        return 60.0
+
+    # 其他错误（网络、5xx）：指数退避，上限 120s
+    wait = min(2 ** retry_state.attempt_number * 2, 120)
+    return wait
+
+
 def call_llm(
     system_prompt: str,
     user_prompt: str,
@@ -89,8 +131,9 @@ def call_llm(
 
     自动重试策略：
     - 触发条件：网络错误、HTTP 429（限流）、HTTP 5xx（服务端错误）
-    - 最多重试 5 次，指数退避（2s → 4s → 8s → 16s → 32s），上限 60s
-    - 每次重试前打印警告日志
+    - 最多重试 8 次
+    - 429：优先读取 Retry-After 响应头；无头信息则等待 60s
+    - 其他错误：指数退避（4→8→16→…→120s），避免雪崩
 
     Args:
         system_prompt: 系统提示词
@@ -108,7 +151,6 @@ def call_llm(
     from tenacity import (
         retry,
         stop_after_attempt,
-        wait_exponential,
         retry_if_exception_type,
         before_sleep_log,
     )
@@ -117,8 +159,8 @@ def call_llm(
 
     @retry(
         retry=retry_if_exception_type((APIConnectionError, APITimeoutError, APIStatusError)),
-        stop=stop_after_attempt(5),
-        wait=wait_exponential(multiplier=2, min=2, max=60),
+        stop=stop_after_attempt(8),
+        wait=_retry_wait,
         before_sleep=before_sleep_log(logger, logging.WARNING),
         reraise=True,
     )

@@ -20,27 +20,24 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from scripts.core.paths import NOVELS_DIR
-from scripts.core.llm_client import load_config, call_llm, truncate_to_tokens
+from scripts.core.llm_client import load_config, call_llm
+from scripts.core.chapters_loader import load_chapters_data, build_summary_pool
 
 _MAX_SUMMARY_TOKENS = 5000
 
 
 def _build_context(novel_dir: Path, model: str) -> tuple[str, str]:
-    """构建分析上下文，优先使用章级摘要池，兜底读原文片段。"""
-    chapters_file = novel_dir / "chapters.yaml"
-    if chapters_file.exists():
-        chapters_data = yaml.safe_load(chapters_file.read_text(encoding="utf-8")) or []
-        if chapters_data:
-            lines = []
-            for ch in chapters_data:
-                summary = ch.get("summary", "")
-                if summary:
-                    lines.append(f"第{ch.get('chapter', '?')}章《{ch.get('title', '')}》：{summary}")
-            if lines:
-                pool = truncate_to_tokens("\n".join(lines), _MAX_SUMMARY_TOKENS, model=model)
-                return pool, f"章级摘要池（共 {len(chapters_data)} 章）"
+    """构建分析上下文，优先使用章级摘要池，兜底读原文片段。
 
-    print("警告: chapters.yaml 不存在或为空，回退到原文前 8000 字（质量受限）")
+    章数 > 200 时自动启用分层均匀采样，确保全书首尾及中间均有代表，
+    避免 5000 token 预算仅覆盖超长书前 6-8% 章节的问题。
+    """
+    chapters_data = load_chapters_data(novel_dir)
+    if chapters_data:
+        pool = build_summary_pool(chapters_data, _MAX_SUMMARY_TOKENS, model)
+        return pool, f"章级摘要池（共 {len(chapters_data)} 章）"
+
+    print("警告: 章节数据不存在或为空，回退到原文前 8000 字（质量受限）")
     with open(novel_dir / "source.txt", "r", encoding="utf-8") as f:
         return f.read()[:8000], "原文摘录（前 8000 字）"
 

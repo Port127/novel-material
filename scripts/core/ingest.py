@@ -126,8 +126,10 @@ def ingest_file(file_path):
     (novel_dir / "characters").mkdir(exist_ok=True)
     (novel_dir / "characters" / "profiles").mkdir(exist_ok=True)
     (novel_dir / "worldbuilding").mkdir(exist_ok=True)
+    # chapters/ 子目录：chapter_analyze 逐章写入独立文件，完成后合并为 chapters.yaml
+    (novel_dir / "chapters").mkdir(exist_ok=True)
 
-    # 初始化 chapters.yaml（空列表，待章级分析填充）
+    # 初始化 chapters.yaml（空列表占位，待 chapter_analyze 合并填充）
     with open(novel_dir / "chapters.yaml", "w", encoding="utf-8") as f:
         yaml.dump([], f, allow_unicode=True, default_flow_style=False)
 

@@ -113,7 +113,7 @@ def _sync_meta(conn, novel_dir, material_id):
 
 
 def _sync_chapters(conn, novel_dir, material_id):
-    """同步 chapters.yaml + chapter_embeddings.yaml → chapters 表，按批次提交。"""
+    """同步 chapters.yaml + chapter_embeddings.npz → chapters 表，按批次提交。"""
     chapters_file = novel_dir / "chapters.yaml"
     if not chapters_file.exists():
         return
@@ -125,12 +125,21 @@ def _sync_chapters(conn, novel_dir, material_id):
         return
 
     # 加载向量（可选，不存在则不写入向量字段）
+    # 优先读 .npz（新格式），兜底读旧 .yaml（向后兼容）
     embeddings: dict = {}
-    embeddings_file = novel_dir / "chapter_embeddings.yaml"
-    if embeddings_file.exists():
-        with open(embeddings_file, "r", encoding="utf-8") as f:
+    embeddings_npz = novel_dir / "chapter_embeddings.npz"
+    embeddings_yaml = novel_dir / "chapter_embeddings.yaml"
+    if embeddings_npz.exists():
+        import numpy as np
+        data = np.load(str(embeddings_npz))
+        chapters_arr = data["chapters"]
+        vectors_arr = data["vectors"]
+        embeddings = {int(ch): vectors_arr[i].tolist() for i, ch in enumerate(chapters_arr)}
+        print(f"  加载向量 (.npz): {len(embeddings)} 章")
+    elif embeddings_yaml.exists():
+        with open(embeddings_yaml, "r", encoding="utf-8") as f:
             embeddings = yaml.safe_load(f) or {}
-        print(f"  加载向量: {len(embeddings)} 章")
+        print(f"  加载向量 (.yaml 旧格式): {len(embeddings)} 章")
 
     BATCH_SIZE = 50
     synced = 0

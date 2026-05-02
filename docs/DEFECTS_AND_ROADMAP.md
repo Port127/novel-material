@@ -3,7 +3,7 @@
 > **目标读者**：即将修改本代码库的开发者或 AI Agent。动手前请先通读本文档。
 
 > [!WARNING]
-> 阶段一至六已完成，原始 P0 致命 Bug、主要架构问题和 Schema 验证均已修复。**系统尚未经过集成验证（阶段七），在准备好数据库环境后，建议先用少量章节小规模试跑，而非直接投入全量生产数据。**
+> 阶段一至七（含长篇规模适配）已完成，原始 P0 致命 Bug、主要架构问题、Schema 验证和长篇瓶颈均已修复。**系统尚未经过集成验证（阶段八），在准备好数据库环境后，建议先用少量章节小规模试跑，而非直接投入全量生产数据。**
 
 ---
 
@@ -14,15 +14,16 @@
 | 架构问题 A1-A4 | ✅ 已修复 |
 | P0 致命 Bug C1-C3 | ✅ 已修复 |
 | P1 严重缺陷 C4-C9 | ✅ 已修复 |
+| 长篇规模适配（阶段七）| ✅ 已修复 |
 | 标签体系激活 T1 | ❌ 未做 |
-| 集成验证 阶段七 | ❌ 未做，需数据库环境 |
+| 集成验证 阶段八 | ❌ 未做，需数据库环境 |
 | A5 配置割裂 / A6 `material/` 归属 | ⏳ 待决策 |
 
 ---
 
 ## 二、下一步行动
 
-### 阶段七：集成验证（Integration Testing）
+### 阶段八：集成验证（Integration Testing）
 
 *前置条件：PostgreSQL + pgvector 就绪，LLM API Key 配置完毕。*
 
@@ -136,6 +137,8 @@ ingest → chapter_analyze → outline/worldbuilding/characters/tags（基于章
 
 新建 `scripts/core/embed_chapters.py`，支持断点续传、批量向量化，写入 `chapter_embeddings.yaml`。流水线在 `chapter_analyze` 之后加入 `embed_chapters` 步骤。`sync_db.py` 的 `_sync_chapters()` 读取向量文件并写入数据库 `embedding` 字段（向量不存在时跳过该字段，向后兼容）。
 
+> **注**：阶段七中已将存储格式从 `chapter_embeddings.yaml`（~49 MB YAML 文本）迁移为 `chapter_embeddings.npz`（numpy 压缩二进制，~3 MB）。旧 YAML 文件在首次运行 `embed_chapters.py` 时自动迁移并删除。
+
 #### ~~C8. 检索脚本无 CLI 参数解析~~ ✅ 已修复
 
 6 个 `scripts/search/` 脚本均已加入 `click` 装饰器，实现完整 CLI 参数解析。带位置参数的脚本（`search_chapter.py`、`search_event.py`）使用 `@click.argument`，其余使用 `@click.option`，所有脚本支持 `--help`。
@@ -213,6 +216,43 @@ ingest → chapter_analyze → outline/worldbuilding/characters/tags（基于章
 | 重写 `quality_check.py`，整合 schema 结构校验 + 覆盖率 + 摘要质量 | A4 |
 | `chapter_analyze.py` 完成后自动调用 `run_quality_check()` | A4 |
 | `sync_db.py` 同步前调用 `_precheck_schema()`，不通过则终止 | A4 |
+
+### ~~阶段七：长篇规模适配（Large-Scale Support）~~ ✅ 已完成
+
+*目标：支持目标规模（300-400 万字，约 1200-1600 章）的网络小说，消除 4 个会导致流程崩溃或输出报废的阻断性瓶颈。*
+
+**背景**：1600 章量级下，原系统存在以下问题：
+- `chapter_analyze` 每章重写整个 `chapters.yaml`，累计 I/O 约 1 GB（O(n²)）
+- 摘要池截断后仅代表全书前 7.5%（~120 章），大纲/人物/世界观分析严重失真
+- `generate_outline` 要求 LLM 一次输出全书所有 beats（~1600 条），必然被 `max_tokens` 截断
+- `chapter_embeddings.yaml` 约 49 MB，每批全量 dump，极慢
+
+| 任务 | 修复瓶颈 | 改动文件 |
+|------|---------|---------|
+| `_append_chapter` 改为写独立文件 `chapters/{n:04d}.yaml`，全部完成后一次合并 | O(n²) → O(1) I/O | `chapter_analyze.py` |
+| 新建 `chapters_loader.py`：`load_chapters_data` + `build_summary_pool`（分层均匀采样） | 摘要池覆盖率 7% → 全书均匀 | `chapters_loader.py`（新） |
+| 三个骨架分析脚本改用 `chapters_loader` 的共享工具 | 摘要池覆盖率 | `generate_outline/characters/worldbuilding.py` |
+| `generate_outline` 第二阶段改为 per-sequence 循环生成 beats | 大纲输出必然截断 | `generate_outline.py` |
+| `chapter_embeddings` 从 YAML（49 MB）改为 numpy `.npz`（~3 MB） | embeddings dump 极慢 | `embed_chapters.py`、`sync_db.py` |
+| `.gitignore` 补充 `data/novels/*/chapters/` 和 `*.npz` | 防止大文件误提交 | `.gitignore` |
+| `analyze_chapters_batch`：每次 API 调用批量分析 N 章（默认 5），批量失败自动降级逐章 | 总 API 调用次数减少 80%，耗时从 4.4h → 53min | `chapter_analyze.py`、`llm_client.py`、`.env.example` |
+
+**改动后数据流（长篇模式）：**
+```
+chapter_analyze → chapters/{n:04d}.yaml（O(1)×N）→ _merge_chapters → chapters.yaml
+                                                                         ↓
+                                         build_summary_pool（均匀采样）→ LLM 骨架分析
+embed_chapters  → chapter_embeddings.npz（~3 MB，numpy 压缩）
+```
+
+**已知剩余限制（非 Bug，但需知情）：**
+
+| 限制 | 说明 | 影响 |
+|------|-----|------|
+| 章级分析总耗时 | 1600 章 ÷ 5 × rate_limit_seconds ≈ 53 分钟（batch_size=5，10s 限速）| 支持断点续传，可分批次运行；小模型可将 `LLM_CHAPTER_BATCH_SIZE=1` 退回逐章 |
+| `generate_outline` API 调用量增加 | per-sequence beats：约 12-20 次额外 LLM 调用 | 每次约 2-3 分钟额外时间 |
+| 骨架分析后段角色覆盖有限 | 分层采样保证首尾分布，但后段角色信息密度仍低于前段 | 大量引入次要人物的中后期伏笔可能被低估 |
+| 单章超长时有截断 | `_MAX_CHAPTER_TOKENS = 1800`，约等于 2700 中文字；超长章节（3000+ 字）会丢失末尾 | 章末钩子/转折点可能分析不到 |
 
 ---
 
