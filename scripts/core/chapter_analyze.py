@@ -25,11 +25,17 @@ from scripts.utils.quality_check import run_quality_check
 # 每章送给 LLM 的最大 Token 数（章末钩子/转折通常在后半段，保留完整内容）
 _MAX_CHAPTER_TOKENS = 1800
 
+_SYSTEM_PROMPT = """你是专业的小说分析助手，负责对每章内容生成摘要和分析。
+要求：
+1. 摘要 50-100 字，包含关键事件、情感基调、人物互动
+2. chapter_function 从标签字典的章节功能标签中选取
+3. 准确识别出场人物（仅写名字，不写描述）
+4. tension_level 1-5，根据紧张程度评估"""
+
 
 def analyze_chapter(content: str, chapter_info: dict, config: dict) -> dict:
     """分析单章内容，返回结构化数据。"""
-    llm_config = config.get("chapter_analyze", {})
-    system_prompt = llm_config.get("system_prompt", "")
+    system_prompt = _SYSTEM_PROMPT
     model = config["llm"]["model"]
 
     # 动态截断：按 Token 数而非字符数

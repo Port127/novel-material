@@ -6,7 +6,6 @@
 - tiktoken 动态 Token 截断工具（truncate_to_tokens）
 """
 import sys
-import yaml
 import json
 import logging
 from pathlib import Path
@@ -15,8 +14,6 @@ _ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-from scripts.core.paths import CONFIG_DIR
-
 logger = logging.getLogger(__name__)
 
 # ──────────────────────────────────────────────
@@ -24,9 +21,22 @@ logger = logging.getLogger(__name__)
 # ──────────────────────────────────────────────
 
 def load_config():
-    """加载 LLM 配置（config/llm.yaml）。"""
-    with open(CONFIG_DIR / "llm.yaml", "r", encoding="utf-8") as f:
-        return yaml.safe_load(f)
+    """从环境变量加载 LLM 配置（读取 .env）。"""
+    from dotenv import load_dotenv
+    import os
+    load_dotenv()
+
+    return {
+        "llm": {
+            "provider": os.getenv("LLM_PROVIDER", "openai"),
+            "model": os.getenv("LLM_MODEL", "gpt-4o-mini"),
+            "api_key": os.getenv("LLM_API_KEY", ""),
+            "base_url": os.getenv("LLM_BASE_URL"),
+            "max_tokens": int(os.getenv("LLM_MAX_TOKENS", "500")),
+            "temperature": float(os.getenv("LLM_TEMPERATURE", "0.3")),
+            "rate_limit_seconds": int(os.getenv("LLM_RATE_LIMIT_SECONDS", "10")),
+        }
+    }
 
 
 # ──────────────────────────────────────────────
@@ -69,7 +79,12 @@ def truncate_to_tokens(text: str, max_tokens: int, model: str = "gpt-4o-mini") -
 # LLM 调用（带重试）
 # ──────────────────────────────────────────────
 
-def call_llm(system_prompt: str, user_prompt: str, config: dict) -> dict:
+def call_llm(
+    system_prompt: str,
+    user_prompt: str,
+    config: dict,
+    max_tokens_override: int | None = None,
+) -> dict:
     """调用 LLM API，返回解析后的 JSON 对象。
 
     自动重试策略：
@@ -81,6 +96,7 @@ def call_llm(system_prompt: str, user_prompt: str, config: dict) -> dict:
         system_prompt: 系统提示词
         user_prompt: 用户提示词
         config: 由 load_config() 返回的配置字典
+        max_tokens_override: 可选，覆盖 config 中的 max_tokens（适用于大输出场景）
 
     Returns:
         dict: LLM 返回的 JSON 对象
@@ -97,12 +113,7 @@ def call_llm(system_prompt: str, user_prompt: str, config: dict) -> dict:
         before_sleep_log,
     )
 
-    _retryable = (APIConnectionError, APITimeoutError)
-
-    def _is_retryable_status(exc: Exception) -> bool:
-        if isinstance(exc, APIStatusError):
-            return exc.status_code in (429, 500, 502, 503, 504)
-        return isinstance(exc, _retryable)
+    effective_max_tokens = max_tokens_override or config["llm"].get("max_tokens", 2048)
 
     @retry(
         retry=retry_if_exception_type((APIConnectionError, APITimeoutError, APIStatusError)),
@@ -123,7 +134,7 @@ def call_llm(system_prompt: str, user_prompt: str, config: dict) -> dict:
                 {"role": "user", "content": user_prompt},
             ],
             temperature=config["llm"].get("temperature", 0.3),
-            max_tokens=config["llm"].get("max_tokens", 2048),
+            max_tokens=effective_max_tokens,
             response_format={"type": "json_object"},
         )
         return json.loads(response.choices[0].message.content)

@@ -1,18 +1,27 @@
 #!/usr/bin/env python
 """Embedding 工具：将文本转换为向量。"""
 import sys
-import yaml
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-from scripts.core.paths import CONFIG_DIR
-
 def load_embedding_config():
-    with open(CONFIG_DIR / "embedding.yaml", "r", encoding="utf-8") as f:
-        return yaml.safe_load(f)
+    """从环境变量加载 Embedding 配置（读取 .env）。"""
+    from dotenv import load_dotenv
+    import os
+    load_dotenv()
+
+    return {
+        "embedding": {
+            "provider": os.getenv("EMBEDDING_PROVIDER", "ollama"),
+            "model": os.getenv("EMBEDDING_MODEL", "qwen3-embedding"),
+            "dimension": int(os.getenv("EMBEDDING_DIMENSION", "4096")),
+            "base_url": os.getenv("EMBEDDING_BASE_URL", "http://localhost:11434"),
+            "api_key": os.getenv("EMBEDDING_API_KEY", ""),
+        }
+    }
 
 def get_embedding(text, config=None):
     """获取文本的 embedding 向量。"""
@@ -33,6 +42,22 @@ def get_embedding(text, config=None):
             input=text
         )
         return response.data[0].embedding
+
+    elif provider == "ollama":
+        import requests
+        base_url = config["embedding"].get("base_url", "http://localhost:11434")
+        # Ollama 使用 /api/embed 端点
+        response = requests.post(
+            f"{base_url}/api/embed",
+            json={
+                "model": model,
+                "input": text
+            }
+        )
+        response.raise_for_status()
+        data = response.json()
+        # Ollama 返回格式: {"embeddings": [[...]]}
+        return data["embeddings"][0]
 
     elif provider == "bge":
         # 本地 BGE 模型

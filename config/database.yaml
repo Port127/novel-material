@@ -1,7 +1,0 @@
-# Novel Material V2 - 数据库配置（仅文档用途）
-# 实际连接由 .env 中的 DATABASE_URL 环境变量控制，本文件不被代码读取
-database:
-  url: "postgresql://${DB_USER}:${DB_PASSWORD}@localhost:5432/${DB_NAME}"
-  pool_size: 5
-  max_overflow: 10
-  echo: false  # 开发时可设为 true，打印 SQL

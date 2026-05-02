@@ -159,7 +159,7 @@ def generate_outline(material_id):
 请生成完整的幕/序列/节拍划分。"""
 
     rate_limit = config["llm"].get("rate_limit_seconds", 1)
-    outline_result = call_llm(system_prompt_seq, user_prompt_seq, config)
+    outline_result = call_llm(system_prompt_seq, user_prompt_seq, config, max_tokens_override=8000)
 
     time.sleep(rate_limit)
 
