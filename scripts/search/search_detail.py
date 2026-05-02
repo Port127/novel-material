@@ -86,8 +86,8 @@ def search_detail(genre=None, act=None, description_query=None, limit=10):
 
 @click.command()
 @click.option("--genre", default=None, help="按题材过滤")
-@click.option("--act", default=None, help="幕号（1/2/3）")
-@click.option("--query", default=None, help="序列描述关键词")
+@click.option("--act", default=None, type=int, help="幕号（1/2/3）")
+@click.option("--query", "description_query", default=None, help="序列描述关键词")
 @click.option("--limit", default=10, help="返回结果数")
 def main(genre, act, description_query, limit):
     search_detail(genre=genre, act=act, description_query=description_query, limit=limit)

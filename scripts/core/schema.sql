@@ -26,8 +26,8 @@ CREATE TABLE IF NOT EXISTS novels (
     subplot_count INTEGER,
     tags JSONB,                          -- 小说级标签
     built_at TEXT,
-    created_at TEXT DEFAULT NOW(),
-    updated_at TEXT DEFAULT NOW()
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- ============================================================
@@ -62,7 +62,6 @@ CREATE TABLE IF NOT EXISTS outline_sequences (
     chapters_start INTEGER,
     chapters_end INTEGER,
     description TEXT,
-    description_embedding vector(1024),
     FOREIGN KEY (material_id) REFERENCES novels(material_id) ON DELETE CASCADE
 );
 
@@ -132,7 +131,8 @@ CREATE TABLE IF NOT EXISTS worldbuilding_entities (
     properties JSONB,                    -- 类型相关的属性
     first_appearance TEXT,
     importance TEXT,                     -- primary/secondary/minor
-    FOREIGN KEY (material_id) REFERENCES novels(material_id) ON DELETE CASCADE
+    FOREIGN KEY (material_id) REFERENCES novels(material_id) ON DELETE CASCADE,
+    UNIQUE(material_id, entity_type, name)
 );
 
 -- ============================================================

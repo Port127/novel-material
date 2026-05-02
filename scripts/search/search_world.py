@@ -71,10 +71,10 @@ def search_worldbuilding(entity_type=None, genre=None, importance=None, name_que
         print()
 
 @click.command()
-@click.option("--type", default=None, help="实体类型（factions/regions/power_systems）")
+@click.option("--type", "entity_type", default=None, help="实体类型（factions/regions/power_systems）")
 @click.option("--genre", default=None, help="按题材过滤")
 @click.option("--importance", default=None, help="重要性（primary/secondary/minor）")
-@click.option("--name", default=None, help="名称关键词")
+@click.option("--name", "name_query", default=None, help="名称关键词")
 @click.option("--limit", default=10, help="返回结果数")
 def main(entity_type, genre, importance, name_query, limit):
     search_worldbuilding(entity_type=entity_type, genre=genre, importance=importance, name_query=name_query, limit=limit)

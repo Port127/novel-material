@@ -19,16 +19,12 @@ def init_db():
     conn.autocommit = True
 
     with conn.cursor() as cur:
-        # 启用 pgvector 扩展
-        cur.execute("CREATE EXTENSION IF NOT EXISTS vector;")
-        print("已启用 pgvector 扩展")
-
-        # 执行 schema.sql
+        # 执行 schema.sql（包含 CREATE EXTENSION IF NOT EXISTS vector）
         with open(SCHEMA_FILE, "r", encoding="utf-8") as f:
             schema_sql = f.read()
 
         cur.execute(schema_sql)
-        print("已创建所有表和索引")
+        print("已启用 pgvector 扩展，创建所有表和索引")
 
     conn.close()
     print("数据库初始化完成!")

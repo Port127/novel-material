@@ -64,8 +64,8 @@ def search_outlines(genre=None, element=None, structure_type=None, premise_query
 @click.command()
 @click.option("--genre", default=None, help="按题材过滤")
 @click.option("--element", default=None, help="元素标签（如：重生、系统）")
-@click.option("--structure", default=None, help="叙事结构（三幕式/英雄之旅）")
-@click.option("--query", default=None, help="前提关键词")
+@click.option("--structure", "structure_type", default=None, help="叙事结构（三幕式/英雄之旅）")
+@click.option("--query", "premise_query", default=None, help="前提关键词")
 @click.option("--limit", default=5, help="返回结果数")
 def main(genre, element, structure_type, premise_query, limit):
     search_outlines(genre=genre, element=element, structure_type=structure_type, premise_query=premise_query, limit=limit)

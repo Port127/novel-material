@@ -89,8 +89,8 @@ def delete_material(material_id, confirm=True):
     print(f"\n删除完成: {material_id}")
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("用法: python material_delete.py <material_id>")
-        sys.exit(1)
-
-    delete_material(sys.argv[1])
+    import argparse
+    parser = argparse.ArgumentParser(description="删除素材及所有关联资源")
+    parser.add_argument("--id", dest="material_id", required=True, help="素材 ID（如 nm_novel_20260503_abcd）")
+    args = parser.parse_args()
+    delete_material(args.material_id)

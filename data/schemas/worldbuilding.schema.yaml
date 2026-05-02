@@ -87,6 +87,7 @@ stats:
 # 路径: worldbuilding/power_system.yaml
 # 复杂体系可改为文件夹 power_system/，包含 _index.yaml + 各分支体系
 # ====================================================================
+---
 
 material_id: nm_xxx                             # R | 素材ID
 
@@ -134,6 +135,7 @@ narrative_integration:
 # ====================================================================
 
 # ── geography/_index.yaml（复杂时） ──
+---
 
 material_id: nm_xxx                             # R | 素材ID
 
@@ -164,6 +166,7 @@ stats:
 
 # ── geography/{region_name}.yaml（区域详情） ──
 # 路径: worldbuilding/geography/{region_name}.yaml
+---
 
 material_id: nm_xxx                             # R | 素材ID
 region_name: "地球"                             # R | 区域名称
@@ -212,6 +215,7 @@ environment:
 
 # ── geography.yaml（简单时的单文件，区域数 ≤ 3） ──
 # 路径: worldbuilding/geography.yaml
+---
 
 material_id: nm_xxx
 
@@ -235,6 +239,7 @@ regions:
 # ====================================================================
 
 # ── factions/_index.yaml（复杂时） ──
+---
 
 material_id: nm_xxx                             # R | 素材ID
 
@@ -269,6 +274,7 @@ stats:
 
 # ── factions/{faction_name}.yaml（势力详情） ──
 # 路径: worldbuilding/factions/{faction_name}.yaml
+---
 
 material_id: nm_xxx                             # R | 素材ID
 faction_name: "ETO"                             # R | 势力名称
@@ -341,6 +347,7 @@ associated_locations:
 
 # ── factions.yaml（简单时的单文件，势力数 ≤ 3） ──
 # 路径: worldbuilding/factions.yaml
+---
 
 material_id: nm_xxx
 
@@ -363,6 +370,7 @@ factions:
 # ====================================================================
 
 # ── lore/history.yaml（历史事件） ──
+---
 
 material_id: nm_xxx
 
@@ -376,6 +384,7 @@ history:
     first_referenced: "第X章"                     # R | 首次被提及的章节
 
 # ── lore/artifacts.yaml（重要物品） ──
+---
 
 material_id: nm_xxx
 
@@ -394,6 +403,7 @@ artifacts:
         role: "获取"                              # 在该事件中的角色（获取/使用/损坏）
 
 # ── lore/species.yaml（种族物种） ──
+---
 
 material_id: nm_xxx
 
@@ -409,6 +419,7 @@ species:
     key_figures: ["代表人物"]                     # O | 代表人物
 
 # ── lore/terminology.yaml（术语词典） ──
+---
 
 material_id: nm_xxx
 

@@ -61,10 +61,11 @@ def sync_novel(material_id):
         _sync_outline(conn, novel_dir, material_id)
         _sync_characters(conn, novel_dir, material_id)
         _sync_worldbuilding(conn, novel_dir, material_id)
+        conn.commit()
         print(f"同步完成: {material_id}")
     except Exception as e:
         conn.rollback()
-        print(f"同步失败: {e}")
+        print(f"同步失败，已回滚: {e}")
         raise
     finally:
         conn.close()
@@ -108,7 +109,6 @@ def _sync_meta(conn, novel_dir, material_id):
             meta.get("created_at"),
             meta.get("updated_at"),
         ))
-    conn.commit()
     print(f"  已同步小说元信息: {meta.get('name')}")
 
 
@@ -147,7 +147,7 @@ def _sync_chapters(conn, novel_dir, material_id):
                         INSERT INTO chapters (
                             material_id, chapter, title, summary, word_count,
                             tension_level, pacing, setting, key_plot_point,
-                            chapter_functions, characters_appear, embedding
+                            chapter_functions, characters_appear, summary_embedding
                         ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         ON CONFLICT (material_id, chapter) DO UPDATE SET
                             title = EXCLUDED.title,
@@ -159,7 +159,7 @@ def _sync_chapters(conn, novel_dir, material_id):
                             key_plot_point = EXCLUDED.key_plot_point,
                             chapter_functions = EXCLUDED.chapter_functions,
                             characters_appear = EXCLUDED.characters_appear,
-                            embedding = EXCLUDED.embedding
+                            summary_embedding = EXCLUDED.summary_embedding
                     """, (
                         material_id, ch_num,
                         ch.get("title"), ch.get("summary"), ch.get("word_count"),
@@ -194,7 +194,6 @@ def _sync_chapters(conn, novel_dir, material_id):
                         ch.get("chapter_function", ch.get("chapter_functions", [])),
                         ch.get("characters_appear", []),
                     ))
-        conn.commit()
         synced += len(batch)
         print(f"  已同步章节 {synced}/{len(chapters)}")
 
@@ -202,40 +201,118 @@ def _sync_chapters(conn, novel_dir, material_id):
 
 
 def _sync_outline(conn, novel_dir, material_id):
-    """同步 outline/_index.yaml → novels 表大纲元信息。"""
+    """同步 outline/_index.yaml → novels 表，outline/structure.yaml → outline_sequences/beats 表。"""
+    # 1. _index.yaml → novels 表元信息
     outline_index = novel_dir / "outline" / "_index.yaml"
-    if not outline_index.exists():
+    if outline_index.exists():
+        with open(outline_index, "r", encoding="utf-8") as f:
+            index_data = yaml.safe_load(f) or {}
+
+        summary = index_data.get("structure_summary", {})
+        hooks = index_data.get("hooks_stats", {})
+        subplots = index_data.get("subplots_stats", {})
+
+        theme = index_data.get("theme", [])
+        tone = index_data.get("tone", [])
+        if isinstance(theme, str):
+            theme = [theme]
+        if isinstance(tone, str):
+            tone = [tone]
+
+        with conn.cursor() as cur:
+            cur.execute("""
+                UPDATE novels SET
+                    premise = %s,
+                    theme = %s,
+                    tone = %s,
+                    act_count = %s,
+                    sequence_count = %s,
+                    hook_count = %s,
+                    subplot_count = %s
+                WHERE material_id = %s
+            """, (
+                index_data.get("premise"),
+                theme,
+                tone,
+                summary.get("acts"),
+                summary.get("sequences"),
+                hooks.get("total"),
+                subplots.get("count"),
+                material_id,
+            ))
+        print(f"  已同步大纲元信息（premise/theme/tone）")
+
+    # 2. structure.yaml → outline_sequences + outline_beats 表
+    structure_file = novel_dir / "outline" / "structure.yaml"
+    if not structure_file.exists():
         return
 
-    with open(outline_index, "r", encoding="utf-8") as f:
-        outline_data = yaml.safe_load(f) or {}
+    with open(structure_file, "r", encoding="utf-8") as f:
+        structure_data = yaml.safe_load(f) or {}
 
-    if not outline_data.get("structure_type"):
+    acts = structure_data.get("acts", [])
+    if not acts:
         return
 
+    # 先判断 structure_type
+    structure_type = structure_data.get("structure_pattern", {}).get("type")
+
+    seq_count = 0
+    beat_count = 0
     with conn.cursor() as cur:
-        cur.execute("""
-            UPDATE novels SET
-                structure_type = %s,
-                act_count = %s,
-                sequence_count = %s,
-                hook_count = %s,
-                subplot_count = %s
-            WHERE material_id = %s
-        """, (
-            outline_data.get("structure_type"),
-            outline_data.get("act_count"),
-            outline_data.get("sequence_count"),
-            outline_data.get("hook_count"),
-            outline_data.get("subplot_count"),
-            material_id,
-        ))
-    conn.commit()
-    print(f"  已同步大纲元信息")
+        # 更新 novels 的 structure_type
+        if structure_type:
+            cur.execute(
+                "UPDATE novels SET structure_type = %s WHERE material_id = %s",
+                (structure_type, material_id)
+            )
+
+        # 清除旧数据，重新写入（幂等）
+        cur.execute("DELETE FROM outline_beats WHERE material_id = %s", (material_id,))
+        cur.execute("DELETE FROM outline_sequences WHERE material_id = %s", (material_id,))
+
+        for act_data in acts:
+            act_num = act_data.get("act")
+            for seq_data in act_data.get("sequences", []):
+                seq_num = seq_data.get("sequence")
+                chapters_range = seq_data.get("chapters", [None, None])
+                chapters_start = chapters_range[0] if len(chapters_range) > 0 else None
+                chapters_end = chapters_range[1] if len(chapters_range) > 1 else None
+
+                cur.execute("""
+                    INSERT INTO outline_sequences (
+                        material_id, act, sequence, title,
+                        chapters_start, chapters_end, description
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """, (
+                    material_id, act_num, seq_num,
+                    seq_data.get("title"),
+                    chapters_start, chapters_end,
+                    seq_data.get("description"),
+                ))
+                seq_count += 1
+
+                for beat_data in seq_data.get("beats", []):
+                    cur.execute("""
+                        INSERT INTO outline_beats (
+                            material_id, act, sequence, beat,
+                            title, chapter, description, tension
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    """, (
+                        material_id, act_num, seq_num,
+                        beat_data.get("beat"),
+                        beat_data.get("title"),
+                        beat_data.get("chapter"),
+                        beat_data.get("description"),
+                        beat_data.get("tension"),
+                    ))
+                    beat_count += 1
+
+    print(f"  已同步大纲结构：{seq_count} 个序列，{beat_count} 个节拍")
 
 
 def _sync_characters(conn, novel_dir, material_id):
-    """同步 characters/profiles/*.yaml → characters 表。"""
+    """同步 characters/profiles/*.yaml → characters + character_appearances 表。"""
     profiles_dir = novel_dir / "characters" / "profiles"
     if not profiles_dir.exists():
         return
@@ -255,6 +332,7 @@ def _sync_characters(conn, novel_dir, material_id):
             psychology_value = json.dumps(
                 profile.get("psychology", {}), ensure_ascii=False
             )
+            char_name = profile.get("name") or profile.get("character_name")
 
             cur.execute("""
                 INSERT INTO characters (
@@ -266,28 +344,60 @@ def _sync_characters(conn, novel_dir, material_id):
                 ON CONFLICT (material_id, name) DO UPDATE SET
                     role = EXCLUDED.role,
                     archetype = EXCLUDED.archetype,
+                    moral_spectrum = EXCLUDED.moral_spectrum,
                     arc_summary = EXCLUDED.arc_summary,
+                    narrative_function = EXCLUDED.narrative_function,
                     psychology = EXCLUDED.psychology,
+                    first_appearance = EXCLUDED.first_appearance,
+                    last_appearance = EXCLUDED.last_appearance,
                     appearance_count = EXCLUDED.appearance_count,
-                    updated_at = NOW()
+                    description = EXCLUDED.description,
+                    file_path = EXCLUDED.file_path
             """, (
                 material_id,
-                profile.get("name"),
+                char_name,
                 profile.get("role"),
                 profile.get("archetype"),
                 profile.get("moral_spectrum"),
                 profile.get("arc_summary"),
                 profile.get("narrative_function"),
                 psychology_value,
-                profile.get("first_appearance_chapter"),
-                profile.get("last_appearance_chapter"),
+                profile.get("first_appearance"),
+                profile.get("last_appearance"),
                 profile.get("appearance_count", 0),
                 str(profile_file),
                 profile.get("description"),
             ))
 
-    conn.commit()
     print(f"  已同步人物: {len(profile_files)} 个")
+
+    # 从 chapters.yaml 的 characters_appear 字段提取出场记录
+    _sync_character_appearances(conn, novel_dir, material_id)
+
+
+def _sync_character_appearances(conn, novel_dir, material_id):
+    """从 chapters.yaml 提取人物出场记录 → character_appearances 表。"""
+    chapters_file = novel_dir / "chapters.yaml"
+    if not chapters_file.exists():
+        return
+
+    with open(chapters_file, "r", encoding="utf-8") as f:
+        chapters = yaml.safe_load(f) or []
+
+    with conn.cursor() as cur:
+        # 先清除旧记录（幂等）
+        cur.execute("DELETE FROM character_appearances WHERE material_id = %s", (material_id,))
+
+        for ch in chapters:
+            ch_num = ch.get("chapter")
+            for char_name in ch.get("characters_appear", []):
+                cur.execute("""
+                    INSERT INTO character_appearances (
+                        material_id, character_name, chapter, significance
+                    ) VALUES (%s, %s, %s, %s)
+                """, (material_id, char_name, ch_num, "major"))
+
+    print(f"  已同步人物出场记录")
 
 
 def _sync_worldbuilding(conn, novel_dir, material_id):
@@ -319,6 +429,11 @@ def _sync_worldbuilding(conn, novel_dir, material_id):
                         material_id, entity_type, name, description,
                         properties, first_appearance, importance
                     ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (material_id, entity_type, name) DO UPDATE SET
+                        description = EXCLUDED.description,
+                        properties = EXCLUDED.properties,
+                        first_appearance = EXCLUDED.first_appearance,
+                        importance = EXCLUDED.importance
                 """, (
                     material_id,
                     entity_type,
@@ -330,7 +445,6 @@ def _sync_worldbuilding(conn, novel_dir, material_id):
                 ))
                 synced += 1
 
-    conn.commit()
     print(f"  已同步世界观实体: {synced} 个")
 
 

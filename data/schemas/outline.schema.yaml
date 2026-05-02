@@ -93,6 +93,7 @@ themes_stats:
 # structure.yaml（必选）—— 结构骨架：幕 → 序列 → 节拍
 # 路径: outline/structure.yaml
 # ====================================================================
+---
 
 material_id: nm_xxx                             # R | 素材ID
 
@@ -131,6 +132,7 @@ structure_pattern:
 # plotlines.yaml（可选）—— 情节线索追踪
 # 路径: outline/plotlines.yaml
 # ====================================================================
+---
 
 material_id: nm_xxx                             # R | 素材ID
 
@@ -166,6 +168,7 @@ intersection_matrix:
 # hooks_network.yaml（可选）—— 钩子网络：埋设 → 回收链
 # 路径: outline/hooks_network.yaml
 # ====================================================================
+---
 
 material_id: nm_xxx                             # R | 素材ID
 
@@ -210,6 +213,7 @@ stats:
 # pacing_curve.yaml（可选）—— 节奏曲线：关键章节张力标注
 # 路径: outline/pacing_curve.yaml
 # ====================================================================
+---
 
 material_id: nm_xxx                             # R | 素材ID
 
@@ -247,6 +251,7 @@ pacing_summary:
 # subplots.yaml（可选）—— 支线网络：各支线与主线的关系
 # 路径: outline/subplots.yaml
 # ====================================================================
+---
 
 material_id: nm_xxx                             # R | 素材ID
 
@@ -282,6 +287,7 @@ mainline_integration:
 # themes.yaml（可选）—— 主题演变：主题在全书中的展开
 # 路径: outline/themes.yaml
 # ====================================================================
+---
 
 material_id: nm_xxx                             # R | 素材ID
 
@@ -318,6 +324,7 @@ theme_intersections:
 # emotional_arc.yaml（可选）—— 情绪曲线：读者情绪预期管理
 # 路径: outline/emotional_arc.yaml
 # ====================================================================
+---
 
 material_id: nm_xxx                             # R | 素材ID
 

@@ -127,6 +127,7 @@ arc_status:
 # relations.yaml（关系网详情）
 # 路径: characters/relations.yaml
 # ====================================================================
+---
 
 material_id: nm_xxx                             # R | 素材ID
 
@@ -165,6 +166,7 @@ network_graph:
 # 路径: characters/profiles/{name_pinyin}.yaml
 # 龙套角色不在此，只保留在 _index.yaml 的 minor 列表中
 # ====================================================================
+---
 
 material_id: nm_xxx                             # R | 素材ID
 character_name: 叶文洁                          # R | 人物名称

@@ -51,6 +51,10 @@ def search_events(query, setting=None, emotion=None, limit=10):
             sql += " AND c.setting @> ARRAY[%s]"
             params.append(setting)
 
+        if emotion:
+            sql += " AND c.summary ILIKE %s"
+            params.append(f"%{emotion}%")
+
         sql += " ORDER BY c.tension_level DESC LIMIT %s"
         params.append(limit)
 

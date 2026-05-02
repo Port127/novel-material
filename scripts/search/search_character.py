@@ -78,7 +78,7 @@ def search_characters(archetype=None, role=None, genre=None, name_query=None, li
 @click.option("--archetype", default=None, help="人物原型（如：英雄、导师）")
 @click.option("--role", default=None, help="角色类型（protagonist/antagonist/supporting）")
 @click.option("--genre", default=None, help="按题材过滤")
-@click.option("--name", default=None, help="人物名字关键词")
+@click.option("--name", "name_query", default=None, help="人物名字关键词")
 @click.option("--limit", default=10, help="返回结果数")
 def main(archetype, role, genre, name_query, limit):
     search_characters(archetype=archetype, role=role, genre=genre, name_query=name_query, limit=limit)
