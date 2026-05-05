@@ -22,6 +22,7 @@ from pydantic import BaseModel, field_validator, model_validator, Field
 from pydantic import ValidationError as PydanticValidationError
 
 from scripts.core.paths import NOVELS_DIR, TAGS_FILE
+from scripts.utils.tag_validator import flatten_tags, build_synonym_reverse, synonym_expand
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 常量
@@ -124,7 +125,18 @@ class NovelTagsModel(BaseModel):
     """tags.yaml（小说级标签）的最小字段约束。"""
 
     material_id: str
-    genre: Optional[Any] = None        # list[str] 或 str
+    channel: Optional[str] = None
+    genre_primary: Optional[str] = None
+    genre_secondary: Optional[Any] = None
+    elements: Optional[Any] = None    # list[str]
+    style: Optional[Any] = None       # list[str]
+    structure: Optional[str] = None
+    setting: Optional[str] = None
+    hooks: Optional[Any] = None
+    tropes: Optional[Any] = None
+    themes: Optional[Any] = None
+    # 兼容旧字段
+    genre: Optional[Any] = None
     theme: Optional[Any] = None
     tone: Optional[Any] = None
 
@@ -211,9 +223,18 @@ def validate_novel_tags(material_id: str) -> list[str]:
         data = yaml.safe_load(f) or {}
 
     errors: list[str] = []
+
+    # ── Pydantic 结构校验 ──
     try:
         NovelTagsModel(
             material_id=data.get("material_id", ""),
+            channel=data.get("channel"),
+            genre_primary=data.get("genre_primary"),
+            genre_secondary=data.get("genre_secondary"),
+            elements=data.get("elements"),
+            style=data.get("style"),
+            structure=data.get("structure"),
+            setting=data.get("setting"),
             genre=data.get("genre"),
             theme=data.get("theme"),
             tone=data.get("tone"),
@@ -222,6 +243,52 @@ def validate_novel_tags(material_id: str) -> list[str]:
         for err in exc.errors():
             field = ".".join(str(loc) for loc in err["loc"])
             errors.append(f"tags.yaml [{field}]: {err['msg']}")
+
+    # ── 标签白名单校验 ──
+    if TAGS_FILE.exists():
+        with open(TAGS_FILE, "r", encoding="utf-8") as f:
+            tags_dict = yaml.safe_load(f) or {}
+
+        reverse_map = build_synonym_reverse(tags_dict)
+
+        valid_elements = flatten_tags(tags_dict.get("element", {}))
+        valid_styles = flatten_tags(tags_dict.get("style", {}))
+        valid_structures = flatten_tags(tags_dict.get("structure", {}))
+        valid_settings = flatten_tags(tags_dict.get("setting", {}))
+        valid_channels = set(tags_dict.get("channel", []))
+
+        # channel 校验
+        channel = data.get("channel")
+        if channel and synonym_expand(channel, reverse_map) not in valid_channels:
+            errors.append(f"tags.yaml [channel]: '{channel}' 不在标签字典中")
+
+        # elements 列表校验
+        for tag in (data.get("elements") or []):
+            canonical = synonym_expand(str(tag), reverse_map)
+            if canonical not in valid_elements:
+                errors.append(f"tags.yaml [elements]: '{tag}' 不在标签字典中")
+
+        # style 列表校验
+        style_val = data.get("style")
+        style_list = style_val if isinstance(style_val, list) else ([style_val] if style_val else [])
+        for tag in style_list:
+            canonical = synonym_expand(str(tag), reverse_map)
+            if canonical not in valid_styles:
+                errors.append(f"tags.yaml [style]: '{tag}' 不在标签字典中")
+
+        # structure 单值校验
+        structure = data.get("structure")
+        if structure:
+            canonical = synonym_expand(str(structure), reverse_map)
+            if canonical not in valid_structures:
+                errors.append(f"tags.yaml [structure]: '{structure}' 不在标签字典中")
+
+        # setting 单值校验
+        setting = data.get("setting")
+        if setting:
+            canonical = synonym_expand(str(setting), reverse_map)
+            if canonical not in valid_settings:
+                errors.append(f"tags.yaml [setting]: '{setting}' 不在标签字典中")
 
     return errors
 

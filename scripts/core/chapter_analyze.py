@@ -21,6 +21,7 @@ load_dotenv()
 from scripts.core.paths import NOVELS_DIR, TAGS_FILE
 from scripts.core.llm_client import load_config, call_llm, truncate_to_tokens
 from scripts.utils.quality_check import run_quality_check
+from scripts.utils.tag_validator import flatten_tags
 
 # 每章送给 LLM 的最大 Token 数（章末钩子/转折通常在后半段，保留完整内容）
 _MAX_CHAPTER_TOKENS = 1800
@@ -121,7 +122,7 @@ def analyze_chapters_batch(
     }
 
 
-def validate_chapter_analysis(result: dict, chapter_info: dict) -> list[str]:
+def validate_chapter_analysis(result: dict, chapter_info: dict, valid_funcs: set | None = None) -> list[str]:
     """校验章级分析结果，返回错误列表。"""
     errors = []
 
@@ -135,6 +136,14 @@ def validate_chapter_analysis(result: dict, chapter_info: dict) -> list[str]:
 
     if not result.get("characters_appear"):
         errors.append(f"章节{chapter_info['chapter']}: 未识别到出场人物")
+
+    # 实时校验 chapter_function 标签合法性
+    if valid_funcs is not None:
+        for func in (result.get("chapter_function") or []):
+            if func not in valid_funcs:
+                errors.append(
+                    f"章节{chapter_info['chapter']}: chapter_function '{func}' 不在标签字典中"
+                )
 
     return errors
 
@@ -206,6 +215,14 @@ def chapter_analyze(material_id: str) -> None:
 
     config = load_config()
 
+    # 加载章节功能标签合法集（一次性加载，供每章实时校验）
+    valid_funcs: set | None = None
+    if TAGS_FILE.exists():
+        import yaml as _yaml
+        tags_dict = _yaml.safe_load(TAGS_FILE.read_text(encoding="utf-8")) or {}
+        valid_funcs = flatten_tags(tags_dict.get("chapter_function", {}))
+        print(f"已加载章节功能标签字典：{len(valid_funcs)} 个")
+
     with open(novel_dir / "chapter_index.yaml", "r", encoding="utf-8") as f:
         chapter_index = yaml.safe_load(f)
 
@@ -269,7 +286,7 @@ def chapter_analyze(material_id: str) -> None:
                     print(f"  跳过第 {ch_num} 章，继续处理后续章节")
                     continue
 
-            errors = validate_chapter_analysis(result, ch_info)
+            errors = validate_chapter_analysis(result, ch_info, valid_funcs)
             for err in errors:
                 print(f"  警告: {err}")
 

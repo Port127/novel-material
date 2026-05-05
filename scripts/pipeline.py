@@ -12,140 +12,248 @@ from scripts.core.ingest import ingest_file
 from scripts.core.chapter_analyze import chapter_analyze
 from scripts.core.embed_chapters import embed_chapters
 from scripts.core.sync_db import sync_novel
+from scripts.core.llm_client import get_api_stats, reset_api_stats
 from scripts.analyze.generate_outline import generate_outline
 from scripts.analyze.generate_worldbuilding import generate_worldbuilding
 from scripts.analyze.generate_characters import generate_characters
 from scripts.analyze.generate_tags import generate_tags
 from scripts.utils.refine import refine
+from scripts.utils.progress_tracker import PipelineRunner, _fmt
+from scripts.core.paths import NOVELS_DIR, update_meta_status
+
+
+def _run_stage(tr, name, fn, is_llm=False):
+    """运行一个子阶段，支持 LLM 旋转指示器和异常处理。
+
+    异常时不吞、不 print，直接 raise，让外层统一处理。
+    API 计数改由 llm_client 全局计数器提供（get_api_stats），
+    不再在 pipeline 层手动 record_api_call。
+    """
+    sub_t0 = time.monotonic()
+    if is_llm:
+        tr.start_spinner(f"LLM {name}中")
+    try:
+        fn()
+    finally:
+        if is_llm:
+            tr.stop_spinner()
+    elapsed = time.monotonic() - sub_t0
+    print(f"  {name} 完成 | 耗时: {_fmt(elapsed)}")
+    return elapsed
+
+
+def _get_novel_dir(material_id: str) -> Path:
+    """获取小说目录路径。"""
+    return NOVELS_DIR / material_id
+
+
+def _print_api_summary():
+    """打印全局 API 调用统计摘要。"""
+    stats = get_api_stats()
+    if stats["calls"] > 0:
+        print(f"  API 总调用: {stats['calls']} 次 | 错误: {stats['errors']} 次 | Tokens: {stats['tokens_total']:,}")
+
 
 def pipeline_ingest(file_path):
     """入库流水线：预处理 + 章节切分，生成 source.txt / chapter_index.yaml / meta.yaml。"""
-    print("=" * 60)
-    print("开始入库流水线")
-    print("=" * 60)
-
-    material_id = ingest_file(file_path)
-    if not material_id:
-        print("入库失败")
-        return None
-
-    print("\n" + "=" * 60)
-    print(f"入库完成! material_id: {material_id}")
-    print("=" * 60)
+    reset_api_stats()
+    runner = PipelineRunner("入库流水线", 1)
+    with runner.stage(1, "入库") as tr:
+        t0 = time.monotonic()
+        material_id = ingest_file(file_path)
+        if not material_id:
+            print("入库失败")
+            return None
+        elapsed = time.monotonic() - t0
+        print(f"入库完成 | 耗时: {_fmt(elapsed)} | material_id: {material_id}")
+        runner.record_stage_complete("入库", elapsed)
+    runner.print_final_summary()
+    runner.save_history(novel_dir=_get_novel_dir(material_id))
     return material_id
 
 
 def pipeline_full(file_path):
-    """完整流水线：入库 → 章级分析 → 骨架分析 → 同步数据库。
+    """完整流水线：入库 → 章级分析 → 向量化 → 骨架分析 → 精调 → 同步数据库。
 
-    执行顺序（已修正 A1）：
-      ingest → chapter_analyze → outline/worldbuilding/characters/tags → sync
     章级分析前置，确保大纲/世界观/人物/标签使用全书摘要池而非原文片段。
     """
-    print("=" * 60)
+    reset_api_stats()
+    runner = PipelineRunner("完整流水线", 6)
+    wall_start = time.monotonic()
+    material_id = None
+
+    print(f"\n{'=' * 60}")
     print("开始完整流水线")
-    print("=" * 60)
+    print(f"{'=' * 60}")
 
-    # 1. 入库
-    print("\n[1/5] 入库阶段")
-    material_id = ingest_file(file_path)
-    if not material_id:
-        print("入库失败，终止流水线")
-        return
+    try:
+        # 1. 入库
+        with runner.stage(1, "入库") as tr:
+            t0 = time.monotonic()
+            material_id = ingest_file(file_path)
+            if not material_id:
+                print("入库失败，终止流水线")
+                return
+            elapsed = time.monotonic() - t0
+            print(f"  入库完成 | 耗时: {_fmt(elapsed)} | material_id: {material_id}")
+            runner.record_stage_complete("入库", elapsed)
 
-    time.sleep(1)
+        # 2. 章级分析
+        with runner.stage(2, "章级分析") as tr:
+            _run_stage(tr, "分析章节", lambda: chapter_analyze(material_id), is_llm=True)
+            api = get_api_stats()
+            runner.record_stage_complete("章级分析", tr.elapsed_stage, api["calls"], api["errors"])
 
-    # 2. 章级分析（前置，为后续骨架分析提供全书摘要池）
-    print("\n[2/6] 章级分析阶段（为骨架分析提供全书视角）")
-    chapter_analyze(material_id)
+        # 3. 章节向量化
+        with runner.stage(3, "向量化") as tr:
+            _run_stage(tr, "向量化", lambda: embed_chapters(material_id))
+            runner.record_stage_complete("向量化", tr.elapsed_stage)
 
-    time.sleep(1)
+        # 4. 骨架分析（大纲/世界观/人物/标签）
+        with runner.stage(4, "骨架分析") as tr:
+            for name, fn in [
+                ("大纲生成", lambda: generate_outline(material_id)),
+                ("世界观提取", lambda: generate_worldbuilding(material_id)),
+                ("人物提取", lambda: generate_characters(material_id)),
+                ("标签生成", lambda: generate_tags(material_id)),
+            ]:
+                _run_stage(tr, name, fn, is_llm=True)
+            api = get_api_stats()
+            runner.record_stage_complete("骨架分析", tr.elapsed_stage, api["calls"], api["errors"])
 
-    # 3. 章节向量化
-    print("\n[3/6] 向量化阶段")
-    embed_chapters(material_id)
+        # 5. 精调
+        with runner.stage(5, "精调") as tr:
+            _run_stage(tr, "精调", lambda: refine(material_id), is_llm=True)
+            api = get_api_stats()
+            runner.record_stage_complete("精调", tr.elapsed_stage, api["calls"], api["errors"])
 
-    time.sleep(1)
+        # 6. 同步数据库
+        with runner.stage(6, "同步数据库") as tr:
+            _run_stage(tr, "同步", lambda: sync_novel(material_id))
+            runner.record_stage_complete("同步数据库", tr.elapsed_stage)
 
-    # 4. 骨架分析（基于章级摘要池）
-    print("\n[4/6] 骨架分析阶段（大纲/世界观/人物/标签）")
-    generate_outline(material_id)
-    time.sleep(1)
-    generate_worldbuilding(material_id)
-    time.sleep(1)
-    generate_characters(material_id)
-    time.sleep(1)
-    generate_tags(material_id)
+    except Exception:
+        _print_api_summary()
+        runner.print_final_summary()
+        if material_id:
+            try:
+                update_meta_status(material_id, "failed")
+            except (FileNotFoundError, ValueError):
+                pass
+            runner.save_history(_get_novel_dir(material_id), status="failed")
+        raise
 
-    time.sleep(1)
-
-    # 5. 精调
-    print("\n[5/6] 精调阶段")
-    refine(material_id)
-
-    time.sleep(1)
-
-    # 6. 同步数据库
-    print("\n[6/6] 同步数据库阶段")
-    sync_novel(material_id)
-
-    print("\n" + "=" * 60)
-    print(f"完整流水线完成! material_id: {material_id}")
-    print("=" * 60)
+    _print_api_summary()
+    runner.print_final_summary()
+    print(f"\n完整流水线完成! material_id: {material_id}")
+    print(f"总耗时: {_fmt(time.monotonic() - wall_start)}")
+    if material_id:
+        try:
+            update_meta_status(material_id, "indexed")
+        except (FileNotFoundError, ValueError):
+            pass
+    runner.save_history(_get_novel_dir(material_id))
 
 
 def pipeline_analyze(material_id):
-    """分析流水线：章级分析 → 大纲/世界观/人物/标签。
+    """分析流水线：章级分析 → 大纲/世界观/人物/标签。"""
+    reset_api_stats()
+    runner = PipelineRunner("分析流水线", 6, novel_dir=_get_novel_dir(material_id))
+    wall_start = time.monotonic()
 
-    执行顺序（已修正 A1）：chapter_analyze 前置。
-    """
-    print("=" * 60)
+    print(f"\n{'=' * 60}")
     print("开始分析流水线")
-    print("=" * 60)
+    print(f"{'=' * 60}")
 
-    print("\n[1/5] 章级分析（全书视角基础）")
-    chapter_analyze(material_id)
-    time.sleep(1)
+    try:
+        with runner.stage(1, "章级分析") as tr:
+            _run_stage(tr, "分析章节", lambda: chapter_analyze(material_id), is_llm=True)
+            api = get_api_stats()
+            runner.record_stage_complete("章级分析", tr.elapsed_stage, api["calls"], api["errors"])
 
-    print("\n[2/5] 大纲生成")
-    generate_outline(material_id)
-    time.sleep(1)
+        with runner.stage(2, "大纲生成") as tr:
+            _run_stage(tr, "生成大纲", lambda: generate_outline(material_id), is_llm=True)
+            api = get_api_stats()
+            runner.record_stage_complete("大纲生成", tr.elapsed_stage, api["calls"], api["errors"])
 
-    print("\n[3/5] 世界观提取")
-    generate_worldbuilding(material_id)
-    time.sleep(1)
+        with runner.stage(3, "世界观提取") as tr:
+            _run_stage(tr, "提取世界观", lambda: generate_worldbuilding(material_id), is_llm=True)
+            api = get_api_stats()
+            runner.record_stage_complete("世界观提取", tr.elapsed_stage, api["calls"], api["errors"])
 
-    print("\n[4/5] 人物提取")
-    generate_characters(material_id)
-    time.sleep(1)
+        with runner.stage(4, "人物提取") as tr:
+            _run_stage(tr, "提取人物", lambda: generate_characters(material_id), is_llm=True)
+            api = get_api_stats()
+            runner.record_stage_complete("人物提取", tr.elapsed_stage, api["calls"], api["errors"])
 
-    print("\n[5/5] 标签生成")
-    generate_tags(material_id)
-    time.sleep(1)
+        with runner.stage(5, "标签生成") as tr:
+            _run_stage(tr, "生成标签", lambda: generate_tags(material_id), is_llm=True)
+            api = get_api_stats()
+            runner.record_stage_complete("标签生成", tr.elapsed_stage, api["calls"], api["errors"])
 
-    print("\n同步数据库...")
-    sync_novel(material_id)
+        with runner.stage(6, "同步数据库") as tr:
+            _run_stage(tr, "同步", lambda: sync_novel(material_id))
+            runner.record_stage_complete("同步数据库", tr.elapsed_stage)
 
-    print("\n" + "=" * 60)
-    print("分析流水线完成!")
-    print("=" * 60)
+    except Exception:
+        _print_api_summary()
+        runner.print_final_summary()
+        try:
+            update_meta_status(material_id, "failed")
+        except (FileNotFoundError, ValueError):
+            pass
+        runner.save_history(status="failed")
+        raise
+
+    _print_api_summary()
+    runner.print_final_summary()
+    print(f"\n分析流水线完成! 总耗时: {_fmt(time.monotonic() - wall_start)}")
+    try:
+        update_meta_status(material_id, "indexed")
+    except (FileNotFoundError, ValueError):
+        pass
+    runner.save_history()
+
 
 def pipeline_finalize(material_id):
     """收尾流水线：精调 + 同步数据库。"""
-    print("=" * 60)
+    reset_api_stats()
+    runner = PipelineRunner("收尾流水线", 2, novel_dir=_get_novel_dir(material_id))
+    wall_start = time.monotonic()
+
+    print(f"\n{'=' * 60}")
     print("开始收尾流水线")
-    print("=" * 60)
+    print(f"{'=' * 60}")
 
-    print("\n[1/2] 精调")
-    refine(material_id)
-    time.sleep(1)
+    try:
+        with runner.stage(1, "精调") as tr:
+            _run_stage(tr, "精调", lambda: refine(material_id), is_llm=True)
+            api = get_api_stats()
+            runner.record_stage_complete("精调", tr.elapsed_stage, api["calls"], api["errors"])
 
-    print("\n[2/2] 同步数据库")
-    sync_novel(material_id)
+        with runner.stage(2, "同步数据库") as tr:
+            _run_stage(tr, "同步", lambda: sync_novel(material_id))
+            runner.record_stage_complete("同步数据库", tr.elapsed_stage)
 
-    print("\n" + "=" * 60)
-    print("收尾流水线完成!")
-    print("=" * 60)
+    except Exception:
+        _print_api_summary()
+        runner.print_final_summary()
+        try:
+            update_meta_status(material_id, "failed")
+        except (FileNotFoundError, ValueError):
+            pass
+        runner.save_history(status="failed")
+        raise
+
+    _print_api_summary()
+    runner.print_final_summary()
+    print(f"\n收尾流水线完成! 总耗时: {_fmt(time.monotonic() - wall_start)}")
+    try:
+        update_meta_status(material_id, "indexed")
+    except (FileNotFoundError, ValueError):
+        pass
+    runner.save_history()
+
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:

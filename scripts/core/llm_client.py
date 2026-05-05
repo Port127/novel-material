@@ -18,6 +18,25 @@ if str(_ROOT) not in sys.path:
 logger = logging.getLogger(__name__)
 
 # ──────────────────────────────────────────────
+# 全局 API 调用计数器（pipeline 运行时读写）
+# ──────────────────────────────────────────────
+
+_api_stats = {"calls": 0, "errors": 0, "tokens_total": 0}
+
+
+def get_api_stats() -> dict:
+    """获取全局 API 调用统计（只读快照）。"""
+    return dict(_api_stats)
+
+
+def reset_api_stats() -> None:
+    """重置计数器（每次流水线启动时调用）。"""
+    _api_stats["calls"] = 0
+    _api_stats["errors"] = 0
+    _api_stats["tokens_total"] = 0
+
+
+# ──────────────────────────────────────────────
 # 配置加载
 # ──────────────────────────────────────────────
 
@@ -179,6 +198,14 @@ def call_llm(
             max_tokens=effective_max_tokens,
             response_format={"type": "json_object"},
         )
+        usage = response.usage
+        _api_stats["calls"] += 1
+        if usage:
+            _api_stats["tokens_total"] += usage.total_tokens
         return json.loads(response.choices[0].message.content)
 
-    return _call()
+    try:
+        return _call()
+    except Exception as e:
+        _api_stats["errors"] += 1
+        raise

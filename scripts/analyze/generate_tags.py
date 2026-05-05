@@ -14,6 +14,7 @@ load_dotenv()
 
 from scripts.core.paths import NOVELS_DIR, TAGS_FILE
 from scripts.core.llm_client import load_config, call_llm
+from scripts.utils.tag_validator import flatten_tags, build_synonym_reverse, synonym_expand
 
 def load_tags_dict():
     if TAGS_FILE.exists():
@@ -47,34 +48,63 @@ def generate_tags(material_id):
             outline_index = yaml.safe_load(f) or {}
         structure_info = f"结构类型：{outline_index.get('structure_type', '未知')}"
 
-    # 从 tags_dict 中提取合法标签值列表
+    # 从 tags_dict 中提取各维度标签（递归展开分组 dict）
     valid_channels = tags_dict.get("channel", [])
-    valid_genres = []
-    for genre_data in tags_dict.get("genre", {}).values():
-        if isinstance(genre_data, list):
-            valid_genres.extend(genre_data)
-    valid_elements = tags_dict.get("element", [])
-    valid_styles = tags_dict.get("style", [])
-    valid_structures = tags_dict.get("structure", [])
-    valid_settings = tags_dict.get("setting", [])
+
+    # genre: 一级 key 列表
+    valid_genres_primary = list(tags_dict.get("genre", {}).keys())
+    # genre: 所有二级值
+    valid_genres_secondary = []
+    for sub in tags_dict.get("genre", {}).values():
+        if isinstance(sub, list):
+            valid_genres_secondary.extend(sub)
+
+    # element 分组展示（保留分组信息）
+    element_groups = tags_dict.get("element", {})
+    valid_elements = flatten_tags(element_groups)
+
+    # 其他维度平铺展开
+    valid_styles = flatten_tags(tags_dict.get("style", {}))
+    valid_structures = flatten_tags(tags_dict.get("structure", {}))
+    valid_settings = flatten_tags(tags_dict.get("setting", {}))
+
+    # 构建同义词反向映射
+    reverse_map = build_synonym_reverse(tags_dict)
+
+    # 元素标签分组展示字符串（按组展示）
+    element_prompt_parts = []
+    if isinstance(element_groups, dict):
+        for group_name, group_tags in element_groups.items():
+            if isinstance(group_tags, list) and group_tags:
+                element_prompt_parts.append(f"  《{group_name}》: {', '.join(group_tags[:15])}…")
+    element_prompt_str = "\n".join(element_prompt_parts) if element_prompt_parts else ", ".join(list(valid_elements)[:30])
+
+    # 风格标签分组展示字符串
+    style_groups = tags_dict.get("style", {})
+    style_prompt_parts = []
+    if isinstance(style_groups, dict):
+        for group_name, group_tags in style_groups.items():
+            if isinstance(group_tags, list) and group_tags:
+                style_prompt_parts.append(f"  《{group_name}》: {', '.join(group_tags[:10])}…")
+    style_prompt_str = "\n".join(style_prompt_parts) if style_prompt_parts else ", ".join(list(valid_styles)[:20])
 
     system_prompt = f"""你是专业的小说标签标注师。请为小说生成以下多维标签：
 {{
-  "channel": "频道：{valid_channels}",
-  "genre_primary": "主类型（从下面选）",
-  "genre_secondary": ["次类型（最多2个）"],
-  "elements": ["元素标签（3-8个）：{valid_elements}"],
-  "style": ["风格标签（1-3个）：{valid_styles}"],
-  "structure": "叙事结构（从下面选）：{valid_structures}",
-  "setting": "世界观设定类型（从下面选）：{valid_settings}",
-  "hooks": ["长板/亮点（1-3个，自由填写）"],
-  "tropes": ["套路识别（1-3个，自由填写）"],
-  "themes": ["主题（1-3个，自由填写）"]
+  "channel": "频道（必选 1 个）：{valid_channels}",
+  "genre_primary": "主题材（必选，从下列一级题材中选 1 个）：{valid_genres_primary}",
+  "genre_secondary": ["次题材（最多 2 个，从下列二级题材中选）：{valid_genres_secondary[:30]}…"],
+  "elements": ["元素标签（选 3-8 个，必须从以下分组中选取）:\n{element_prompt_str}"],
+  "style": ["风格标签（选 1-3 个，必须从以下分组中选取）:\n{style_prompt_str}"],
+  "structure": "叙事结构（从下列选 1 个）：{list(valid_structures)[:15]}",
+  "setting": "世界观力量体系（从下列选 1 个）：{list(valid_settings)[:15]}",
+  "hooks": ["长板/亮点（1-3 个，自由填写）"],
+  "tropes": ["套路识别（1-3 个，自由填写）"],
+  "themes": ["主题（1-3 个，自由填写）"]
 }}
 
 注意：
-1. channel/genre/style/structure/setting 必须从提供的标签字典中选取
-2. elements 必须从元素标签中选取 3-8 个
+1. channel/genre_primary/genre_secondary/style/structure/setting 必须从上面提供的字典中选取
+2. elements 必须从上面分组列表中选取 3-8 个，不得编造
 3. hooks/tropes/themes 可以自由填写
 4. 不要编造不在字典中的标签值"""
 
@@ -92,27 +122,47 @@ def generate_tags(material_id):
     result = call_llm(system_prompt, user_prompt, config)
     time.sleep(rate_limit)
 
-    # 校验标签合法性
+    # 校验标签合法性（先同义词展开再判断）
     tags = {}
     for key in ["channel", "genre_primary", "genre_secondary", "elements", "style", "structure", "setting", "hooks", "tropes", "themes"]:
         value = result.get(key, [] if key not in ["channel", "genre_primary", "structure", "setting"] else "")
-        if isinstance(value, str):
-            # 检查是否在合法标签中
-            valid_set = set()
+        if isinstance(value, str) and value:
+            valid_set: set = set()
             if key == "channel":
                 valid_set = set(valid_channels)
             elif key == "genre_primary":
-                valid_set = set(valid_genres)
-            elif key == "style":
-                valid_set = set(valid_styles)
+                valid_set = set(valid_genres_primary)
             elif key == "structure":
-                valid_set = set(valid_structures)
+                valid_set = valid_structures
             elif key == "setting":
-                valid_set = set(valid_settings)
+                valid_set = valid_settings
 
-            if value and value not in valid_set:
-                print(f"警告: 标签 '{key}' 的值 '{value}' 不在字典中，跳过")
-                continue
+            if valid_set:
+                canonical = synonym_expand(value, reverse_map)
+                if canonical not in valid_set:
+                    print(f"警告: 标签 '{key}' 的值 '{value}' 不在字典中，跳过")
+                    continue
+                value = canonical  # 统一为标准名称
+
+        elif isinstance(value, list):
+            valid_set = set()
+            if key == "elements":
+                valid_set = valid_elements
+            elif key == "style":
+                valid_set = valid_styles
+            elif key == "genre_secondary":
+                valid_set = set(valid_genres_secondary)
+
+            if valid_set:
+                filtered = []
+                for v in value:
+                    canonical = synonym_expand(str(v), reverse_map)
+                    if canonical in valid_set:
+                        filtered.append(canonical)
+                    else:
+                        print(f"警告: 标签 '{key}' 中的 '{v}' 不在字典中，已过滤")
+                value = filtered
+
         tags[key] = value
 
     # 写入 tags.yaml

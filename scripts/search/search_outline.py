@@ -14,6 +14,8 @@ import click
 from dotenv import load_dotenv
 load_dotenv()
 
+import json
+
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 def search_outlines(genre=None, element=None, structure_type=None, premise_query=None, limit=5):
@@ -35,6 +37,11 @@ def search_outlines(genre=None, element=None, structure_type=None, premise_query
         if genre:
             sql += " AND genre @> ARRAY[%s]"
             params.append(genre)
+
+        if element:
+            # tags JSONB 中的 elements 数组
+            sql += " AND tags->'elements' @> %s::jsonb"
+            params.append(json.dumps([element]))
 
         if structure_type:
             sql += " AND structure_type = %s"

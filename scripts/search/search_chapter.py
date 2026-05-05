@@ -17,7 +17,7 @@ load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-def search_chapters(query, genre=None, chapter_function=None, chapter_num=None, tension_min=None, tension_max=None, limit=10):
+def search_chapters(query, genre=None, chapter_function=None, chapter_num=None, tension_min=None, tension_max=None, element=None, style=None, limit=10):
     """检索章节。"""
     conn = psycopg2.connect(DATABASE_URL)
     conn.autocommit = True
@@ -30,7 +30,7 @@ def search_chapters(query, genre=None, chapter_function=None, chapter_num=None, 
             SELECT c.material_id, c.chapter, c.title, c.summary,
                    c.tension_level, c.pacing, c.chapter_functions,
                    c.characters_appear, c.key_plot_point,
-                   n.name as novel_name, n.genre
+                   n.name as novel_name, n.genre, n.tags
             FROM chapters c
             JOIN novels n ON c.material_id = n.material_id
             WHERE 1=1
@@ -56,6 +56,18 @@ def search_chapters(query, genre=None, chapter_function=None, chapter_num=None, 
         if tension_max is not None:
             sql += " AND c.tension_level <= %s"
             params.append(tension_max)
+
+        if element:
+            # 小说级 tags JSONB 中的 elements 数组
+            sql += " AND n.tags->'elements' @> %s::jsonb"
+            import json
+            params.append(json.dumps([element]))
+
+        if style:
+            # 小说级 tags JSONB 中的 style 数组
+            sql += " AND n.tags->'style' @> %s::jsonb"
+            import json
+            params.append(json.dumps([style]))
 
         sql += " LIMIT %s"
         params.append(limit)
@@ -88,9 +100,11 @@ def search_chapters(query, genre=None, chapter_function=None, chapter_num=None, 
 @click.option("--chapter", "chapter_num", default=None, type=int, help="精确章节号")
 @click.option("--tension-min", default=None, type=int, help="张力最小值（1-5）")
 @click.option("--tension-max", default=None, type=int, help="张力最大值（1-5）")
+@click.option("--element", default=None, help="元素标签过滤（如：重生、系统）")
+@click.option("--style", default=None, help="风格标签过滤（如：热血、治愈）")
 @click.option("--limit", default=10, help="返回结果数")
-def main(query, genre, chapter_function, chapter_num, tension_min, tension_max, limit):
-    search_chapters(query=query, genre=genre, chapter_function=chapter_function, chapter_num=chapter_num, tension_min=tension_min, tension_max=tension_max, limit=limit)
+def main(query, genre, chapter_function, chapter_num, tension_min, tension_max, element, style, limit):
+    search_chapters(query=query, genre=genre, chapter_function=chapter_function, chapter_num=chapter_num, tension_min=tension_min, tension_max=tension_max, element=element, style=style, limit=limit)
 
 
 if __name__ == "__main__":
