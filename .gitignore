@@ -33,7 +33,6 @@ logs/
 # 数据（不提交）
 data/novels/
 data/index.yaml
-data/pg_data/
-data/pgadmin_data/
+.docker/
 
 material/

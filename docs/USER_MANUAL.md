@@ -442,10 +442,7 @@ data/novels/nm_novel_20260503_xxxx/
 ├── source.txt           # 原文（格式清洗后）
 ├── chapter_index.yaml   # 章节索引
 ├── meta.yaml            # 小说元信息
-└── raw/                 # 原始章节文件
-    ├── chapter_001.txt
-    ├── chapter_002.txt
-    └── ...
+└── chapters/            # 章级分析结果（逐章写入，完成后合并为 chapters.yaml）
 ```
 
 ### 6.3 完整流水线（full）
@@ -509,7 +506,7 @@ data/novels/nm_novel_20260503_xxxx/
 ├── chapter_index.yaml      # 章节索引
 ├── meta.yaml               # 元信息
 ├── chapters.yaml           # 章级分析（核心）
-├── chapter_embeddings.yaml # 向量数据
+├── chapter_embeddings.npz  # 向量数据（numpy 压缩格式）
 ├── outline/                # 大纲分析
 │   ├── structure.yaml      # 结构骨架
 │   ├── plotlines.yaml      # 情节线

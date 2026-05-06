@@ -1,4 +1,4 @@
-.PHONY: help db-up db-down db-init db-shell db-reset ingest full analyze finalize search ingest-material import-material delete-material lint validate docker-prune
+.PHONY: help db-up db-down db-init db-shell db-reset ingest full analyze finalize search import-material delete-material validate docker-prune
 
 PYTHON := python
 

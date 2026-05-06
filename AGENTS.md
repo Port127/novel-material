@@ -48,7 +48,7 @@ python scripts/search/search_event.py "雨中告别的写法" --limit 10
 ```
 原文文件 → 格式清洗/章节切分 → 章级分析(LLM) → Embedding → 骨架分析(LLM) → 写入数据库
     ↓              ↓              ↓                 ↓              ↓               ↓
-source.txt   chapter_index.yaml chapters.yaml  chapter_embeddings.yaml  outline/…  PostgreSQL
+source.txt   chapter_index.yaml chapters.yaml  chapter_embeddings.npz  outline/…  PostgreSQL
 ```
 
 ## 标签体系
