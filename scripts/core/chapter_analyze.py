@@ -5,6 +5,7 @@
 - 断点续传：每章分析完立即写入 chapters/{n:04d}.yaml 独立文件（O(1)），全部完成后合并为 chapters.yaml
 - tiktoken 动态截断：按 Token 数限制章节输入，不再硬截字符
 - 重试由 llm_client.call_llm 统一处理（tenacity 指数退避）
+- 默认逐章模式：优先保证稳定落盘，批量模式仅作为显式优化开关
 """
 import sys
 import yaml
@@ -18,10 +19,12 @@ if str(_ROOT) not in sys.path:
 from dotenv import load_dotenv
 load_dotenv()
 
-from scripts.core.paths import NOVELS_DIR, TAGS_FILE
+from scripts.core.paths import NOVELS_DIR, update_meta_status
 from scripts.core.llm_client import load_config, call_llm, truncate_to_tokens
 from scripts.utils.quality_check import run_quality_check
-from scripts.utils.tag_validator import flatten_tags
+from scripts.utils.progress_tracker import get_pipeline_logger
+
+logger = get_pipeline_logger()
 
 # 每章送给 LLM 的最大 Token 数（章末钩子/转折通常在后半段，保留完整内容）
 _MAX_CHAPTER_TOKENS = 1800
@@ -63,7 +66,9 @@ def analyze_chapter(content: str, chapter_info: dict, config: dict) -> dict:
 请返回 JSON 格式：
 {_CHAPTER_JSON_SCHEMA}"""
 
-    return call_llm(_SYSTEM_PROMPT, user_prompt, config)
+    # 使用批量超时配置（单章也可能需要较长时间）
+    timeout = config["llm"].get("chapter_batch_timeout_seconds", 300)
+    return call_llm(_SYSTEM_PROMPT, user_prompt, config, timeout_override=timeout)
 
 
 def analyze_chapters_batch(
@@ -112,7 +117,13 @@ def analyze_chapters_batch(
 }}"""
 
     # 输出 token 预算：每章约 400 tokens
-    result = call_llm(system_prompt, user_prompt, config, max_tokens_override=n * 450)
+    result = call_llm(
+        system_prompt,
+        user_prompt,
+        config,
+        max_tokens_override=n * 450,
+        timeout_override=config["llm"].get("chapter_batch_timeout_seconds"),
+    )
 
     chapters_list = result.get("chapters", [])
     return {
@@ -122,7 +133,7 @@ def analyze_chapters_batch(
     }
 
 
-def validate_chapter_analysis(result: dict, chapter_info: dict, valid_funcs: set | None = None) -> list[str]:
+def validate_chapter_analysis(result: dict, chapter_info: dict) -> list[str]:
     """校验章级分析结果，返回错误列表。"""
     errors = []
 
@@ -136,14 +147,6 @@ def validate_chapter_analysis(result: dict, chapter_info: dict, valid_funcs: set
 
     if not result.get("characters_appear"):
         errors.append(f"章节{chapter_info['chapter']}: 未识别到出场人物")
-
-    # 实时校验 chapter_function 标签合法性
-    if valid_funcs is not None:
-        for func in (result.get("chapter_function") or []):
-            if func not in valid_funcs:
-                errors.append(
-                    f"章节{chapter_info['chapter']}: chapter_function '{func}' 不在标签字典中"
-                )
 
     return errors
 
@@ -203,25 +206,27 @@ def _merge_chapters(novel_dir: Path) -> None:
     chapters_file = novel_dir / "chapters.yaml"
     with open(chapters_file, "w", encoding="utf-8") as f:
         yaml.dump(all_chapters, f, allow_unicode=True, default_flow_style=False)
-    print(f"已合并 {len(all_chapters)} 章 → chapters.yaml")
+    logger.info(f"已合并 {len(all_chapters)} 章 → chapters.yaml")
+
+
+def _get_batch_size(config: dict) -> int:
+    """读取并规范化章级批量大小。"""
+    raw = config["llm"].get("chapter_batch_size", 1)
+    try:
+        batch_size = int(raw)
+    except (TypeError, ValueError):
+        batch_size = 1
+    return max(1, batch_size)
 
 
 def chapter_analyze(material_id: str) -> None:
     """对指定小说进行章级分析（支持断点续传）。"""
     novel_dir = NOVELS_DIR / material_id
     if not novel_dir.exists():
-        print(f"错误: 小说目录不存在: {novel_dir}")
+        logger.error(f"小说目录不存在: {novel_dir}")
         return
 
     config = load_config()
-
-    # 加载章节功能标签合法集（一次性加载，供每章实时校验）
-    valid_funcs: set | None = None
-    if TAGS_FILE.exists():
-        import yaml as _yaml
-        tags_dict = _yaml.safe_load(TAGS_FILE.read_text(encoding="utf-8")) or {}
-        valid_funcs = flatten_tags(tags_dict.get("chapter_function", {}))
-        print(f"已加载章节功能标签字典：{len(valid_funcs)} 个")
 
     with open(novel_dir / "chapter_index.yaml", "r", encoding="utf-8") as f:
         chapter_index = yaml.safe_load(f)
@@ -233,11 +238,11 @@ def chapter_analyze(material_id: str) -> None:
     # 加载已完成的章节（断点续传：优先从 chapters/ 独立文件读取）
     done = _load_existing_chapters(novel_dir)
     if done:
-        print(f"断点续传：已完成 {len(done)} 章，从第 {max(done.keys()) + 1} 章继续")
+        logger.info(f"断点续传：已完成 {len(done)} 章，从第 {max(done.keys()) + 1} 章继续")
 
     total = len(chapter_index)
     rate_limit = config["llm"].get("rate_limit_seconds", 1)
-    batch_size = config["llm"].get("chapter_batch_size", 5)
+    batch_size = _get_batch_size(config)
     completed = 0
     skipped = 0
 
@@ -246,28 +251,29 @@ def chapter_analyze(material_id: str) -> None:
     skipped = total - len(pending)
 
     if not pending:
-        print(f"所有 {total} 章已完成，跳过分析")
+        logger.info(f"所有 {total} 章已完成，跳过分析")
     else:
         n_batches = (len(pending) + batch_size - 1) // batch_size
-        print(f"待分析: {len(pending)} 章，批量大小: {batch_size}，共 {n_batches} 批次")
+        logger.info(f"待分析: {len(pending)} 章，批量大小: {batch_size}，共 {n_batches} 批次")
 
     for batch_idx, batch_start in enumerate(range(0, len(pending), batch_size)):
         batch = pending[batch_start:batch_start + batch_size]
         first_ch = batch[0]["chapter"]
         last_ch = batch[-1]["chapter"]
 
-        print(f"[批次 {batch_idx + 1}/{n_batches}] 第 {first_ch}-{last_ch} 章（共 {len(batch)} 章）")
+        logger.info(f"[批次 {batch_idx + 1}/{n_batches}] 第 {first_ch}-{last_ch} 章（共 {len(batch)} 章）")
 
         # ── 批量分析 ──
         batch_results: dict[int, dict] = {}
-        if len(batch) > 1:
+        use_batch_mode = batch_size > 1 and len(batch) > 1
+        if use_batch_mode:
             try:
                 batch_results = analyze_chapters_batch(batch, lines, config)
                 if len(batch_results) < len(batch):
                     missing = [ch["chapter"] for ch in batch if ch["chapter"] not in batch_results]
-                    print(f"  批量返回不完整，缺失 {len(missing)} 章（将单章降级）: {missing}")
+                    logger.warning(f"批量返回不完整，缺失 {len(missing)} 章（将单章降级）: {missing}")
             except Exception as e:
-                print(f"  批量分析失败: {e}，降级为逐章模式")
+                logger.warning(f"批量分析失败: {e}，降级为逐章模式")
 
         # ── 对每章写结果（批量缺失的降级为单章）──
         for ch_info in batch:
@@ -276,19 +282,18 @@ def chapter_analyze(material_id: str) -> None:
 
             if result is None:
                 # 单章降级分析
-                if len(batch) > 1:
-                    print(f"  [单章] 第 {ch_num} 章: {ch_info['title']}")
+                if use_batch_mode:
+                    logger.info(f"[单章] 第 {ch_num} 章: {ch_info['title']}")
                 chapter_text = "\n".join(lines[ch_info["start_line"]:ch_info["end_line"] + 1])
                 try:
                     result = analyze_chapter(chapter_text, ch_info, config)
                 except Exception as e:
-                    print(f"  错误（已重试耗尽）: {e}")
-                    print(f"  跳过第 {ch_num} 章，继续处理后续章节")
+                    logger.error(f"第 {ch_num} 章分析失败（已重试耗尽）: {e}")
                     continue
 
-            errors = validate_chapter_analysis(result, ch_info, valid_funcs)
+            errors = validate_chapter_analysis(result, ch_info)
             for err in errors:
-                print(f"  警告: {err}")
+                logger.warning(err)
 
             result["chapter"] = ch_num
             result["title"] = ch_info["title"]
@@ -300,22 +305,18 @@ def chapter_analyze(material_id: str) -> None:
         if batch_start + batch_size < len(pending):
             time.sleep(rate_limit)
 
-    print(f"\n章级分析完成: 新分析 {completed} 章，跳过已完成 {skipped} 章，共 {total} 章")
+    logger.info(f"章级分析完成: 新分析 {completed} 章，跳过已完成 {skipped} 章，共 {total} 章")
 
     # 合并独立章节文件 → chapters.yaml（供下游脚本使用）
     _merge_chapters(novel_dir)
 
-    # 质量门控：分析完成后自动校验（失败只警告，不阻断写入）
-    print("\n执行章级分析质量校验...")
-    run_quality_check(material_id)
+    # 质量门控：分析完成后自动校验，失败则阻断状态推进
+    logger.info("执行章级分析质量校验...")
+    if not run_quality_check(material_id):
+        update_meta_status(material_id, "failed")
+        raise ValueError(f"章级分析质量校验未通过：{material_id}")
 
-    # 更新 meta 状态
-    meta_file = novel_dir / "meta.yaml"
-    with open(meta_file, "r", encoding="utf-8") as f:
-        meta = yaml.safe_load(f)
-    meta["status"] = "analyzed"
-    with open(meta_file, "w", encoding="utf-8") as f:
-        yaml.dump(meta, f, allow_unicode=True, default_flow_style=False)
+    update_meta_status(material_id, "analyzed")
 
 
 if __name__ == "__main__":

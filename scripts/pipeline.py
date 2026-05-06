@@ -18,8 +18,10 @@ from scripts.analyze.generate_worldbuilding import generate_worldbuilding
 from scripts.analyze.generate_characters import generate_characters
 from scripts.analyze.generate_tags import generate_tags
 from scripts.utils.refine import refine
-from scripts.utils.progress_tracker import PipelineRunner, _fmt
+from scripts.utils.progress_tracker import PipelineRunner, _fmt, get_pipeline_logger
 from scripts.core.paths import NOVELS_DIR, update_meta_status
+
+logger = get_pipeline_logger()
 
 
 def _run_stage(tr, name, fn, is_llm=False):
@@ -38,7 +40,7 @@ def _run_stage(tr, name, fn, is_llm=False):
         if is_llm:
             tr.stop_spinner()
     elapsed = time.monotonic() - sub_t0
-    print(f"  {name} 完成 | 耗时: {_fmt(elapsed)}")
+    logger.info(f"{name} 完成 | 耗时: {_fmt(elapsed)}")
     return elapsed
 
 
@@ -51,7 +53,21 @@ def _print_api_summary():
     """打印全局 API 调用统计摘要。"""
     stats = get_api_stats()
     if stats["calls"] > 0:
-        print(f"  API 总调用: {stats['calls']} 次 | 错误: {stats['errors']} 次 | Tokens: {stats['tokens_total']:,}")
+        logger.info(f"API 总调用: {stats['calls']} 次 | 错误: {stats['errors']} 次 | Tokens: {stats['tokens_total']:,}")
+
+
+def _has_chapter_embeddings(material_id: str) -> bool:
+    """判断素材是否已有章节向量文件。"""
+    novel_dir = _get_novel_dir(material_id)
+    return any(
+        (novel_dir / filename).exists()
+        for filename in ("chapter_embeddings.npz", "chapter_embeddings.yaml")
+    )
+
+
+def _bind_runner_novel_dir(runner: PipelineRunner, material_id: str) -> None:
+    """在 material_id 确定后，为 runner 绑定小说目录。"""
+    runner._novel_dir = _get_novel_dir(material_id)
 
 
 def pipeline_ingest(file_path):
@@ -62,13 +78,14 @@ def pipeline_ingest(file_path):
         t0 = time.monotonic()
         material_id = ingest_file(file_path)
         if not material_id:
-            print("入库失败")
+            logger.error("入库失败")
             return None
+        _bind_runner_novel_dir(runner, material_id)
         elapsed = time.monotonic() - t0
-        print(f"入库完成 | 耗时: {_fmt(elapsed)} | material_id: {material_id}")
+        logger.info(f"入库完成 | 耗时: {_fmt(elapsed)} | material_id: {material_id}")
         runner.record_stage_complete("入库", elapsed)
     runner.print_final_summary()
-    runner.save_history(novel_dir=_get_novel_dir(material_id))
+    runner.save_history()
     return material_id
 
 
@@ -82,9 +99,9 @@ def pipeline_full(file_path):
     wall_start = time.monotonic()
     material_id = None
 
-    print(f"\n{'=' * 60}")
-    print("开始完整流水线")
-    print(f"{'=' * 60}")
+    logger.info("=" * 60)
+    logger.info("开始完整流水线")
+    logger.info("=" * 60)
 
     try:
         # 1. 入库
@@ -92,10 +109,11 @@ def pipeline_full(file_path):
             t0 = time.monotonic()
             material_id = ingest_file(file_path)
             if not material_id:
-                print("入库失败，终止流水线")
+                logger.error("入库失败，终止流水线")
                 return
+            _bind_runner_novel_dir(runner, material_id)
             elapsed = time.monotonic() - t0
-            print(f"  入库完成 | 耗时: {_fmt(elapsed)} | material_id: {material_id}")
+            logger.info(f"入库完成 | 耗时: {_fmt(elapsed)} | material_id: {material_id}")
             runner.record_stage_complete("入库", elapsed)
 
         # 2. 章级分析
@@ -133,6 +151,7 @@ def pipeline_full(file_path):
             runner.record_stage_complete("同步数据库", tr.elapsed_stage)
 
     except Exception:
+        logger.exception("流水线执行失败")
         _print_api_summary()
         runner.print_final_summary()
         if material_id:
@@ -140,19 +159,18 @@ def pipeline_full(file_path):
                 update_meta_status(material_id, "failed")
             except (FileNotFoundError, ValueError):
                 pass
-            runner.save_history(_get_novel_dir(material_id), status="failed")
+            runner.save_history(status="failed")
         raise
 
     _print_api_summary()
     runner.print_final_summary()
-    print(f"\n完整流水线完成! material_id: {material_id}")
-    print(f"总耗时: {_fmt(time.monotonic() - wall_start)}")
+    logger.info(f"完整流水线完成! material_id: {material_id} | 总耗时: {_fmt(time.monotonic() - wall_start)}")
     if material_id:
         try:
             update_meta_status(material_id, "indexed")
         except (FileNotFoundError, ValueError):
             pass
-    runner.save_history(_get_novel_dir(material_id))
+    runner.save_history()
 
 
 def pipeline_analyze(material_id):
@@ -161,9 +179,9 @@ def pipeline_analyze(material_id):
     runner = PipelineRunner("分析流水线", 6, novel_dir=_get_novel_dir(material_id))
     wall_start = time.monotonic()
 
-    print(f"\n{'=' * 60}")
-    print("开始分析流水线")
-    print(f"{'=' * 60}")
+    logger.info("=" * 60)
+    logger.info("开始分析流水线")
+    logger.info("=" * 60)
 
     try:
         with runner.stage(1, "章级分析") as tr:
@@ -207,9 +225,9 @@ def pipeline_analyze(material_id):
 
     _print_api_summary()
     runner.print_final_summary()
-    print(f"\n分析流水线完成! 总耗时: {_fmt(time.monotonic() - wall_start)}")
+    logger.info(f"分析流水线完成! 总耗时: {_fmt(time.monotonic() - wall_start)}")
     try:
-        update_meta_status(material_id, "indexed")
+        update_meta_status(material_id, "analyzed")
     except (FileNotFoundError, ValueError):
         pass
     runner.save_history()
@@ -221,9 +239,9 @@ def pipeline_finalize(material_id):
     runner = PipelineRunner("收尾流水线", 2, novel_dir=_get_novel_dir(material_id))
     wall_start = time.monotonic()
 
-    print(f"\n{'=' * 60}")
-    print("开始收尾流水线")
-    print(f"{'=' * 60}")
+    logger.info("=" * 60)
+    logger.info("开始收尾流水线")
+    logger.info("=" * 60)
 
     try:
         with runner.stage(1, "精调") as tr:
@@ -247,9 +265,12 @@ def pipeline_finalize(material_id):
 
     _print_api_summary()
     runner.print_final_summary()
-    print(f"\n收尾流水线完成! 总耗时: {_fmt(time.monotonic() - wall_start)}")
+    logger.info(f"收尾流水线完成! 总耗时: {_fmt(time.monotonic() - wall_start)}")
     try:
-        update_meta_status(material_id, "indexed")
+        update_meta_status(
+            material_id,
+            "indexed" if _has_chapter_embeddings(material_id) else "analyzed",
+        )
     except (FileNotFoundError, ValueError):
         pass
     runner.save_history()

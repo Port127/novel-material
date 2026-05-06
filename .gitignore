@@ -30,8 +30,10 @@ Thumbs.db
 *.log
 logs/
 
-# 数据（可选，看需要）
+# 数据（不提交）
 data/novels/
 data/index.yaml
+data/pg_data/
+data/pgadmin_data/
 
 material/

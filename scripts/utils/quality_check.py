@@ -25,7 +25,7 @@ from scripts.utils.schema_validator import validate_material
 # ──────────────────────────────────────────────────────────────────────────────
 
 def check_summary_quality(material_id: str) -> tuple[list[str], list[str]]:
-    """检查摘要质量（过长警告），返回 (errors, warnings)。"""
+    """检查摘要质量，返回 (errors, warnings)。"""
     chapters_file = NOVELS_DIR / material_id / "chapters.yaml"
     if not chapters_file.exists():
         return [], []
@@ -41,6 +41,8 @@ def check_summary_quality(material_id: str) -> tuple[list[str], list[str]]:
             continue
         ch_num = ch.get("chapter", "?")
         summary = ch.get("summary", "")
+        if len(summary) < 50:
+            errors.append(f"第{ch_num}章: 摘要过短（{len(summary)}字，要求 ≥50）")
         if len(summary) > 200:
             warnings.append(f"第{ch_num}章: 摘要过长（{len(summary)}字，建议 ≤200）")
         funcs = ch.get("chapter_function", ch.get("chapter_functions", []))

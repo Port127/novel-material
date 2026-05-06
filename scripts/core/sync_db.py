@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from scripts.core.paths import NOVELS_DIR
-from scripts.utils.schema_validator import validate_meta, validate_chapters
+from scripts.utils.schema_validator import validate_material
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
@@ -30,18 +30,12 @@ def get_db_connection():
 
 def _precheck_schema(material_id: str) -> bool:
     """同步前执行 schema 预检，发现错误则打印并返回 False。"""
-    meta_errs = validate_meta(material_id)
-    chapter_errs = validate_chapters(material_id)
-    all_errs = meta_errs + chapter_errs
+    if validate_material(material_id, verbose=True):
+        print(f"[sync_db] Schema 预检通过：{material_id}")
+        return True
 
-    if all_errs:
-        print(f"[sync_db] Schema 预检失败，共 {len(all_errs)} 个错误，终止同步：")
-        for e in all_errs:
-            print(f"  {e}")
-        return False
-
-    print(f"[sync_db] Schema 预检通过：{material_id}")
-    return True
+    print(f"[sync_db] Schema 预检失败，终止同步：{material_id}")
+    return False
 
 
 def sync_novel(material_id):
@@ -415,21 +409,50 @@ def _sync_worldbuilding(conn, novel_dir, material_id):
     if not wb_index.exists():
         return
 
+    def _load_worldbuilding_entities(entity_type: str) -> list[dict]:
+        """兼容新旧 worldbuilding 产物格式。"""
+        files_by_type = {
+            "factions": ["factions.yaml"],
+            "regions": ["regions.yaml", "geography.yaml"],
+            "power_systems": ["power_systems.yaml", "power_system.yaml"],
+        }
+
+        loaded = None
+        for filename in files_by_type.get(entity_type, []):
+            path = novel_dir / "worldbuilding" / filename
+            if path.exists():
+                with open(path, "r", encoding="utf-8") as ef:
+                    loaded = yaml.safe_load(ef) or []
+                break
+
+        if loaded is None:
+            return []
+
+        if entity_type == "regions" and isinstance(loaded, dict):
+            loaded = loaded.get("regions", [])
+        elif entity_type == "power_systems" and isinstance(loaded, dict):
+            loaded = [{
+                "name": loaded.get("name", ""),
+                "description": loaded.get("description", ""),
+                "importance": "primary",
+                "properties": {
+                    "levels": loaded.get("levels", []),
+                    "rules": loaded.get("rules", []),
+                },
+            }]
+        elif isinstance(loaded, dict):
+            loaded = [loaded]
+
+        return [entity for entity in loaded if isinstance(entity, dict)]
+
     synced = 0
     with conn.cursor() as cur:
         for entity_type in ["factions", "regions", "power_systems"]:
-            entity_file = novel_dir / "worldbuilding" / f"{entity_type}.yaml"
-            if not entity_file.exists():
+            entities = _load_worldbuilding_entities(entity_type)
+            if not entities:
                 continue
 
-            with open(entity_file, "r", encoding="utf-8") as ef:
-                entities = yaml.safe_load(ef) or []
-            if isinstance(entities, dict):
-                entities = [entities]
-
             for entity in entities:
-                if not isinstance(entity, dict):
-                    continue
                 properties_value = json.dumps(
                     entity.get("properties", {}), ensure_ascii=False
                 )

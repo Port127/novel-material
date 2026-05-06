@@ -2,9 +2,9 @@
 """章纲检索：按章节功能、关键词、张力等条件检索章节。"""
 import os
 import sys
-import yaml
 import json
 import psycopg2
+import psycopg2.extras
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parent.parent.parent
@@ -15,11 +15,13 @@ import click
 from dotenv import load_dotenv
 load_dotenv()
 
+from scripts.search._common import build_like_terms, require_database_url
+
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 def search_chapters(query, genre=None, chapter_function=None, chapter_num=None, tension_min=None, tension_max=None, element=None, style=None, limit=10):
     """检索章节。"""
-    conn = psycopg2.connect(DATABASE_URL)
+    conn = psycopg2.connect(require_database_url(DATABASE_URL))
     conn.autocommit = True
 
     results = []
@@ -36,6 +38,22 @@ def search_chapters(query, genre=None, chapter_function=None, chapter_num=None, 
             WHERE 1=1
         """
         params = []
+
+        terms = build_like_terms(query)
+        if terms:
+            clauses = []
+            for term in terms:
+                fuzzy = f"%{term}%"
+                clauses.append(
+                    """(
+                        c.title ILIKE %s
+                        OR c.summary ILIKE %s
+                        OR COALESCE(c.key_plot_point, '') ILIKE %s
+                        OR array_to_string(c.chapter_functions, ' ') ILIKE %s
+                    )"""
+                )
+                params.extend([fuzzy, fuzzy, fuzzy, fuzzy])
+            sql += " AND (" + " OR ".join(clauses) + ")"
 
         if genre:
             sql += " AND n.genre @> ARRAY[%s]"
@@ -69,7 +87,7 @@ def search_chapters(query, genre=None, chapter_function=None, chapter_num=None, 
             import json
             params.append(json.dumps([style]))
 
-        sql += " LIMIT %s"
+        sql += " ORDER BY c.tension_level DESC NULLS LAST, c.chapter ASC LIMIT %s"
         params.append(limit)
 
         cur.execute(sql, params)

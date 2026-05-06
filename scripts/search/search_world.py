@@ -2,8 +2,8 @@
 """世界观检索：按类型、势力、地理、力量体系等条件检索。"""
 import os
 import sys
-import yaml
 import psycopg2
+import psycopg2.extras
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parent.parent.parent
@@ -14,11 +14,29 @@ import click
 from dotenv import load_dotenv
 load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL")
+from scripts.search._common import build_like_terms, require_database_url
 
-def search_worldbuilding(entity_type=None, genre=None, importance=None, name_query=None, limit=10):
+DATABASE_URL = os.getenv("DATABASE_URL")
+_ENTITY_TYPE_ALIASES = {
+    "faction": "factions",
+    "factions": "factions",
+    "region": "regions",
+    "regions": "regions",
+    "power_system": "power_systems",
+    "power-system": "power_systems",
+    "power_systems": "power_systems",
+}
+
+
+def _normalize_entity_type(entity_type):
+    if not entity_type:
+        return entity_type
+    return _ENTITY_TYPE_ALIASES.get(entity_type, entity_type)
+
+def search_worldbuilding(query=None, entity_type=None, genre=None, importance=None, name_query=None, limit=10):
     """检索世界观设定。"""
-    conn = psycopg2.connect(DATABASE_URL)
+    entity_type = _normalize_entity_type(entity_type)
+    conn = psycopg2.connect(require_database_url(DATABASE_URL))
     conn.autocommit = True
 
     results = []
@@ -46,11 +64,22 @@ def search_worldbuilding(entity_type=None, genre=None, importance=None, name_que
             sql += " AND w.importance = %s"
             params.append(importance)
 
-        if name_query:
-            sql += " AND w.name ILIKE %s"
-            params.append(f"%{name_query}%")
+        terms = build_like_terms(name_query or query)
+        if terms:
+            clauses = []
+            for term in terms:
+                fuzzy = f"%{term}%"
+                clauses.append(
+                    """(
+                        w.name ILIKE %s
+                        OR COALESCE(w.description, '') ILIKE %s
+                        OR COALESCE(w.properties::text, '') ILIKE %s
+                    )"""
+                )
+                params.extend([fuzzy, fuzzy, fuzzy])
+            sql += " AND (" + " OR ".join(clauses) + ")"
 
-        sql += " LIMIT %s"
+        sql += " ORDER BY w.importance ASC NULLS LAST, w.name ASC LIMIT %s"
         params.append(limit)
 
         cur.execute(sql, params)
@@ -71,13 +100,14 @@ def search_worldbuilding(entity_type=None, genre=None, importance=None, name_que
         print()
 
 @click.command()
+@click.argument("query", required=False)
 @click.option("--type", "entity_type", default=None, help="实体类型（factions/regions/power_systems）")
 @click.option("--genre", default=None, help="按题材过滤")
 @click.option("--importance", default=None, help="重要性（primary/secondary/minor）")
 @click.option("--name", "name_query", default=None, help="名称关键词")
 @click.option("--limit", default=10, help="返回结果数")
-def main(entity_type, genre, importance, name_query, limit):
-    search_worldbuilding(entity_type=entity_type, genre=genre, importance=importance, name_query=name_query, limit=limit)
+def main(query, entity_type, genre, importance, name_query, limit):
+    search_worldbuilding(query=query, entity_type=entity_type, genre=genre, importance=importance, name_query=name_query, limit=limit)
 
 
 if __name__ == "__main__":

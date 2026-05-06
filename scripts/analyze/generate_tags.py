@@ -15,6 +15,9 @@ load_dotenv()
 from scripts.core.paths import NOVELS_DIR, TAGS_FILE
 from scripts.core.llm_client import load_config, call_llm
 from scripts.utils.tag_validator import flatten_tags, build_synonym_reverse, synonym_expand
+from scripts.utils.progress_tracker import get_pipeline_logger
+
+logger = get_pipeline_logger()
 
 def load_tags_dict():
     if TAGS_FILE.exists():
@@ -26,7 +29,7 @@ def generate_tags(material_id):
     """为整部小说生成多维标签。"""
     novel_dir = NOVELS_DIR / material_id
     if not novel_dir.exists():
-        print(f"错误: 小说目录不存在: {novel_dir}")
+        logger.error(f"小说目录不存在: {novel_dir}")
         return
 
     config = load_config()
@@ -123,7 +126,7 @@ def generate_tags(material_id):
     time.sleep(rate_limit)
 
     # 校验标签合法性（先同义词展开再判断）
-    tags = {}
+    tags = {"material_id": material_id}
     for key in ["channel", "genre_primary", "genre_secondary", "elements", "style", "structure", "setting", "hooks", "tropes", "themes"]:
         value = result.get(key, [] if key not in ["channel", "genre_primary", "structure", "setting"] else "")
         if isinstance(value, str) and value:
@@ -140,7 +143,7 @@ def generate_tags(material_id):
             if valid_set:
                 canonical = synonym_expand(value, reverse_map)
                 if canonical not in valid_set:
-                    print(f"警告: 标签 '{key}' 的值 '{value}' 不在字典中，跳过")
+                    logger.warning(f"标签 '{key}' 的值 '{value}' 不在字典中，跳过")
                     continue
                 value = canonical  # 统一为标准名称
 
@@ -160,7 +163,7 @@ def generate_tags(material_id):
                     if canonical in valid_set:
                         filtered.append(canonical)
                     else:
-                        print(f"警告: 标签 '{key}' 中的 '{v}' 不在字典中，已过滤")
+                        logger.warning(f"标签 '{key}' 中的 '{v}' 不在字典中，已过滤")
                 value = filtered
 
         tags[key] = value
@@ -181,11 +184,11 @@ def generate_tags(material_id):
     with open(novel_dir / "meta.yaml", "w", encoding="utf-8") as f:
         yaml.dump(meta, f, allow_unicode=True, default_flow_style=False)
 
-    print(f"标签生成完成:")
-    print(f"  频道: {tags.get('channel')}")
-    print(f"  类型: {tags.get('genre_primary')}")
-    print(f"  元素: {len(tags.get('elements', []))} 个")
-    print(f"  风格: {tags.get('style')}")
+    logger.info(f"标签生成完成:\n"
+                f"  频道: {tags.get('channel')}\n"
+                f"  类型: {tags.get('genre_primary')}\n"
+                f"  元素: {len(tags.get('elements', []))} 个\n"
+                f"  风格: {tags.get('style')}")
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:

@@ -22,6 +22,9 @@ load_dotenv()
 from scripts.core.paths import NOVELS_DIR
 from scripts.core.llm_client import load_config, call_llm
 from scripts.core.chapters_loader import load_chapters_data, build_summary_pool
+from scripts.utils.progress_tracker import get_pipeline_logger
+
+logger = get_pipeline_logger()
 
 _MAX_SUMMARY_TOKENS = 5000
 
@@ -37,7 +40,7 @@ def _build_context(novel_dir: Path, model: str) -> tuple[str, str]:
         pool = build_summary_pool(chapters_data, _MAX_SUMMARY_TOKENS, model)
         return pool, f"章级摘要池（共 {len(chapters_data)} 章）"
 
-    print("警告: 章节数据不存在或为空，回退到原文前 8000 字（质量受限）")
+    logger.warning("章节数据不存在或为空，回退到原文前 8000 字（质量受限）")
     with open(novel_dir / "source.txt", "r", encoding="utf-8") as f:
         return f.read()[:8000], "原文摘录（前 8000 字）"
 
@@ -87,7 +90,7 @@ def _extract_core_characters(context_text: str, context_label: str, meta: dict, 
 
 请返回 JSON 格式如上，只提取有完整弧线的重要角色。"""
 
-    print("第一轮：提取核心人物...")
+    logger.info("第一轮：提取核心人物...")
     result = call_llm(system_prompt, user_prompt, config, max_tokens_override=8000)
     return result.get("characters", [])
 
@@ -134,7 +137,7 @@ def _extract_minor_characters(
 
 请返回 JSON 格式如上，补充其他有剧情作用的次要角色。"""
 
-    print("第二轮：补充次要人物...")
+    logger.info("第二轮：补充次要人物...")
     result = call_llm(system_prompt, user_prompt, config, max_tokens_override=8000)
     return result.get("characters", [])
 
@@ -143,7 +146,7 @@ def generate_characters(material_id):
     """分层提取人物体系。"""
     novel_dir = NOVELS_DIR / material_id
     if not novel_dir.exists():
-        print(f"错误: 小说目录不存在: {novel_dir}")
+        logger.error(f"小说目录不存在: {novel_dir}")
         return
 
     config = load_config()
@@ -159,7 +162,7 @@ def generate_characters(material_id):
 
     # 构建分析上下文
     context_text, context_label = _build_context(novel_dir, model)
-    print(f"使用 {context_label} 作为分析基础")
+    logger.info(f"使用 {context_label} 作为分析基础")
 
     rate_limit = config["llm"].get("rate_limit_seconds", 1)
 
@@ -168,12 +171,12 @@ def generate_characters(material_id):
     time.sleep(rate_limit)
 
     core_names = [ch.get("name") for ch in core_characters if ch.get("name")]
-    print(f"  提取核心人物: {len(core_characters)} 人")
+    logger.info(f"  提取核心人物: {len(core_characters)} 人")
 
     # 第二轮：次要人物
     minor_characters = _extract_minor_characters(context_text, context_label, meta, core_names, config)
     time.sleep(rate_limit)
-    print(f"  补充次要人物: {len(minor_characters)} 人")
+    logger.info(f"  补充次要人物: {len(minor_characters)} 人")
 
     # 合并
     all_characters = core_characters + minor_characters
@@ -240,13 +243,13 @@ def generate_characters(material_id):
     with open(char_dir / "relationships.yaml", "w", encoding="utf-8") as f:
         yaml.dump({"relationships": all_relationships}, f, allow_unicode=True, default_flow_style=False)
 
-    print(f"\n人物提取完成:")
-    print(f"  总人物: {char_index['character_count']}")
-    print(f"  主角: {char_index['protagonist_count']}")
-    print(f"  反派: {char_index['antagonist_count']}")
-    print(f"  配角: {char_index['supporting_count']}")
-    print(f"  次要: {char_index['minor_count']}")
-    print(f"  关系: {len(all_relationships)} 条")
+    logger.info(f"人物提取完成:\n"
+                f"  总人物: {char_index['character_count']}\n"
+                f"  主角: {char_index['protagonist_count']}\n"
+                f"  反派: {char_index['antagonist_count']}\n"
+                f"  配角: {char_index['supporting_count']}\n"
+                f"  次要: {char_index['minor_count']}\n"
+                f"  关系: {len(all_relationships)} 条")
 
 
 if __name__ == "__main__":

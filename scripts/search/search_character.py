@@ -2,8 +2,8 @@
 """人物检索：按原型、角色、类型等条件检索人物。"""
 import os
 import sys
-import yaml
 import psycopg2
+import psycopg2.extras
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parent.parent.parent
@@ -14,11 +14,13 @@ import click
 from dotenv import load_dotenv
 load_dotenv()
 
+from scripts.search._common import build_like_terms, require_database_url
+
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-def search_characters(archetype=None, role=None, genre=None, name_query=None, limit=10):
+def search_characters(query=None, archetype=None, role=None, genre=None, name_query=None, limit=10):
     """检索人物。"""
-    conn = psycopg2.connect(DATABASE_URL)
+    conn = psycopg2.connect(require_database_url(DATABASE_URL))
     conn.autocommit = True
 
     results = []
@@ -47,9 +49,21 @@ def search_characters(archetype=None, role=None, genre=None, name_query=None, li
             sql += " AND n.genre @> ARRAY[%s]"
             params.append(genre)
 
-        if name_query:
-            sql += " AND c.name ILIKE %s"
-            params.append(f"%{name_query}%")
+        terms = build_like_terms(name_query or query)
+        if terms:
+            clauses = []
+            for term in terms:
+                fuzzy = f"%{term}%"
+                clauses.append(
+                    """(
+                        c.name ILIKE %s
+                        OR COALESCE(c.archetype, '') ILIKE %s
+                        OR COALESCE(c.arc_summary, '') ILIKE %s
+                        OR COALESCE(c.narrative_function, '') ILIKE %s
+                    )"""
+                )
+                params.extend([fuzzy, fuzzy, fuzzy, fuzzy])
+            sql += " AND (" + " OR ".join(clauses) + ")"
 
         sql += " ORDER BY c.appearance_count DESC LIMIT %s"
         params.append(limit)
@@ -75,13 +89,14 @@ def search_characters(archetype=None, role=None, genre=None, name_query=None, li
         print()
 
 @click.command()
+@click.argument("query", required=False)
 @click.option("--archetype", default=None, help="人物原型（如：英雄、导师）")
 @click.option("--role", default=None, help="角色类型（protagonist/antagonist/supporting）")
 @click.option("--genre", default=None, help="按题材过滤")
 @click.option("--name", "name_query", default=None, help="人物名字关键词")
 @click.option("--limit", default=10, help="返回结果数")
-def main(archetype, role, genre, name_query, limit):
-    search_characters(archetype=archetype, role=role, genre=genre, name_query=name_query, limit=limit)
+def main(query, archetype, role, genre, name_query, limit):
+    search_characters(query=query, archetype=archetype, role=role, genre=genre, name_query=name_query, limit=limit)
 
 
 if __name__ == "__main__":

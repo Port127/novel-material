@@ -13,7 +13,7 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - pg_data:/var/lib/postgresql/data
+      - ./data/pg_data:/var/lib/postgresql/data
     networks:
       - novel-net
     healthcheck:
@@ -33,18 +33,14 @@ services:
     ports:
       - "5050:80"
     volumes:
-      - pgadmin_data:/var/lib/pgadmin
+      - ./data/pgadmin_data:/var/lib/pgadmin
     networks:
       - novel-net
     depends_on:
       postgres:
         condition: service_healthy
 
-volumes:
-  pg_data:
-    driver: local
-  pgadmin_data:
-    driver: local
+volumes: {}
 
 networks:
   novel-net:

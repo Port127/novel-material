@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS novels (
     chapter_count INTEGER,
     status TEXT DEFAULT 'raw',           -- raw / clean / analyzed / indexed
     premise TEXT,                        -- 一句话核心前提
-    premise_embedding vector(1024),      -- pgvector 向量
+    premise_embedding vector(4096),      -- pgvector 向量
     structure_type TEXT,                 -- 三幕式/英雄之旅/...
     act_count INTEGER,
     sequence_count INTEGER,
@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS chapters (
     chapter INTEGER NOT NULL,
     title TEXT,
     summary TEXT,                        -- 50-100字内容摘要
-    summary_embedding vector(1024),      -- pgvector 向量
+    summary_embedding vector(4096),      -- pgvector 向量
     word_count INTEGER,
     tension_level INTEGER,               -- 1-5
     pacing TEXT,                         -- 快/慢/喘息/加速
@@ -77,7 +77,7 @@ CREATE TABLE IF NOT EXISTS outline_beats (
     title TEXT,
     chapter INTEGER,
     description TEXT,
-    description_embedding vector(1024),
+    description_embedding vector(4096),
     tension INTEGER,
     FOREIGN KEY (material_id) REFERENCES novels(material_id) ON DELETE CASCADE
 );
@@ -93,7 +93,7 @@ CREATE TABLE IF NOT EXISTS characters (
     archetype TEXT,
     moral_spectrum TEXT,
     arc_summary TEXT,
-    arc_summary_embedding vector(1024),
+    arc_summary_embedding vector(4096),
     narrative_function TEXT,
     psychology JSONB,                    -- fatal_flaw/obsession/soft_spot/...
     first_appearance TEXT,
@@ -127,7 +127,7 @@ CREATE TABLE IF NOT EXISTS worldbuilding_entities (
     entity_type TEXT,                    -- faction/region/item/system/...
     name TEXT NOT NULL,
     description TEXT,
-    description_embedding vector(1024),
+    description_embedding vector(4096),
     properties JSONB,                    -- 类型相关的属性
     first_appearance TEXT,
     importance TEXT,                     -- primary/secondary/minor
@@ -161,8 +161,10 @@ CREATE INDEX idx_wb_material ON worldbuilding_entities(material_id);
 CREATE INDEX idx_wb_type ON worldbuilding_entities(entity_type);
 
 -- 向量搜索索引
-CREATE INDEX idx_chapters_summary_vec ON chapters USING ivfflat (summary_embedding vector_cosine_ops) WITH (lists = 100);
-CREATE INDEX idx_novels_premise_vec ON novels USING ivfflat (premise_embedding vector_cosine_ops) WITH (lists = 100);
-CREATE INDEX idx_beats_desc_vec ON outline_beats USING ivfflat (description_embedding vector_cosine_ops) WITH (lists = 100);
-CREATE INDEX idx_characters_arc_vec ON characters USING ivfflat (arc_summary_embedding vector_cosine_ops) WITH (lists = 100);
-CREATE INDEX idx_wb_desc_vec ON worldbuilding_entities USING ivfflat (description_embedding vector_cosine_ops) WITH (lists = 100);
+-- 注意: pgvector (IVFFLAT/HNSW) 不支持超过 2000 维的向量索引
+-- 当前使用 vector(4096)，向量列为普通列，搜索时走全表扫描
+-- CREATE INDEX idx_chapters_summary_vec ON chapters USING ivfflat (summary_embedding vector_cosine_ops) WITH (lists = 100);
+-- CREATE INDEX idx_novels_premise_vec ON novels USING ivfflat (premise_embedding vector_cosine_ops) WITH (lists = 100);
+-- CREATE INDEX idx_beats_desc_vec ON outline_beats USING ivfflat (description_embedding vector_cosine_ops) WITH (lists = 100);
+-- CREATE INDEX idx_characters_arc_vec ON characters USING ivfflat (arc_summary_embedding vector_cosine_ops) WITH (lists = 100);
+-- CREATE INDEX idx_wb_desc_vec ON worldbuilding_entities USING ivfflat (description_embedding vector_cosine_ops) WITH (lists = 100);

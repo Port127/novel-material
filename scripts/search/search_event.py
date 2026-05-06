@@ -2,8 +2,8 @@
 """事件检索：按语义描述检索章节（"雨中告别"、"主角初次突破"等）。"""
 import os
 import sys
-import yaml
 import psycopg2
+import psycopg2.extras
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parent.parent.parent
@@ -14,11 +14,13 @@ import click
 from dotenv import load_dotenv
 load_dotenv()
 
+from scripts.search._common import build_like_terms, require_database_url
+
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 def search_events(query, setting=None, emotion=None, limit=10):
     """通过章节摘要语义检索事件。"""
-    conn = psycopg2.connect(DATABASE_URL)
+    conn = psycopg2.connect(require_database_url(DATABASE_URL))
     conn.autocommit = True
 
     results = []
@@ -37,15 +39,21 @@ def search_events(query, setting=None, emotion=None, limit=10):
         """
         params = []
 
-        if query:
-            # 使用 ILIKE 进行模糊匹配（生产环境应使用向量搜索）
-            keywords = query.replace("的", "").replace("了", "").split()
-            conditions = []
-            for kw in keywords:
-                conditions.append("c.summary ILIKE %s")
-                params.append(f"%{kw}%")
-            if conditions:
-                sql += " AND (" + " OR ".join(conditions) + ")"
+        terms = build_like_terms(query)
+        if terms:
+            clauses = []
+            for term in terms:
+                fuzzy = f"%{term}%"
+                clauses.append(
+                    """(
+                        c.title ILIKE %s
+                        OR c.summary ILIKE %s
+                        OR array_to_string(c.chapter_functions, ' ') ILIKE %s
+                        OR array_to_string(c.characters_appear, ' ') ILIKE %s
+                    )"""
+                )
+                params.extend([fuzzy, fuzzy, fuzzy, fuzzy])
+            sql += " AND (" + " OR ".join(clauses) + ")"
 
         if setting:
             sql += " AND c.setting @> ARRAY[%s]"
@@ -55,7 +63,7 @@ def search_events(query, setting=None, emotion=None, limit=10):
             sql += " AND c.summary ILIKE %s"
             params.append(f"%{emotion}%")
 
-        sql += " ORDER BY c.tension_level DESC LIMIT %s"
+        sql += " ORDER BY c.tension_level DESC NULLS LAST, c.chapter ASC LIMIT %s"
         params.append(limit)
 
         cur.execute(sql, params)

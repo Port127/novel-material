@@ -18,6 +18,9 @@ load_dotenv()
 from scripts.core.paths import NOVELS_DIR
 from scripts.core.llm_client import load_config, call_llm
 from scripts.core.chapters_loader import load_chapters_data, build_summary_pool
+from scripts.utils.progress_tracker import get_pipeline_logger
+
+logger = get_pipeline_logger()
 
 _MAX_SUMMARY_TOKENS = 5000
 
@@ -33,7 +36,7 @@ def _build_context(novel_dir: Path, model: str) -> tuple[str, str]:
         pool = build_summary_pool(chapters_data, _MAX_SUMMARY_TOKENS, model)
         return pool, f"章级摘要池（共 {len(chapters_data)} 章）"
 
-    print("警告: 章节数据不存在或为空，回退到原文前 10000 字（质量受限）")
+    logger.warning("章节数据不存在或为空，回退到原文前 10000 字（质量受限）")
     with open(novel_dir / "source.txt", "r", encoding="utf-8") as f:
         return f.read()[:10000], "原文摘录（前 10000 字）"
 
@@ -42,7 +45,7 @@ def generate_worldbuilding(material_id):
     """提取世界观设定。"""
     novel_dir = NOVELS_DIR / material_id
     if not novel_dir.exists():
-        print(f"错误: 小说目录不存在: {novel_dir}")
+        logger.error(f"小说目录不存在: {novel_dir}")
         return
 
     config = load_config()
@@ -57,7 +60,7 @@ def generate_worldbuilding(material_id):
 
     # 构建分析上下文（章级摘要池 > 原文片段）
     context_text, context_label = _build_context(novel_dir, model)
-    print(f"使用 {context_label} 作为分析基础")
+    logger.info(f"使用 {context_label} 作为分析基础")
 
     system_prompt = """你是专业的小说世界观分析师。请根据提供的内容提取以下世界观设定，返回 JSON 格式：
 {
@@ -139,11 +142,11 @@ def generate_worldbuilding(material_id):
         with open(wb_dir / "lore.yaml", "w", encoding="utf-8") as f:
             yaml.dump(result["lore"], f, allow_unicode=True, default_flow_style=False)
 
-    print(f"世界观提取完成:")
-    print(f"  力量体系: {wb_index['power_system_levels']} 个等级")
-    print(f"  地理区域: {wb_index['region_count']} 个")
-    print(f"  势力: {wb_index['faction_count']} 个")
-    print(f"  历史事件: {wb_index['lore_items']} 个")
+    logger.info(f"世界观提取完成:\n"
+                f"  力量体系: {wb_index['power_system_levels']} 个等级\n"
+                f"  地理区域: {wb_index['region_count']} 个\n"
+                f"  势力: {wb_index['faction_count']} 个\n"
+                f"  历史事件: {wb_index['lore_items']} 个")
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:

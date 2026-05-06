@@ -1,4 +1,5 @@
 """项目路径常量：基于 __file__ 自动定位，与工作目录无关。"""
+from datetime import datetime
 from pathlib import Path
 import yaml
 
@@ -38,8 +39,8 @@ def update_meta_status(material_id: str, status: str) -> None:
     with open(meta_path, "r", encoding="utf-8") as f:
         meta = yaml.safe_load(f) or {}
 
-    old = meta.get("status", "unknown")
     meta["status"] = status
+    meta["updated_at"] = datetime.now().isoformat()
 
     with open(meta_path, "w", encoding="utf-8") as f:
         yaml.dump(meta, f, allow_unicode=True, default_flow_style=False)

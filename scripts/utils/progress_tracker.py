@@ -10,7 +10,6 @@
 - 批量子进度跟踪（章节批次进度等）
 """
 import sys
-import os
 import yaml
 import time
 import threading
@@ -22,22 +21,43 @@ _ROOT = Path(__file__).resolve().parent.parent.parent
 _LOG_DIR = _ROOT / "logs"
 _LOG_DIR.mkdir(exist_ok=True)
 
+# 当前运行的日志文件路径（全局单例）
+_CURRENT_LOG_FILE: Path | None = None
+
+
+def get_pipeline_logger() -> logging.Logger:
+    """获取 pipeline logger，供其他模块（如 llm_client）复用同一日志文件。"""
+    return _setup_logger()
+
 
 def _setup_logger() -> logging.Logger:
-    """配置日志记录器，同时输出到控制台和日志文件。"""
+    """配置日志记录器，同时输出到控制台和日志文件。
+
+    单例模式：一次运行只创建一个日志文件，后续调用返回同一个 logger。
+    """
+    global _CURRENT_LOG_FILE
     logger = logging.getLogger("pipeline")
     if logger.handlers:
         return logger
-    logger.setLevel(logging.INFO)
+    logger.setLevel(logging.DEBUG)  # 改为 DEBUG，捕获所有级别的日志
 
-    # 文件处理器：带时间戳
-    timestamp = time.strftime("%Y%m%d_%H%M%S")
-    log_file = _LOG_DIR / f"pipeline_{timestamp}.log"
-    file_handler = logging.FileHandler(log_file, encoding="utf-8")
+    # 文件处理器：一次运行只创建一个文件
+    if _CURRENT_LOG_FILE is None:
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        _CURRENT_LOG_FILE = _LOG_DIR / f"pipeline_{timestamp}.log"
+
+    file_handler = logging.FileHandler(_CURRENT_LOG_FILE, encoding="utf-8")
     file_handler.setFormatter(
-        logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%H:%M:%S")
+        logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s", datefmt="%H:%M:%S")
     )
+    file_handler.setLevel(logging.DEBUG)
     logger.addHandler(file_handler)
+
+    # 控制台处理器：只显示 INFO 及以上，简洁格式（不加级别前缀）
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setFormatter(logging.Formatter("%(message)s"))
+    console_handler.setLevel(logging.INFO)
+    logger.addHandler(console_handler)
 
     return logger
 

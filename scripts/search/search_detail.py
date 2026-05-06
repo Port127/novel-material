@@ -2,8 +2,8 @@
 """细纲检索：按幕/序列/节拍检索大纲结构。"""
 import os
 import sys
-import yaml
 import psycopg2
+import psycopg2.extras
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parent.parent.parent
@@ -14,11 +14,13 @@ import click
 from dotenv import load_dotenv
 load_dotenv()
 
+from scripts.search._common import build_like_terms, require_database_url
+
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-def search_detail(genre=None, act=None, description_query=None, limit=10):
+def search_detail(query=None, genre=None, act=None, description_query=None, limit=10):
     """检索细纲（序列+节拍）。"""
-    conn = psycopg2.connect(DATABASE_URL)
+    conn = psycopg2.connect(require_database_url(DATABASE_URL))
     conn.autocommit = True
 
     results = []
@@ -43,11 +45,16 @@ def search_detail(genre=None, act=None, description_query=None, limit=10):
             sql_seq += " AND s.act = %s"
             params.append(act)
 
-        if description_query:
-            sql_seq += " AND s.description ILIKE %s"
-            params.append(f"%{description_query}%")
+        terms = build_like_terms(description_query or query)
+        if terms:
+            clauses = []
+            for term in terms:
+                fuzzy = f"%{term}%"
+                clauses.append("(COALESCE(s.title, '') ILIKE %s OR COALESCE(s.description, '') ILIKE %s)")
+                params.extend([fuzzy, fuzzy])
+            sql_seq += " AND (" + " OR ".join(clauses) + ")"
 
-        sql_seq += " LIMIT %s"
+        sql_seq += " ORDER BY s.act ASC, s.sequence ASC LIMIT %s"
         params.append(limit)
 
         cur.execute(sql_seq, params)
@@ -85,12 +92,13 @@ def search_detail(genre=None, act=None, description_query=None, limit=10):
         print()
 
 @click.command()
+@click.argument("query", required=False)
 @click.option("--genre", default=None, help="按题材过滤")
 @click.option("--act", default=None, type=int, help="幕号（1/2/3）")
 @click.option("--query", "description_query", default=None, help="序列描述关键词")
 @click.option("--limit", default=10, help="返回结果数")
-def main(genre, act, description_query, limit):
-    search_detail(genre=genre, act=act, description_query=description_query, limit=limit)
+def main(query, genre, act, description_query, limit):
+    search_detail(query=query, genre=genre, act=act, description_query=description_query, limit=limit)
 
 
 if __name__ == "__main__":

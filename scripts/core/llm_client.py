@@ -15,7 +15,9 @@ _ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-logger = logging.getLogger(__name__)
+# 使用统一的 pipeline logger（写入同一日志文件）
+from scripts.utils.progress_tracker import get_pipeline_logger
+logger = get_pipeline_logger()
 
 # ──────────────────────────────────────────────
 # 全局 API 调用计数器（pipeline 运行时读写）
@@ -55,10 +57,14 @@ def load_config():
             "max_tokens": int(os.getenv("LLM_MAX_TOKENS", "500")),
             "temperature": float(os.getenv("LLM_TEMPERATURE", "0.3")),
             "rate_limit_seconds": int(os.getenv("LLM_RATE_LIMIT_SECONDS", "10")),
+            "timeout_seconds": int(os.getenv("LLM_TIMEOUT_SECONDS", "600")),
+            "chapter_batch_timeout_seconds": int(
+                os.getenv("LLM_CHAPTER_BATCH_TIMEOUT_SECONDS", "600")
+            ),
             # 每次 API 调用批量处理的章节数（减少调用次数）
-            # 30 章/次：1600章 → ~54次调用，输出约 4500 tokens/批（每章 ~150 tokens）
-            # 上下文受限的小模型可设为 1（逐章模式），大模型可按输出上限调高
-            "chapter_batch_size": int(os.getenv("LLM_CHAPTER_BATCH_SIZE", "30")),
+            # 默认 1：逐章模式最稳妥，减少“整批卡住导致无落盘”的风险。
+            # 如需启用批量模式，可显式设置为 2/3 等较小值。
+            "chapter_batch_size": int(os.getenv("LLM_CHAPTER_BATCH_SIZE", "1")),
         }
     }
 
@@ -145,6 +151,7 @@ def call_llm(
     user_prompt: str,
     config: dict,
     max_tokens_override: int | None = None,
+    timeout_override: int | None = None,
 ) -> dict:
     """调用 LLM API，返回解析后的 JSON 对象。
 
@@ -159,6 +166,7 @@ def call_llm(
         user_prompt: 用户提示词
         config: 由 load_config() 返回的配置字典
         max_tokens_override: 可选，覆盖 config 中的 max_tokens（适用于大输出场景）
+        timeout_override: 可选，覆盖 config 中的 timeout_seconds（默认600秒）
 
     Returns:
         dict: LLM 返回的 JSON 对象
@@ -175,6 +183,7 @@ def call_llm(
     )
 
     effective_max_tokens = max_tokens_override or config["llm"].get("max_tokens", 2048)
+    effective_timeout = timeout_override or config["llm"].get("timeout_seconds", 600)
 
     @retry(
         retry=retry_if_exception_type((APIConnectionError, APITimeoutError, APIStatusError)),
@@ -196,6 +205,7 @@ def call_llm(
             ],
             temperature=config["llm"].get("temperature", 0.3),
             max_tokens=effective_max_tokens,
+            timeout=effective_timeout,
             response_format={"type": "json_object"},
         )
         usage = response.usage
@@ -206,6 +216,6 @@ def call_llm(
 
     try:
         return _call()
-    except Exception as e:
+    except Exception:
         _api_stats["errors"] += 1
         raise

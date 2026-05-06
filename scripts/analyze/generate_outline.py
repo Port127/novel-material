@@ -22,6 +22,9 @@ load_dotenv()
 from scripts.core.paths import NOVELS_DIR
 from scripts.core.llm_client import load_config, call_llm
 from scripts.core.chapters_loader import load_chapters_data, build_summary_pool
+from scripts.utils.progress_tracker import get_pipeline_logger
+
+logger = get_pipeline_logger()
 
 # 全局摘要池送给 LLM 的最大 Token 数
 _MAX_SUMMARY_TOKENS = 6000
@@ -158,7 +161,7 @@ def generate_outline(material_id):
     """
     novel_dir = NOVELS_DIR / material_id
     if not novel_dir.exists():
-        print(f"错误: 小说目录不存在: {novel_dir}")
+        logger.error(f"小说目录不存在: {novel_dir}")
         return
 
     config = load_config()
@@ -177,9 +180,9 @@ def generate_outline(material_id):
     if chapters_data:
         context_text = build_summary_pool(chapters_data, _MAX_SUMMARY_TOKENS, model)
         context_label = f"章级摘要池（共 {len(chapters_data)} 章）"
-        print(f"使用 {context_label} 作为分析基础")
+        logger.info(f"使用 {context_label} 作为分析基础")
     else:
-        print("警告: 章节数据不存在或为空，回退到原文前 5000 字（质量受限）")
+        logger.warning("章节数据不存在或为空，回退到原文前 5000 字（质量受限）")
         with open(novel_dir / "source.txt", "r", encoding="utf-8") as f:
             context_text = f.read()[:5000]
         context_label = "原文摘录（前 5000 字）"
@@ -216,26 +219,26 @@ def generate_outline(material_id):
     with open(meta_file, "w", encoding="utf-8") as f:
         yaml.dump(meta, f, allow_unicode=True, default_flow_style=False)
 
-    print(f"已生成前提: {meta['premise']}")
+    logger.info(f"已生成前提: {meta['premise']}")
 
     rate_limit = config["llm"].get("rate_limit_seconds", 1)
     time.sleep(rate_limit)
 
     # ── 第二轮：生成幕 + 序列（不含 beats）──
-    print(f"生成幕/序列结构（共 {chapter_count} 章）...")
+    logger.info(f"生成幕/序列结构（共 {chapter_count} 章）...")
     acts = _generate_acts_sequences(chapter_count, meta, context_text, config)
     time.sleep(rate_limit)
 
     # ── 第三轮：逐序列生成 beats ──
     total_sequences = sum(len(act.get("sequences", [])) for act in acts)
-    print(f"逐序列生成 beats（共 {total_sequences} 个序列）...")
+    logger.info(f"逐序列生成 beats（共 {total_sequences} 个序列）...")
 
     beats_data = []
     seq_global = 0
     for act in acts:
         for seq in act.get("sequences", []):
             seq_global += 1
-            print(f"  [{seq_global}/{total_sequences}] {act.get('name', '')} / {seq.get('title', '')}")
+            logger.info(f"  [{seq_global}/{total_sequences}] {act.get('name', '')} / {seq.get('title', '')}")
             beats = _generate_beats_for_sequence(
                 act_number=act["act_number"],
                 seq=seq,
@@ -300,7 +303,7 @@ def generate_outline(material_id):
     with open(outline_dir / "hooks_network.yaml", "w", encoding="utf-8") as f:
         yaml.dump({"hooks": [], "subplots": []}, f, allow_unicode=True, default_flow_style=False)
 
-    print(f"\n大纲生成完成: {len(acts)}幕, {total_sequences}序列, {len(beats_data)}节拍")
+    logger.info(f"大纲生成完成: {len(acts)}幕, {total_sequences}序列, {len(beats_data)}节拍")
 
 
 if __name__ == "__main__":
