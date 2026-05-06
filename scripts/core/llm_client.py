@@ -57,14 +57,14 @@ def load_config():
             "max_tokens": int(os.getenv("LLM_MAX_TOKENS", "500")),
             "temperature": float(os.getenv("LLM_TEMPERATURE", "0.3")),
             "rate_limit_seconds": int(os.getenv("LLM_RATE_LIMIT_SECONDS", "10")),
-            "timeout_seconds": int(os.getenv("LLM_TIMEOUT_SECONDS", "600")),
+            "timeout_seconds": int(os.getenv("LLM_TIMEOUT_SECONDS", "6000")),
             "chapter_batch_timeout_seconds": int(
-                os.getenv("LLM_CHAPTER_BATCH_TIMEOUT_SECONDS", "600")
+                os.getenv("LLM_CHAPTER_BATCH_TIMEOUT_SECONDS", "6000")
             ),
             # 每次 API 调用批量处理的章节数（减少调用次数）
-            # 默认 1：逐章模式最稳妥，减少“整批卡住导致无落盘”的风险。
-            # 如需启用批量模式，可显式设置为 2/3 等较小值。
-            "chapter_batch_size": int(os.getenv("LLM_CHAPTER_BATCH_SIZE", "1")),
+            # 默认 10：平衡效率和稳定性，避免单批过大导致超时/失败。
+            # 章节内容越长，batch_size 应越小（建议 5-10）。
+            "chapter_batch_size": int(os.getenv("LLM_CHAPTER_BATCH_SIZE", "10")),
         }
     }
 
@@ -166,7 +166,7 @@ def call_llm(
         user_prompt: 用户提示词
         config: 由 load_config() 返回的配置字典
         max_tokens_override: 可选，覆盖 config 中的 max_tokens（适用于大输出场景）
-        timeout_override: 可选，覆盖 config 中的 timeout_seconds（默认600秒）
+        timeout_override: 可选，覆盖 config 中的 timeout_seconds（默认6000秒）
 
     Returns:
         dict: LLM 返回的 JSON 对象
@@ -183,7 +183,7 @@ def call_llm(
     )
 
     effective_max_tokens = max_tokens_override or config["llm"].get("max_tokens", 2048)
-    effective_timeout = timeout_override or config["llm"].get("timeout_seconds", 600)
+    effective_timeout = timeout_override or config["llm"].get("timeout_seconds", 6000)
 
     @retry(
         retry=retry_if_exception_type((APIConnectionError, APITimeoutError, APIStatusError)),

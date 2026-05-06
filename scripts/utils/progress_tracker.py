@@ -23,6 +23,8 @@ _LOG_DIR.mkdir(exist_ok=True)
 
 # 当前运行的日志文件路径（全局单例）
 _CURRENT_LOG_FILE: Path | None = None
+# 控制台处理器引用（用于 spinner 运行时暂停）
+_CONSOLE_HANDLER: logging.StreamHandler | None = None
 
 
 def get_pipeline_logger() -> logging.Logger:
@@ -35,11 +37,11 @@ def _setup_logger() -> logging.Logger:
 
     单例模式：一次运行只创建一个日志文件，后续调用返回同一个 logger。
     """
-    global _CURRENT_LOG_FILE
+    global _CURRENT_LOG_FILE, _CONSOLE_HANDLER
     logger = logging.getLogger("pipeline")
     if logger.handlers:
         return logger
-    logger.setLevel(logging.DEBUG)  # 改为 DEBUG，捕获所有级别的日志
+    logger.setLevel(logging.DEBUG)
 
     # 文件处理器：一次运行只创建一个文件
     if _CURRENT_LOG_FILE is None:
@@ -54,12 +56,24 @@ def _setup_logger() -> logging.Logger:
     logger.addHandler(file_handler)
 
     # 控制台处理器：只显示 INFO 及以上，简洁格式（不加级别前缀）
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setFormatter(logging.Formatter("%(message)s"))
-    console_handler.setLevel(logging.INFO)
-    logger.addHandler(console_handler)
+    _CONSOLE_HANDLER = logging.StreamHandler(sys.stdout)
+    _CONSOLE_HANDLER.setFormatter(logging.Formatter("%(message)s"))
+    _CONSOLE_HANDLER.setLevel(logging.INFO)
+    logger.addHandler(_CONSOLE_HANDLER)
 
     return logger
+
+
+def pause_console_logging() -> None:
+    """暂停控制台日志输出（spinner 运行时调用）。"""
+    if _CONSOLE_HANDLER:
+        _CONSOLE_HANDLER.setLevel(logging.CRITICAL + 1)
+
+
+def resume_console_logging() -> None:
+    """恢复控制台日志输出（spinner 停止时调用）。"""
+    if _CONSOLE_HANDLER:
+        _CONSOLE_HANDLER.setLevel(logging.INFO)
 
 
 def _fmt(sec: float) -> str:
@@ -243,7 +257,8 @@ class StageTracker:
         sys.stdout.flush()
 
     def start_spinner(self, msg: str = "LLM 调用中") -> None:
-        """启动后台旋转指示器。"""
+        """启动后台旋转指示器，同时暂停控制台日志输出。"""
+        pause_console_logging()
         self._stop_spinner.clear()
         self._spinner_thread = threading.Thread(
             target=self._spin, args=(msg, self._stop_spinner), daemon=True
@@ -251,11 +266,12 @@ class StageTracker:
         self._spinner_thread.start()
 
     def stop_spinner(self) -> None:
-        """停止旋转指示器。"""
+        """停止旋转指示器，恢复控制台日志输出。"""
         self._stop_spinner.set()
         if self._spinner_thread:
             self._spinner_thread.join(timeout=1)
             self._spinner_thread = None
+        resume_console_logging()
 
     def record_api_call(self, success: bool = True) -> None:
         """记录一次 API 调用。"""
