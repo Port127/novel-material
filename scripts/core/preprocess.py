@@ -97,24 +97,122 @@ def convert_cn_chapter_numbers(text: str) -> str:
 # 去广告 / 水印
 # ──────────────────────────────────────────────
 
-# 常见网文广告行特征（整行匹配）
+# 整行广告模式（删除整行）
 _AD_LINE_PATTERNS = [
+    # 网站提示
     re.compile(r"^\s*本书来自.{0,30}\s*$"),
+    re.compile(r"^\s*本文由.{0,30}(?:提供|发布|整理)\s*$"),  # 站点水印
     re.compile(r"^\s*(?:www|http|https)[^\s]{3,60}\s*$", re.IGNORECASE),
     re.compile(r"^\s*(?:请到|欢迎来到|推荐|收藏|投票|打赏|订阅).{0,30}\s*$"),
+    re.compile(r"^\s*请记住.*?(?:网站|网址|域名).{0,30}\s*$", re.IGNORECASE),
+    # 站点水印
     re.compile(r"^\s*[\-=_\*]{5,}\s*$"),          # 分隔线
     re.compile(r"^\s*(?:全文完|完本|正文完|大结局)\s*$"),
-    re.compile(r"^\s*\(?\s*(?:笔趣阁|起点|晋江|纵横|17k|六九|免费|全本).{0,20}\s*\)?\s*$"),
+    re.compile(r"^\s*\(?\s*(?:笔趣阁|起点|晋江|纵横|17k|六九|免费|全本|速读谷|看书|小说网|小说网).{0,20}\s*\)?\s*$"),
+    # 求票/求支持
+    re.compile(r"^\s*(?:求.{0,5}(?:月票|推荐票|收藏|订阅|打赏)|跪求|求支持).{0,20}\s*$"),
+    # 无弹窗/手机阅读提示
+    re.compile(r"^\s*(?:无弹窗|手机阅读|客户端|APP).{0,20}\s*$"),
+    # 本章完标记
+    re.compile(r"^\s*[（\(]?本章完[）\)]?\s*$"),
+    # 更新提示
+    re.compile(r"^\s*更新不易.{0,30}\s*$"),
+    # 推广链接/二维码
+    re.compile(r"^\s*(?:扫码|关注|微信|公众号|QQ|群).{0,30}\s*$"),
+    re.compile(r"^\s*添加.*?(?:微信|QQ|群|公众号).{0,30}\s*$"),
+    # 乱码广告（检测非正常字符高密度行）
+    # 匹配包含大量生僻字/符号的行（广告常用乱码规避检测）
+    re.compile(r"^\s*[锞晞囂鐜讚魐鏴灚矗薋鬻龘鵺麣鸂鼱].{0,50}\s*$"),
+    # 纯符号/乱码行
+    re.compile(r"^\s*[★☆●○◆◇■□▲△▼▽◐◑◑▓▒░]{3,}\s*$"),
+]
+
+# 行内广告模式（删除匹配内容，保留行）
+_AD_INLINE_PATTERNS = [
+    # 网站提示
+    r"[（\(]请记住.*?(?:网站|网址|域名).*?[）\)]",
+    r"请记住.*?(?:网站|网址|域名)[^。\n]*",
+    # 本文由xxx提供
+    r"本文由.{0,20}(?:提供|发布|整理)[^。\n]*",
+    # 速读谷等站点广告
+    r"更新不易.{0,30}(?:章节|分享|速读谷|rg)[^。\n]*",
+    # 本章完标记
+    r"[（\(]?本章完[）\)]?",
+    # PS注释（含求票）
+    r"[（\(]ps：[^）\)]*[）\)]",
+    r"[（\(]PS：[^）\)]*[）\)]",
+    r"ps：求[^。\n]*",
+    r"PS：求[^。\n]*",
+    # 站点水印
+    r"【[^】]*(?:笔趣阁|小说网|小说网|看书|阅读)[^】]*】",
+    r"【[^】]*(?:一秒记住|记住|秒记住)[^】]*】",
+    r"[（\(][^）\)]*(?:笔趣阁|小说网|小说网|看书|阅读)[^）\)]*[）\)]",
+    # 网站提醒（宽泛匹配）
+    r"[（\(][^）\)]*(?:提醒您|请注意|温馨提示)[^）\)]*[）\)]",
+    # 推广链接
+    r"扫码关注.{0,20}",
+    r"添加.{0,5}(?:微信|QQ|群|公众号).{0,20}",
+    r"(?:微信|公众号|QQ群)[^。\n]*(?:关注|添加|扫码)",
+    # 乱码广告（行内）
+    r"[锞晞囂鐜讚魐鏴灚矗薋鬻龘鵺麣鸂鼱]+",
 ]
 
 
+def remove_duplicate_ads(text: str, min_length: int = 20) -> str:
+    """检测并删除重复的广告段落。
+
+    Args:
+        text: 输入文本
+        min_length: 最小段落长度（低于此长度不检测，避免误删短句）
+
+    Returns:
+        清理后的文本
+    """
+    paragraphs = text.split("\n\n")
+    seen = {}
+    result = []
+
+    for para in paragraphs:
+        para_stripped = para.strip()
+
+        # 空段落保留
+        if not para_stripped:
+            result.append(para)
+            continue
+
+        # 短段落不检测重复
+        if len(para_stripped) < min_length:
+            result.append(para)
+            continue
+
+        # 检测重复
+        if para_stripped in seen:
+            # 重复段落，跳过（广告通常会在每章重复出现）
+            continue
+
+        seen[para_stripped] = True
+        result.append(para)
+
+    return "\n\n".join(result)
+
+
 def remove_ad_lines(text: str) -> str:
-    """逐行过滤广告/水印行。"""
+    """逐行过滤广告/水印行，并清理行内广告。"""
     lines = text.split("\n")
     clean_lines = []
     for line in lines:
+        # 整行广告检测
         if any(pat.match(line) for pat in _AD_LINE_PATTERNS):
             continue
+
+        # 行内广告清理
+        for pattern in _AD_INLINE_PATTERNS:
+            line = re.sub(pattern, '', line, flags=re.IGNORECASE)
+
+        # 清理后如果行变为空白，跳过
+        if not line.strip():
+            continue
+
         clean_lines.append(line)
     return "\n".join(clean_lines)
 
@@ -163,6 +261,7 @@ def preprocess(text: str) -> str:
     """
     text = normalize_unicode(text)
     text = remove_ad_lines(text)
+    text = remove_duplicate_ads(text)  # 删除重复广告段落
     text = convert_cn_chapter_numbers(text)
     text = normalize_whitespace(text)
     return text

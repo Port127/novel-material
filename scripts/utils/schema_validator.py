@@ -91,7 +91,7 @@ class ChapterEntryModel(BaseModel):
     summary: str = Field(..., min_length=20, max_length=500)
     tension_level: int = Field(..., ge=1, le=5)
     characters_appear: list = Field(default_factory=list)  # 允许空列表（某些章节可能无人物）
-    chapter_function: Optional[list] = None
+    chapter_functions: Optional[list] = None
     pacing: Optional[str] = None
 
     @field_validator("title")
@@ -190,8 +190,8 @@ def validate_chapters(material_id: str) -> list[str]:
                 summary=entry.get("summary", ""),
                 tension_level=entry.get("tension_level"),
                 characters_appear=entry.get("characters_appear", []),
-                chapter_function=entry.get(
-                    "chapter_function", entry.get("chapter_functions")
+                chapter_functions=entry.get(
+                    "chapter_functions", entry.get("chapter_function")
                 ),
                 pacing=entry.get("pacing"),
             )
@@ -284,7 +284,7 @@ def validate_novel_tags(material_id: str) -> list[str]:
 
 
 def validate_chapter_tags(material_id: str) -> list[str]:
-    """校验 chapters.yaml 中的 chapter_function 标签是否在字典中。
+    """校验 chapters.yaml 中的 chapter_functions 标签是否在字典中。
 
     注意：此校验已放宽，不同题材的章节功能标签差异很大，
     强制校验会导致大量误报。现改为仅警告不阻断。

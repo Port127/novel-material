@@ -1,3 +1,4 @@
 {
+  "python.defaultInterpreterPath": "/opt/homebrew/Caskroom/miniconda/base/envs/env3.12/bin/python",
   "yaml.schemaStore.enable": false
 }

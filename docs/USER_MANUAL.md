@@ -589,20 +589,30 @@ python scripts/search/search_outline.py --genre 科幻 --structure 三幕式
 ### 7.4 章节检索
 
 ```bash
-python scripts/search/search_chapter.py "开局困境写法" --limit 10
+# 关键词搜索（默认）
+python scripts/search/search_chapter.py "雨夜" --limit 10
+
+# 向量语义搜索（更精准）
+python scripts/search/search_chapter.py "雨中告别" --semantic --limit 10
 ```
 
 **参数说明**：
 
 | 参数 | 说明 | 示例值 |
 |------|------|--------|
-| `QUERY` | 搜索关键词（必填） | `"开局困境写法"` |
+| `QUERY` | 搜索关键词（必填） | `"雨夜"` |
+| `--semantic` | 启用向量语义搜索 | `--semantic` |
 | `--genre` | 题材过滤 | `修仙`, `玄幻` |
 | `--function` | 章节功能 | `开局困境`, `高潮`, `转折` |
-| `--chapter` | 精确章节号 | `1`, `10` |
+| `--chapter` | 确章节号 | `1`, `10` |
 | `--tension-min` | 张力最小值 | `3` (范围 1-5) |
 | `--tension-max` | 张力最大值 | `5` (范围 1-5) |
 | `--limit` | 返回数量 | `10` |
+
+**语义搜索说明**：
+- 使用 `--semantic` 启用向量搜索，能找到语义相似的章节（即使关键词不匹配）
+- 例如搜索"雨中告别"，能找到离别、分手等情感相似的章节
+- 输出会显示相似度百分比（越高越相似）
 
 **输出示例**：
 ```
@@ -636,7 +646,11 @@ python scripts/search/search_character.py --archetype 导师 --genre 修仙
 ### 7.6 事件检索
 
 ```bash
-python scripts/search/search_event.py "雨中告别的写法" --emotion 悲伤 --limit 10
+# 向量语义搜索（默认，更精准）
+python scripts/search/search_event.py "雨中告别" --limit 10
+
+# 关键词搜索（回退模式）
+python scripts/search/search_event.py "雨夜" --keyword --limit 10
 ```
 
 **参数说明**：
@@ -644,9 +658,12 @@ python scripts/search/search_event.py "雨中告别的写法" --emotion 悲伤 -
 | 参数 | 说明 | 示例值 |
 |------|------|--------|
 | `QUERY` | 搜索关键词 | `"雨中告别"` |
+| `--keyword` | 使用关键词搜索而非向量搜索 | `--keyword` |
 | `--setting` | 场景类型 | `雨天`, `夜晚`, `密室` |
 | `--emotion` | 情绪关键词 | `悲伤`, `愤怒`, `恐惧` |
 | `--limit` | 返回数量 | `10` |
+
+**语义搜索说明**：事件检索默认使用向量搜索，能找到语义相似的事件场景。使用 `--keyword` 可回退到关键词匹配模式。
 
 ---
 

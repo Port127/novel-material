@@ -38,7 +38,7 @@ def refine_outline(material_id, chapters_data):
     function_counts = {}
     tension_avg = 0
     for ch in chapters_data:
-        funcs = ch.get("chapter_function", [])
+        funcs = ch.get("chapter_functions", [])
         for f in funcs:
             function_counts[f] = function_counts.get(f, 0) + 1
         tension_avg += ch.get("tension_level", 0)
@@ -46,7 +46,7 @@ def refine_outline(material_id, chapters_data):
     tension_avg = tension_avg / max(len(chapters_data), 1)
 
     # 统计钩子
-    hooks_count = sum(1 for ch in chapters_data if "章末悬念" in ch.get("chapter_function", []))
+    hooks_count = sum(1 for ch in chapters_data if "章末悬念" in ch.get("chapter_functions", []))
 
     # 更新 outline index
     outline_index["hook_count"] = hooks_count
@@ -124,7 +124,7 @@ def refine_tags(material_id, chapters_data):
     # 统计章节功能分布
     function_counts = {}
     for ch in chapters_data:
-        for f in ch.get("chapter_function", []):
+        for f in ch.get("chapter_functions", []):
             function_counts[f] = function_counts.get(f, 0) + 1
 
     # 找出最常见的功能标签

@@ -32,7 +32,7 @@ _MAX_CHAPTER_TOKENS = 1800
 _SYSTEM_PROMPT = """你是专业的小说分析助手，负责对每章内容生成摘要和分析。
 要求：
 1. 摘要 50-100 字，包含关键事件、情感基调、人物互动
-2. chapter_function 从标签字典的章节功能标签中选取
+2. chapter_functions 从标签字典的章节功能标签中选取
 3. 准确识别出场人物（仅写名字，不写描述）
 4. tension_level 1-5，根据紧张程度评估"""
 
@@ -42,7 +42,7 @@ _CHAPTER_JSON_SCHEMA = """{
   "summary": "50-100字的章节摘要，包含关键事件、情感基调、人物互动",
   "word_count": 字数,
   "characters_appear": ["出场人物名字列表"],
-  "chapter_function": ["章节功能标签，从标准标签中选取"],
+  "chapter_functions": ["章节功能标签，从标准标签中选取"],
   "tension_level": 1-5的整数,
   "pacing": "快/慢/喘息/加速",
   "setting": ["场景类型"],

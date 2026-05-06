@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""章纲检索：按章节功能、关键词、张力等条件检索章节。"""
+"""章纲检索：按章节功能、关键词、张力等条件检索章节，支持向量语义搜索。"""
 import os
 import sys
 import json
@@ -16,79 +16,117 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from scripts.search._common import build_like_terms, require_database_url
+from scripts.core.embedding import get_embedding, load_embedding_config
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-def search_chapters(query, genre=None, chapter_function=None, chapter_num=None, tension_min=None, tension_max=None, element=None, style=None, limit=10):
-    """检索章节。"""
+def search_chapters(query, genre=None, chapter_function=None, chapter_num=None, tension_min=None, tension_max=None, element=None, style=None, limit=10, semantic=False):
+    """检索章节，支持向量语义搜索。"""
     conn = psycopg2.connect(require_database_url(DATABASE_URL))
     conn.autocommit = True
 
     results = []
 
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-        # 基础查询
-        sql = """
-            SELECT c.material_id, c.chapter, c.title, c.summary,
-                   c.tension_level, c.pacing, c.chapter_functions,
-                   c.characters_appear, c.key_plot_point,
-                   n.name as novel_name, n.genre, n.tags
-            FROM chapters c
-            JOIN novels n ON c.material_id = n.material_id
-            WHERE 1=1
-        """
-        params = []
+        # 向量语义搜索（优先）
+        if semantic:
+            print(f"正在生成查询向量...")
+            config = load_embedding_config()
+            query_embedding = get_embedding(query, config)
 
-        terms = build_like_terms(query)
-        if terms:
-            clauses = []
-            for term in terms:
-                fuzzy = f"%{term}%"
-                clauses.append(
-                    """(
-                        c.title ILIKE %s
-                        OR c.summary ILIKE %s
-                        OR COALESCE(c.key_plot_point, '') ILIKE %s
-                        OR array_to_string(c.chapter_functions, ' ') ILIKE %s
-                    )"""
-                )
-                params.extend([fuzzy, fuzzy, fuzzy, fuzzy])
-            sql += " AND (" + " OR ".join(clauses) + ")"
+            # 使用 pgvector 余弦距离搜索
+            sql = """
+                SELECT c.material_id, c.chapter, c.title, c.summary,
+                       c.tension_level, c.pacing, c.chapter_functions,
+                       c.characters_appear, c.key_plot_point,
+                       n.name as novel_name, n.genre, n.tags,
+                       c.summary_embedding <=> %s::vector as distance
+                FROM chapters c
+                JOIN novels n ON c.material_id = n.material_id
+                WHERE c.summary_embedding IS NOT NULL
+            """
+            # 将 Python 列表转为 PostgreSQL vector 格式
+            params = [str(query_embedding)]
 
-        if genre:
-            sql += " AND n.genre @> ARRAY[%s]"
-            params.append(genre)
+            # 其他过滤条件
+            if genre:
+                sql += " AND n.genre @> ARRAY[%s]"
+                params.append(genre)
 
-        if chapter_function:
-            sql += " AND c.chapter_functions @> ARRAY[%s]"
-            params.append(chapter_function)
+            if chapter_function:
+                sql += " AND c.chapter_functions @> ARRAY[%s]"
+                params.append(chapter_function)
 
-        if chapter_num is not None:
-            sql += " AND c.chapter = %s"
-            params.append(chapter_num)
+            if tension_min is not None:
+                sql += " AND c.tension_level >= %s"
+                params.append(tension_min)
 
-        if tension_min is not None:
-            sql += " AND c.tension_level >= %s"
-            params.append(tension_min)
+            if tension_max is not None:
+                sql += " AND c.tension_level <= %s"
+                params.append(tension_max)
 
-        if tension_max is not None:
-            sql += " AND c.tension_level <= %s"
-            params.append(tension_max)
+            sql += " ORDER BY distance ASC LIMIT %s"
+            params.append(limit)
 
-        if element:
-            # 小说级 tags JSONB 中的 elements 数组
-            sql += " AND n.tags->'elements' @> %s::jsonb"
-            import json
-            params.append(json.dumps([element]))
+        else:
+            # 关键词模糊搜索（默认）
+            sql = """
+                SELECT c.material_id, c.chapter, c.title, c.summary,
+                       c.tension_level, c.pacing, c.chapter_functions,
+                       c.characters_appear, c.key_plot_point,
+                       n.name as novel_name, n.genre, n.tags
+                FROM chapters c
+                JOIN novels n ON c.material_id = n.material_id
+                WHERE 1=1
+            """
+            params = []
 
-        if style:
-            # 小说级 tags JSONB 中的 style 数组
-            sql += " AND n.tags->'style' @> %s::jsonb"
-            import json
-            params.append(json.dumps([style]))
+            terms = build_like_terms(query)
+            if terms:
+                clauses = []
+                for term in terms:
+                    fuzzy = f"%{term}%"
+                    clauses.append(
+                        """(
+                            c.title ILIKE %s
+                            OR c.summary ILIKE %s
+                            OR COALESCE(c.key_plot_point, '') ILIKE %s
+                            OR array_to_string(c.chapter_functions, ' ') ILIKE %s
+                        )"""
+                    )
+                    params.extend([fuzzy, fuzzy, fuzzy, fuzzy])
+                sql += " AND (" + " OR ".join(clauses) + ")"
 
-        sql += " ORDER BY c.tension_level DESC NULLS LAST, c.chapter ASC LIMIT %s"
-        params.append(limit)
+            if genre:
+                sql += " AND n.genre @> ARRAY[%s]"
+                params.append(genre)
+
+            if chapter_function:
+                sql += " AND c.chapter_functions @> ARRAY[%s]"
+                params.append(chapter_function)
+
+            if chapter_num is not None:
+                sql += " AND c.chapter = %s"
+                params.append(chapter_num)
+
+            if tension_min is not None:
+                sql += " AND c.tension_level >= %s"
+                params.append(tension_min)
+
+            if tension_max is not None:
+                sql += " AND c.tension_level <= %s"
+                params.append(tension_max)
+
+            if element:
+                sql += " AND n.tags->'elements' @> %s::jsonb"
+                params.append(json.dumps([element]))
+
+            if style:
+                sql += " AND n.tags->'style' @> %s::jsonb"
+                params.append(json.dumps([style]))
+
+            sql += " ORDER BY c.tension_level DESC NULLS LAST, c.chapter ASC LIMIT %s"
+            params.append(limit)
 
         cur.execute(sql, params)
         results = cur.fetchall()
@@ -106,6 +144,10 @@ def search_chapters(query, genre=None, chapter_function=None, chapter_num=None, 
         print(f"--- {r['novel_name']} 第{r['chapter']}章 ---")
         print(f"标题: {r['title']}")
         print(f"摘要: {r['summary']}")
+        if semantic and 'distance' in r:
+            # 余弦距离转换为相似度：similarity = 1 - distance
+            similarity = 1 - r['distance']
+            print(f"相似度: {similarity:.2%}")
         print(f"张力: {r['tension_level']}/5 | 节奏: {r['pacing']}")
         print(f"功能: {r['chapter_functions']}")
         print(f"人物: {r['characters_appear']}")
@@ -121,8 +163,9 @@ def search_chapters(query, genre=None, chapter_function=None, chapter_num=None, 
 @click.option("--element", default=None, help="元素标签过滤（如：重生、系统）")
 @click.option("--style", default=None, help="风格标签过滤（如：热血、治愈）")
 @click.option("--limit", default=10, help="返回结果数")
-def main(query, genre, chapter_function, chapter_num, tension_min, tension_max, element, style, limit):
-    search_chapters(query=query, genre=genre, chapter_function=chapter_function, chapter_num=chapter_num, tension_min=tension_min, tension_max=tension_max, element=element, style=style, limit=limit)
+@click.option("--semantic", is_flag=True, help="启用向量语义搜索（更精准的语义匹配）")
+def main(query, genre, chapter_function, chapter_num, tension_min, tension_max, element, style, limit, semantic):
+    search_chapters(query=query, genre=genre, chapter_function=chapter_function, chapter_num=chapter_num, tension_min=tension_min, tension_max=tension_max, element=element, style=style, limit=limit, semantic=semantic)
 
 
 if __name__ == "__main__":

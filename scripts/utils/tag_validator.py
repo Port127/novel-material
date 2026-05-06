@@ -86,7 +86,7 @@ def check_dimension(dimension: str) -> None:
                 for ch in chapters:
                     if not isinstance(ch, dict):
                         continue
-                    funcs = ch.get("chapter_function", ch.get("chapter_functions", []))
+                    funcs = ch.get("chapter_functions", ch.get("chapter_function", []))
                     used_tags.update(funcs or [])
 
         elif dimension == "character_archetype":

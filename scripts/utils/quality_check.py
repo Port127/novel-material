@@ -45,9 +45,9 @@ def check_summary_quality(material_id: str) -> tuple[list[str], list[str]]:
             errors.append(f"第{ch_num}章: 摘要过短（{len(summary)}字，要求 ≥50）")
         if len(summary) > 200:
             warnings.append(f"第{ch_num}章: 摘要过长（{len(summary)}字，建议 ≤200）")
-        funcs = ch.get("chapter_function", ch.get("chapter_functions", []))
+        funcs = ch.get("chapter_functions", ch.get("chapter_function", []))
         if not funcs:
-            warnings.append(f"第{ch_num}章: 未标注章节功能（chapter_function 为空）")
+            warnings.append(f"第{ch_num}章: 未标注章节功能（chapter_functions 为空）")
 
     return errors, warnings
 
