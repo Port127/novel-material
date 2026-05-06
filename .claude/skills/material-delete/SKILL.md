@@ -1,3 +1,8 @@
+---
+name: material-delete
+description: 删除素材及其所有关联资源。破坏性操作，不可恢复。当用户明确要求删除指定 material_id 时使用。
+---
+
 # material-delete
 
 删除素材及其所有关联资源。**破坏性操作，不可恢复。**
@@ -17,7 +22,7 @@ python scripts/utils/material_delete.py <material_id>
 
 该脚本会删除以下全部内容：
 
-1. **本地文件**：`data/novels/{material_id}/` 整个目录（含 source.txt、所有 YAML、outline、characters、worldbuilding）
+1. **本地文件**：`data/novels/{material_id}/` 整个目录（含 source.txt、所有 YAML、outline、characters、worldbuilding、chapters、向量文件）
 2. **数据库记录**：`novels`、`chapters`、`characters`、`character_appearances`、`outline_sequences`、`outline_beats`、`worldbuilding_entities` 表中与该 `material_id` 关联的所有行
 3. **全局索引**：从 `data/index.yaml` 中移除该条目
 

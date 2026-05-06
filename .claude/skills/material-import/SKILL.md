@@ -1,12 +1,11 @@
+---
+name: material-import
+description: 导入外部已分析好的素材目录，跳过 LLM 分析直接入库。用于从其他 novel-material 实例迁移数据、导入人工标注素材或恢复备份。
+---
+
 # material-import
 
 导入外部已分析好的素材目录（跳过 LLM 分析，直接入库）。
-
-## 适用场景
-
-- 从其他 novel-material 实例迁移数据
-- 导入人工标注好的素材
-- 恢复备份数据
 
 ## 前置条件
 
