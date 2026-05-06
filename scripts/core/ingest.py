@@ -26,16 +26,45 @@ def generate_material_id():
 def detect_chapter_pattern(lines):
     """检测章节名模式，返回章节行号列表。
 
-    注意：此函数期望接收经过 preprocess() 处理的文本，
-    中文数字已转为阿拉伯数字，因此正则只需匹配 \\d+。
+    支持的章节格式：
+    - 第N章/第N节/第N回/第N篇（中文或阿拉伯数字）
+    - 楔子/引子/序章/终章/尾声
+    - N、标题（数字+顿号格式，如"1、五千双皮鞋"）
+
+    注意：第N卷/第N部通常是分卷/分部标题，不作为章节识别。
     """
-    chapter_pattern = re.compile(
-        r"^\s*(?:第\s*\d+\s*[章节回卷篇]|楔子|引子|序章|终章|尾声)\s*"
+    # 主模式：标准章节格式（排除"卷"和"部"，它们通常是分卷/分部标题）
+    main_pattern = re.compile(
+        r"^\s*(?:第\s*\d+\s*[章节回篇]|楔子|引子|序章|终章|尾声)\s*"
     )
+    # 备用模式：数字+顿号格式（如"1、标题"，需满足一定条件）
+    alt_pattern = re.compile(
+        r"^\s*\d{1,4}[、\s]\s*[^\d\s].{0,30}$"
+    )
+
     chapter_lines = []
+    prev_line = ""
+
     for i, line in enumerate(lines):
-        if chapter_pattern.match(line):
+        # 主模式匹配
+        if main_pattern.match(line):
             chapter_lines.append(i)
+            prev_line = line
+            continue
+
+        # 备用模式：数字+顿号（需排除纯数字行和正文中的编号）
+        if alt_pattern.match(line) and len(line.strip()) < 40:
+            # 检查是否是真正的章节标题而非正文编号
+            # 条件：行长度较短、下一行不是同格式、标题有明显内容
+            stripped = line.strip()
+            # 排除看起来像正文编号的情况
+            if not re.match(r'^\d+[、\s]\s*\d', stripped):  # 不是"1、2"这种
+                # 检查标题部分是否有足够内容
+                title_part = re.sub(r'^\d+[、\s]\s*', '', stripped)
+                if len(title_part) >= 2 and not title_part.startswith('第'):  # 不是"1、第一章"这种重复
+                    chapter_lines.append(i)
+                    prev_line = line
+
     return chapter_lines
 
 
@@ -70,12 +99,12 @@ def ingest_file(file_path):
     print(f"正在处理: {file_path.name}")
     print(f"生成 material_id: {material_id}")
 
-    # 读取原文
-    with open(file_path, "r", encoding="utf-8") as f:
-        raw_content = f.read()
+    # 读取原文（以二进制模式，自动检测编码）
+    with open(file_path, "rb") as f:
+        raw_bytes = f.read()
 
-    # 预处理：编码归一化 → 去广告 → 中文数字转换 → 空白清理
-    content = preprocess(raw_content)
+    # 预处理：编码检测 → 换行符统一 → 去广告 → 中文数字转换 → 空白清理
+    content = preprocess(raw_bytes)
     lines = content.split("\n")
 
     # 章节切分（正则此时只需匹配阿拉伯数字，预处理已完成转换）
@@ -87,22 +116,38 @@ def ingest_file(file_path):
     chapters = split_chapters(lines, chapter_lines)
     print(f"识别到 {len(chapters)} 个章节")
 
-    # 保存章节索引
+    # 先构建 source.txt 内容，同时计算每章在 source.txt 中的实际行号
+    source_lines = []
     chapter_index = []
+    current_line = 1  # source.txt 的行号从 1 开始
+
     for ch in chapters:
+        # 计算当前章节在 source.txt 中的行数
+        chapter_lines_count = ch["content"].count("\n") + 1
+        start_line = current_line
+        end_line = current_line + chapter_lines_count - 1
+
+        # 添加章节内容到 source_lines
+        source_lines.append(ch["content"])
+
+        # 记录正确的行号
         chapter_index.append({
             "chapter": len(chapter_index) + 1,
             "title": ch["title"],
-            "start_line": ch["start_line"],
-            "end_line": ch["end_line"],
+            "start_line": start_line,
+            "end_line": end_line,
             "word_count": ch["word_count"]
         })
 
+        # 更新下一章的起始行号（章节间的分隔符不产生额外行）
+        current_line = end_line + 1
+
+    # 保存章节索引（行号现在对应 source.txt）
     with open(novel_dir / "chapter_index.yaml", "w", encoding="utf-8") as f:
         yaml.dump(chapter_index, f, allow_unicode=True, default_flow_style=False)
 
     # 保存清洗后原文
-    clean_content = "\n".join(ch["content"] for ch in chapters)
+    clean_content = "\n".join(source_lines)
     with open(novel_dir / "source.txt", "w", encoding="utf-8") as f:
         f.write(clean_content)
 

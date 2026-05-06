@@ -37,16 +37,25 @@ _SYSTEM_PROMPT = """你是专业的小说分析助手，负责对每章内容生
 4. tension_level 1-5，根据紧张程度评估"""
 
 
+# 单章分析的 JSON schema（清晰有效的示例）
 _CHAPTER_JSON_SCHEMA = """{
-  "chapter": 章节号（与输入一致）,
-  "summary": "50-100字的章节摘要，包含关键事件、情感基调、人物互动",
-  "word_count": 字数,
-  "characters_appear": ["出场人物名字列表"],
-  "chapter_functions": ["章节功能标签，从标准标签中选取"],
-  "tension_level": 1-5的整数,
-  "pacing": "快/慢/喘息/加速",
-  "setting": ["场景类型"],
-  "key_plot_point": "如果是关键节点则填写(inciting_incident/midpoint/climax/...，否则留空)"
+  "chapter": 1,
+  "summary": "章节摘要，50-100字",
+  "word_count": 3000,
+  "characters_appear": ["人物名1", "人物名2"],
+  "chapter_functions": ["日常", "战斗"],
+  "tension_level": 3,
+  "pacing": "快",
+  "setting": ["室内", "学校"],
+  "key_plot_point": ""
+}"""
+
+# 批量分析的 JSON schema（强调数组格式）
+_BATCH_JSON_SCHEMA = """{
+  "chapters": [
+    {"chapter": 1, "summary": "第一章摘要", "word_count": 3000, "characters_appear": ["人物名"], "chapter_functions": ["标签"], "tension_level": 3, "pacing": "快", "setting": ["场景"], "key_plot_point": ""},
+    {"chapter": 2, "summary": "第二章摘要", "word_count": 2500, "characters_appear": ["人物名"], "chapter_functions": ["标签"], "tension_level": 2, "pacing": "慢", "setting": ["场景"], "key_plot_point": ""}
+  ]
 }"""
 
 
@@ -91,7 +100,7 @@ def analyze_chapters_batch(
     # 构建每章内容块
     blocks = []
     for ch_info in batch_info:
-        text = "\n".join(lines[ch_info["start_line"]:ch_info["end_line"] + 1])
+        text = "\n".join(lines[ch_info["start_line"] - 1:ch_info["end_line"]])
         truncated = truncate_to_tokens(text, _MAX_CHAPTER_TOKENS, model=model)
         blocks.append(
             f"【第{ch_info['chapter']}章《{ch_info['title']}》】\n{truncated}"
@@ -110,11 +119,9 @@ def analyze_chapters_batch(
 {combined}
 
 返回 JSON（chapters 数组长度必须等于 {n}）：
-{{
-  "chapters": [
-    {_CHAPTER_JSON_SCHEMA}
-  ]
-}}"""
+{_BATCH_JSON_SCHEMA}
+
+重要：每个元素的 chapter 字段必须是整数，与输入章节号一致。"""
 
     # 输出 token 预算：每章约 400 tokens
     result = call_llm(
@@ -125,12 +132,27 @@ def analyze_chapters_batch(
         timeout_override=config["llm"].get("chapter_batch_timeout_seconds"),
     )
 
+    # 解析返回结果
     chapters_list = result.get("chapters", [])
-    return {
-        item["chapter"]: item
-        for item in chapters_list
-        if isinstance(item, dict) and isinstance(item.get("chapter"), int)
-    }
+    if not chapters_list:
+        # 调试：记录实际返回结构
+        logger.warning(f"批量返回无 chapters 数组，实际返回键: {list(result.keys())}")
+        # 尝试兼容：如果返回的是单个章节对象而非数组，直接当作第1章处理
+        if result.get("summary") and batch_info:
+            logger.warning("检测到单章格式返回，尝试兼容解析")
+            return {batch_info[0]["chapter"]: result}
+
+    parsed = {}
+    for item in chapters_list:
+        if isinstance(item, dict) and isinstance(item.get("chapter"), int):
+            parsed[item["chapter"]] = item
+        else:
+            logger.warning(f"跳过无效章节项: {item}")
+
+    if len(parsed) < len(chapters_list):
+        logger.warning(f"解析丢失 {len(chapters_list) - len(parsed)} 章")
+
+    return parsed
 
 
 def validate_chapter_analysis(result: dict, chapter_info: dict) -> list[str]:
@@ -284,7 +306,7 @@ def chapter_analyze(material_id: str) -> None:
                 # 单章降级分析
                 if use_batch_mode:
                     logger.info(f"[单章] 第 {ch_num} 章: {ch_info['title']}")
-                chapter_text = "\n".join(lines[ch_info["start_line"]:ch_info["end_line"] + 1])
+                chapter_text = "\n".join(lines[ch_info["start_line"] - 1:ch_info["end_line"]])
                 try:
                     result = analyze_chapter(chapter_text, ch_info, config)
                 except Exception as e:

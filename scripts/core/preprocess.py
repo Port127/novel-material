@@ -6,6 +6,57 @@
 import re
 import unicodedata
 
+
+# ──────────────────────────────────────────────
+# 编码检测与转换
+# ──────────────────────────────────────────────
+
+def detect_and_convert_encoding(raw_bytes: bytes) -> str:
+    """检测并转换文件编码为 UTF-8。
+
+    支持的编码：
+    - UTF-8 (默认)
+    - GBK/GB18030 (常见中文编码)
+    - Big5 (繁体中文)
+    - Latin-1 (西欧编码)
+
+    Args:
+        raw_bytes: 原始文件字节
+
+    Returns:
+        str: UTF-8 编码的文本
+    """
+    # 尝试 UTF-8
+    try:
+        return raw_bytes.decode('utf-8')
+    except UnicodeDecodeError:
+        pass
+
+    # 尝试 GB18030（GBK 的超集，覆盖更广）
+    try:
+        return raw_bytes.decode('gb18030')
+    except UnicodeDecodeError:
+        pass
+
+    # 尝试 Big5
+    try:
+        return raw_bytes.decode('big5')
+    except UnicodeDecodeError:
+        pass
+
+    # 最后尝试 Latin-1（不会失败）
+    return raw_bytes.decode('latin-1', errors='replace')
+
+
+def normalize_line_endings(text: str) -> str:
+    """统一换行符为 Unix 格式 (LF)。"""
+    # CRLF (Windows) → LF
+    text = text.replace('\r\n', '\n')
+    # CR (Mac old) → LF
+    text = text.replace('\r', '\n')
+    return text
+
+
 # ──────────────────────────────────────────────
 # 中文数字映射
 # ──────────────────────────────────────────────
@@ -69,9 +120,10 @@ def _cn_to_int(cn: str) -> int:
     return result
 
 
-# 匹配章节标题中的中文数字部分（贪婪，最多匹配 8 个汉字）
+# 匹配章节标题中的中文数字部分
+# 注意：只转换章节/节/回/篇，不转换卷/部（通常是分卷/分部标题）
 _CN_NUM_PATTERN = re.compile(
-    r"(第\s*)([零〇一壹二贰两三叁四肆五伍六陆七柒八捌九玖十拾百佰千仟万亿]+)(\s*[章节回卷篇])"
+    r"(第\s*)([零〇一壹二贰两三叁四肆五伍六陆七柒八捌九玖十拾百佰千仟万亿]+)(\s*[章节回篇])"
 )
 
 
@@ -99,16 +151,20 @@ def convert_cn_chapter_numbers(text: str) -> str:
 
 # 整行广告模式（删除整行）
 _AD_LINE_PATTERNS = [
-    # 网站提示
+    # 网站提示/站点水印（必须以www/http开头且整行只有URL或简短说明）
     re.compile(r"^\s*本书来自.{0,30}\s*$"),
-    re.compile(r"^\s*本文由.{0,30}(?:提供|发布|整理)\s*$"),  # 站点水印
-    re.compile(r"^\s*(?:www|http|https)[^\s]{3,60}\s*$", re.IGNORECASE),
+    re.compile(r"^\s*本文由.{0,30}(?:提供|发布|整理)\s*$"),
+    re.compile(r"^\s*(?:www|http|https)://[^\s]{3,60}\s*$", re.IGNORECASE),  # 仅匹配纯URL行
     re.compile(r"^\s*(?:请到|欢迎来到|推荐|收藏|投票|打赏|订阅).{0,30}\s*$"),
     re.compile(r"^\s*请记住.*?(?:网站|网址|域名).{0,30}\s*$", re.IGNORECASE),
-    # 站点水印
-    re.compile(r"^\s*[\-=_\*]{5,}\s*$"),          # 分隔线
+    re.compile(r"^\s*更多.{0,5}小说.{0,10}(?:尽在|下载).{0,30}\s*$"),  # 知轩藏书等站点水印
+    re.compile(r"^\s*精校小说.{0,30}\s*$"),
+    # 分隔线
+    re.compile(r"^\s*[\-=_\*]{5,}\s*$"),
+    # 完本标记
     re.compile(r"^\s*(?:全文完|完本|正文完|大结局)\s*$"),
-    re.compile(r"^\s*\(?\s*(?:笔趣阁|起点|晋江|纵横|17k|六九|免费|全本|速读谷|看书|小说网|小说网).{0,20}\s*\)?\s*$"),
+    # 站点名称行（单独出现）
+    re.compile(r"^\s*\(?\s*(?:笔趣阁|起点|晋江|纵横|17k|六九|免费|全本|速读谷|看书|小说网|知轩藏书).{0,20}\s*\)?\s*$"),
     # 求票/求支持
     re.compile(r"^\s*(?:求.{0,5}(?:月票|推荐票|收藏|订阅|打赏)|跪求|求支持).{0,20}\s*$"),
     # 无弹窗/手机阅读提示
@@ -121,9 +177,8 @@ _AD_LINE_PATTERNS = [
     re.compile(r"^\s*(?:扫码|关注|微信|公众号|QQ|群).{0,30}\s*$"),
     re.compile(r"^\s*添加.*?(?:微信|QQ|群|公众号).{0,30}\s*$"),
     # 乱码广告（检测非正常字符高密度行）
-    # 匹配包含大量生僻字/符号的行（广告常用乱码规避检测）
     re.compile(r"^\s*[锞晞囂鐜讚魐鏴灚矗薋鬻龘鵺麣鸂鼱].{0,50}\s*$"),
-    # 纯符号/乱码行
+    # 纯符号行
     re.compile(r"^\s*[★☆●○◆◇■□▲△▼▽◐◑◑▓▒░]{3,}\s*$"),
 ]
 
@@ -143,10 +198,9 @@ _AD_INLINE_PATTERNS = [
     r"[（\(]PS：[^）\)]*[）\)]",
     r"ps：求[^。\n]*",
     r"PS：求[^。\n]*",
-    # 站点水印
-    r"【[^】]*(?:笔趣阁|小说网|小说网|看书|阅读)[^】]*】",
-    r"【[^】]*(?:一秒记住|记住|秒记住)[^】]*】",
-    r"[（\(][^）\)]*(?:笔趣阁|小说网|小说网|看书|阅读)[^）\)]*[）\)]",
+    # 站点水印（方括号/圆括号包裹）
+    r"【[^】]*(?:笔趣阁|小说网|看书|阅读|知轩藏书|一秒记住|记住|秒记住)[^】]*】",
+    r"[（\(][^）\)]*(?:笔趣阁|小说网|看书|阅读|知轩藏书)[^）\)]*[）\)]",
     # 网站提醒（宽泛匹配）
     r"[（\(][^）\)]*(?:提醒您|请注意|温馨提示)[^）\)]*[）\)]",
     # 推广链接
@@ -250,18 +304,45 @@ def normalize_unicode(text: str) -> str:
 # 主入口
 # ──────────────────────────────────────────────
 
-def preprocess(text: str) -> str:
+def preprocess(raw_bytes: bytes) -> str:
     """对原始小说文本执行完整预处理流水线。
 
     Args:
-        text: 原始文本内容
+        raw_bytes: 原始文件字节（自动检测编码）
 
     Returns:
         str: 标准化后的文本，可直接送入章节正则匹配
     """
+    # 编码检测与转换
+    text = detect_and_convert_encoding(raw_bytes)
+    # 换行符统一
+    text = normalize_line_endings(text)
+    # Unicode 归一化
+    text = normalize_unicode(text)
+    # 去广告
+    text = remove_ad_lines(text)
+    # 删除重复广告段落
+    text = remove_duplicate_ads(text)
+    # 中文数字转换
+    text = convert_cn_chapter_numbers(text)
+    # 空白清理
+    text = normalize_whitespace(text)
+    return text
+
+
+def preprocess_text(text: str) -> str:
+    """对已解码文本执行预处理（供已读取的文本使用）。
+
+    Args:
+        text: 已解码的文本内容
+
+    Returns:
+        str: 标准化后的文本
+    """
+    text = normalize_line_endings(text)
     text = normalize_unicode(text)
     text = remove_ad_lines(text)
-    text = remove_duplicate_ads(text)  # 删除重复广告段落
+    text = remove_duplicate_ads(text)
     text = convert_cn_chapter_numbers(text)
     text = normalize_whitespace(text)
     return text
