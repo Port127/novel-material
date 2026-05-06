@@ -275,12 +275,21 @@ def _sync_outline(conn, novel_dir, material_id):
         cur.execute("DELETE FROM outline_sequences WHERE material_id = %s", (material_id,))
 
         for act_data in acts:
-            act_num = act_data.get("act")
+            # 兼容两种字段名：act（旧）或 act_number（新）
+            act_num = act_data.get("act") or act_data.get("act_number")
             for seq_data in act_data.get("sequences", []):
-                seq_num = seq_data.get("sequence")
-                chapters_range = seq_data.get("chapters", [None, None])
-                chapters_start = chapters_range[0] if len(chapters_range) > 0 else None
-                chapters_end = chapters_range[1] if len(chapters_range) > 1 else None
+                # 兼容两种字段名：sequence（旧）或 sequence_number（新）
+                seq_num = seq_data.get("sequence") or seq_data.get("sequence_number")
+
+                # 兼容两种章节范围格式：
+                # - 新格式：chapter_start, chapter_end（独立字段）
+                # - 旧格式：chapters = [start, end]（数组）
+                chapters_start = seq_data.get("chapter_start")
+                chapters_end = seq_data.get("chapter_end")
+                if chapters_start is None or chapters_end is None:
+                    chapters_range = seq_data.get("chapters", [None, None])
+                    chapters_start = chapters_range[0] if len(chapters_range) > 0 else None
+                    chapters_end = chapters_range[1] if len(chapters_range) > 1 else None
 
                 cur.execute("""
                     INSERT INTO outline_sequences (
@@ -296,14 +305,16 @@ def _sync_outline(conn, novel_dir, material_id):
                 seq_count += 1
 
                 for beat_data in seq_data.get("beats", []):
+                    # 兼容两种字段名：beat（旧）或 beat_number（新）
+                    beat_num = beat_data.get("beat") or beat_data.get("beat_number")
+
                     cur.execute("""
                         INSERT INTO outline_beats (
                             material_id, act, sequence, beat,
                             title, chapter, description, tension
                         ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                     """, (
-                        material_id, act_num, seq_num,
-                        beat_data.get("beat"),
+                        material_id, act_num, seq_num, beat_num,
                         beat_data.get("title"),
                         beat_data.get("chapter"),
                         beat_data.get("description"),

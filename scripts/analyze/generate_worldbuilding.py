@@ -42,7 +42,10 @@ def _build_context(novel_dir: Path, model: str) -> tuple[str, str]:
 
 
 def generate_worldbuilding(material_id):
-    """提取世界观设定。"""
+    """提取世界观设定。
+
+    容错策略：LLM 失败时生成空结构，不中断流程。
+    """
     novel_dir = NOVELS_DIR / material_id
     if not novel_dir.exists():
         logger.error(f"小说目录不存在: {novel_dir}")
@@ -56,7 +59,7 @@ def generate_worldbuilding(material_id):
     # 读取 meta
     meta_file = novel_dir / "meta.yaml"
     with open(meta_file, "r", encoding="utf-8") as f:
-        meta = yaml.safe_load(f)
+        meta = yaml.safe_load(f) or {}
 
     # 构建分析上下文（章级摘要池 > 原文片段）
     context_text, context_label = _build_context(novel_dir, model)
@@ -107,8 +110,21 @@ def generate_worldbuilding(material_id):
 请返回 JSON 格式如上。"""
 
     rate_limit = config["llm"].get("rate_limit_seconds", 1)
-    result = call_llm(system_prompt, user_prompt, config)
-    time.sleep(rate_limit)
+
+    # ── 容错调用 ──
+    result = {}
+    try:
+        result = call_llm(system_prompt, user_prompt, config)
+        time.sleep(rate_limit)
+    except Exception as e:
+        logger.error(f"世界观提取失败: {e}")
+        logger.warning("使用空结构继续，不中断流程")
+        result = {
+            "power_system": {},
+            "geography": {},
+            "factions": [],
+            "lore": {}
+        }
 
     # 写入 _index.yaml
     wb_index = {
@@ -116,7 +132,8 @@ def generate_worldbuilding(material_id):
         "region_count": len(result.get("geography", {}).get("regions", [])),
         "faction_count": len(result.get("factions", [])),
         "lore_items": len(result.get("lore", {}).get("history", [])),
-        "created_at": time.strftime("%Y-%m-%dT%H:%M:%S")
+        "created_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "llm_success": bool(result.get("power_system") or result.get("factions"))
     }
 
     with open(wb_dir / "_index.yaml", "w", encoding="utf-8") as f:

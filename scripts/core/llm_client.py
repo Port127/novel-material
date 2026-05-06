@@ -160,6 +160,7 @@ def call_llm(
     - 最多重试 8 次
     - 429：优先读取 Retry-After 响应头；无头信息则等待 60s
     - 其他错误：指数退避（4→8→16→…→120s），避免雪崩
+    - context_length_exceeded：不重试，立即抛出（避免无意义等待）
 
     Args:
         system_prompt: 系统提示词
@@ -173,20 +174,31 @@ def call_llm(
 
     Raises:
         openai.APIError: 超过最大重试次数后仍失败
+        openai.BadRequestError: context_length_exceeded 等参数错误（不重试）
     """
-    from openai import OpenAI, APIStatusError, APIConnectionError, APITimeoutError
+    from openai import OpenAI, APIStatusError, APIConnectionError, APITimeoutError, BadRequestError
     from tenacity import (
         retry,
         stop_after_attempt,
         retry_if_exception_type,
+        retry_if_exception,
         before_sleep_log,
     )
 
     effective_max_tokens = max_tokens_override or config["llm"].get("max_tokens", 2048)
     effective_timeout = timeout_override or config["llm"].get("timeout_seconds", 6000)
 
+    def _should_retry(retry_state) -> bool:
+        """判断是否应该重试：排除 BadRequestError（参数错误不重试）。"""
+        exc = retry_state.outcome.exception()
+        # BadRequestError (400) 包括 context_length_exceeded，不重试
+        if isinstance(exc, BadRequestError):
+            return False
+        # 其他错误（网络、429、5xx）重试
+        return isinstance(exc, (APIConnectionError, APITimeoutError, APIStatusError))
+
     @retry(
-        retry=retry_if_exception_type((APIConnectionError, APITimeoutError, APIStatusError)),
+        retry=retry_if_exception(_should_retry),
         stop=stop_after_attempt(8),
         wait=_retry_wait,
         before_sleep=before_sleep_log(logger, logging.WARNING),

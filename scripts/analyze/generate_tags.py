@@ -38,7 +38,10 @@ def get_connection():
 
 
 def generate_tags(material_id):
-    """为整部小说生成多维标签。"""
+    """为整部小说生成多维标签。
+
+    容错策略：LLM 失败时生成默认标签，不中断流程。
+    """
     novel_dir = NOVELS_DIR / material_id
     if not novel_dir.exists():
         logger.error(f"小说目录不存在: {novel_dir}")
@@ -93,15 +96,37 @@ def generate_tags(material_id):
 请返回 JSON 格式如上。"""
 
     rate_limit = config["llm"].get("rate_limit_seconds", 1)
-    result = call_llm(system_prompt, user_prompt, config)
-    time.sleep(rate_limit)
+
+    # ── 容错调用 ──
+    result = {}
+    try:
+        result = call_llm(system_prompt, user_prompt, config)
+        time.sleep(rate_limit)
+    except Exception as e:
+        logger.error(f"标签生成失败: {e}")
+        logger.warning("使用默认标签继续，不中断流程")
+        result = {
+            "genre_primary": [genre_primary],
+            "genre_secondary": [],
+            "elements": [],
+            "setting": None,
+            "style": [],
+            "structure": None,
+            "hooks": [],
+            "tropes": [],
+            "themes": [],
+            "genre_description": ""
+        }
 
     # 校验并保存标签（分级处理新标签）
     tags, new_candidates = validate_and_save_tags(material_id, result, genre_primary)
 
     # 如果有新标签候选，触发频率自动批
     if new_candidates:
-        auto_approve_by_frequency()
+        try:
+            auto_approve_by_frequency()
+        except Exception as e:
+            logger.warning(f"频率自动批失败: {e}，跳过")
 
     logger.info(f"标签生成完成:\n"
                 f"  题材: {tags.get('genre_primary')}\n"

@@ -143,7 +143,10 @@ def _extract_minor_characters(
 
 
 def generate_characters(material_id):
-    """分层提取人物体系。"""
+    """分层提取人物体系。
+
+    容错策略：任何轮次失败时使用空数组继续，不中断流程。
+    """
     novel_dir = NOVELS_DIR / material_id
     if not novel_dir.exists():
         logger.error(f"小说目录不存在: {novel_dir}")
@@ -158,7 +161,7 @@ def generate_characters(material_id):
 
     # 读取 meta
     with open(novel_dir / "meta.yaml", "r", encoding="utf-8") as f:
-        meta = yaml.safe_load(f)
+        meta = yaml.safe_load(f) or {}
 
     # 构建分析上下文
     context_text, context_label = _build_context(novel_dir, model)
@@ -166,17 +169,29 @@ def generate_characters(material_id):
 
     rate_limit = config["llm"].get("rate_limit_seconds", 1)
 
-    # 第一轮：核心人物
-    core_characters = _extract_core_characters(context_text, context_label, meta, config)
-    time.sleep(rate_limit)
+    # ── 第一轮：核心人物（容错）──
+    core_characters = []
+    try:
+        core_characters = _extract_core_characters(context_text, context_label, meta, config)
+        time.sleep(rate_limit)
+        logger.info(f"  提取核心人物: {len(core_characters)} 人")
+    except Exception as e:
+        logger.error(f"核心人物提取失败: {e}")
+        logger.warning("使用空列表继续，不中断流程")
+        core_characters = []
 
     core_names = [ch.get("name") for ch in core_characters if ch.get("name")]
-    logger.info(f"  提取核心人物: {len(core_characters)} 人")
 
-    # 第二轮：次要人物
-    minor_characters = _extract_minor_characters(context_text, context_label, meta, core_names, config)
-    time.sleep(rate_limit)
-    logger.info(f"  补充次要人物: {len(minor_characters)} 人")
+    # ── 第二轮：次要人物（容错）──
+    minor_characters = []
+    try:
+        minor_characters = _extract_minor_characters(context_text, context_label, meta, core_names, config)
+        time.sleep(rate_limit)
+        logger.info(f"  补充次要人物: {len(minor_characters)} 人")
+    except Exception as e:
+        logger.error(f"次要人物提取失败: {e}")
+        logger.warning("使用空列表继续，不中断流程")
+        minor_characters = []
 
     # 合并
     all_characters = core_characters + minor_characters

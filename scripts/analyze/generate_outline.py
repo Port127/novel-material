@@ -158,6 +158,10 @@ def generate_outline(material_id):
     两阶段策略：
     1. 全局一次：基于分层摘要池生成前提/主题/基调 + 幕/序列划分
     2. per-sequence 循环：为每个序列独立生成 beats，上下文聚焦，输出量可控
+
+    容错策略：
+    - 每轮 LLM 调用失败时使用默认值继续
+    - 序列 beats 生成失败时跳过该序列，继续下一个
     """
     novel_dir = NOVELS_DIR / material_id
     if not novel_dir.exists():
@@ -170,8 +174,13 @@ def generate_outline(material_id):
     outline_dir.mkdir(exist_ok=True)
 
     # 读取章节索引
-    with open(novel_dir / "chapter_index.yaml", "r", encoding="utf-8") as f:
-        chapter_index = yaml.safe_load(f)
+    chapter_index_file = novel_dir / "chapter_index.yaml"
+    if not chapter_index_file.exists():
+        logger.error(f"chapter_index.yaml 不存在")
+        return
+
+    with open(chapter_index_file, "r", encoding="utf-8") as f:
+        chapter_index = yaml.safe_load(f) or []
     chapter_count = len(chapter_index)
 
     # 加载章节数据（优先从 chapters/ 目录，兜底 chapters.yaml）
@@ -187,7 +196,9 @@ def generate_outline(material_id):
             context_text = f.read()[:5000]
         context_label = "原文摘录（前 5000 字）"
 
-    # ── 第一轮：提炼前提 + 主题 + 基调 ──
+    rate_limit = config["llm"].get("rate_limit_seconds", 1)
+
+    # ── 第一轮：提炼前提 + 主题 + 基调（容错）──
     system_prompt_premise = """你是专业的小说结构分析师。请根据提供的内容，生成以下 JSON：
 {
   "premise": "一句话核心前提（50字以内）",
@@ -204,14 +215,26 @@ def generate_outline(material_id):
 
 返回 JSON 格式如上。"""
 
-    result = call_llm(system_prompt_premise, user_prompt_premise, config)
+    result = {}
+    try:
+        result = call_llm(system_prompt_premise, user_prompt_premise, config)
+    except Exception as e:
+        logger.error(f"前提提炼失败: {e}")
+        logger.warning("使用默认值继续，不中断流程")
+        result = {
+            "premise": "未知",
+            "structure_type": "三幕式",
+            "total_acts": 3,
+            "theme": [],
+            "tone": []
+        }
 
     # 将 premise 写入 meta
     meta_file = novel_dir / "meta.yaml"
     with open(meta_file, "r", encoding="utf-8") as f:
-        meta = yaml.safe_load(f)
+        meta = yaml.safe_load(f) or {}
 
-    meta["premise"] = result.get("premise", "")
+    meta["premise"] = result.get("premise", "未知")
     meta["theme"] = result.get("theme", [])
     meta["tone"] = result.get("tone", [])
     meta["structure_type"] = result.get("structure_type", "三幕式")
@@ -220,32 +243,52 @@ def generate_outline(material_id):
         yaml.dump(meta, f, allow_unicode=True, default_flow_style=False)
 
     logger.info(f"已生成前提: {meta['premise']}")
-
-    rate_limit = config["llm"].get("rate_limit_seconds", 1)
     time.sleep(rate_limit)
 
-    # ── 第二轮：生成幕 + 序列（不含 beats）──
+    # ── 第二轮：生成幕 + 序列（不含 beats）（容错）──
     logger.info(f"生成幕/序列结构（共 {chapter_count} 章）...")
-    acts = _generate_acts_sequences(chapter_count, meta, context_text, config)
-    time.sleep(rate_limit)
+    acts = []
+    try:
+        acts = _generate_acts_sequences(chapter_count, meta, context_text, config)
+        time.sleep(rate_limit)
+        # 检查返回是否有效（空列表或无序列视为失败）
+        if not acts or not any(act.get("sequences") for act in acts):
+            logger.warning("LLM 返回空结构，使用简单划分")
+            acts = generate_simple_acts(chapter_count, result.get("structure_type", "三幕式"))
+    except Exception as e:
+        logger.error(f"幕/序列生成失败: {e}")
+        logger.warning("使用简单划分继续，不中断流程")
+        acts = generate_simple_acts(chapter_count, result.get("structure_type", "三幕式"))
 
-    # ── 第三轮：逐序列生成 beats ──
+    # ── 第三轮：逐序列生成 beats（每个序列容错）──
     total_sequences = sum(len(act.get("sequences", [])) for act in acts)
     logger.info(f"逐序列生成 beats（共 {total_sequences} 个序列）...")
 
     beats_data = []
     seq_global = 0
+    failed_sequences = 0
+
     for act in acts:
         for seq in act.get("sequences", []):
             seq_global += 1
-            logger.info(f"  [{seq_global}/{total_sequences}] {act.get('name', '')} / {seq.get('title', '')}")
-            beats = _generate_beats_for_sequence(
-                act_number=act["act_number"],
-                seq=seq,
-                chapters_data=chapters_data,
-                model=model,
-                config=config,
-            )
+            seq_title = seq.get("title", "")
+            logger.info(f"  [{seq_global}/{total_sequences}] {act.get('name', '')} / {seq_title}")
+
+            # 每个序列独立容错
+            beats = []
+            try:
+                beats = _generate_beats_for_sequence(
+                    act_number=act["act_number"],
+                    seq=seq,
+                    chapters_data=chapters_data,
+                    model=model,
+                    config=config,
+                )
+            except Exception as e:
+                logger.error(f"序列 {seq_global} beats 生成失败: {e}")
+                logger.warning("跳过该序列，继续下一个")
+                failed_sequences += 1
+
             seq["beats"] = beats
             for beat in beats:
                 beats_data.append({
@@ -258,8 +301,12 @@ def generate_outline(material_id):
                     "description": beat.get("description", ""),
                     "tension": beat.get("tension", 1)
                 })
+
             if seq_global < total_sequences:
                 time.sleep(rate_limit)
+
+    if failed_sequences > 0:
+        logger.warning(f"共有 {failed_sequences} 个序列 beats 生成失败")
 
     # ── 写入输出文件 ──
 
@@ -268,6 +315,7 @@ def generate_outline(material_id):
         "structure_type": meta.get("structure_type", "三幕式"),
         "act_count": len(acts),
         "sequence_count": total_sequences,
+        "sequence_failed": failed_sequences,
         "hook_count": 0,
         "subplot_count": 0,
         "created_at": time.strftime("%Y-%m-%dT%H:%M:%S")
@@ -303,7 +351,76 @@ def generate_outline(material_id):
     with open(outline_dir / "hooks_network.yaml", "w", encoding="utf-8") as f:
         yaml.dump({"hooks": [], "subplots": []}, f, allow_unicode=True, default_flow_style=False)
 
-    logger.info(f"大纲生成完成: {len(acts)}幕, {total_sequences}序列, {len(beats_data)}节拍")
+    logger.info(f"大纲生成完成: {len(acts)}幕, {total_sequences}序列, {len(beats_data)}节拍"
+                + (f" ({failed_sequences}序列失败)" if failed_sequences > 0 else ""))
+
+
+def generate_simple_acts(chapter_count: int, structure_type: str = "三幕式") -> list:
+    """生成简单的幕/序列划分（LLM 失败时的兜底方案）。
+
+    Args:
+        chapter_count: 总章节数（必须 >= 1）
+        structure_type: 结构类型
+
+    Returns:
+        简单划分的 acts 列表
+    """
+    # 边界保护：章节太少时用单一划分
+    if chapter_count < 3:
+        return [
+            {
+                "act_number": 1,
+                "name": "全书",
+                "chapter_start": 1,
+                "chapter_end": chapter_count,
+                "sequences": [{
+                    "sequence_number": 1,
+                    "title": "完整故事",
+                    "chapter_start": 1,
+                    "chapter_end": chapter_count,
+                    "description": "短篇故事"
+                }]
+            }
+        ]
+
+    # 三幕式划分
+    if structure_type == "三幕式":
+        act1_end = max(1, int(chapter_count * 0.25))  # 至少 1 章
+        act2_end = max(act1_end + 1, int(chapter_count * 0.75))  # 至少 act1_end + 1
+        return [
+            {
+                "act_number": 1,
+                "name": "第一幕：建立",
+                "chapter_start": 1,
+                "chapter_end": act1_end,
+                "sequences": [{"sequence_number": 1, "title": "开篇", "chapter_start": 1, "chapter_end": act1_end, "description": "故事建立"}]
+            },
+            {
+                "act_number": 2,
+                "name": "第二幕：对抗",
+                "chapter_start": act1_end + 1,
+                "chapter_end": act2_end,
+                "sequences": [{"sequence_number": 2, "title": "发展", "chapter_start": act1_end + 1, "chapter_end": act2_end, "description": "冲突发展"}]
+            },
+            {
+                "act_number": 3,
+                "name": "第三幕：解决",
+                "chapter_start": act2_end + 1,
+                "chapter_end": chapter_count,
+                "sequences": [{"sequence_number": 3, "title": "结局", "chapter_start": act2_end + 1, "chapter_end": chapter_count, "description": "故事结局"}]
+            }
+        ]
+    else:
+        # 其他类型：简单等分
+        return [
+            {
+                "act_number": 1,
+                "name": "第一部分",
+                "chapter_start": 1,
+                "chapter_end": chapter_count,
+                "sequences": [{"sequence_number": 1, "title": "全书", "chapter_start": 1, "chapter_end": chapter_count, "description": "完整故事"}]
+            }
+        ]
 
 
 if __name__ == "__main__":
