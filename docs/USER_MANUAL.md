@@ -8,8 +8,10 @@
 4. [pgAdmin 使用指南](#4-pgadmin-使用指南)
 5. [PostgreSQL 基础操作](#5-postgresql-基础操作)
 6. [流水线操作](#6-流水线操作)
-7. [检索功能](#7-检索功能)
-8. [常见问题](#8-常见问题)
+7. [标签系统](#7-标签系统)
+8. [检索功能](#8-检索功能)
+9. [容错机制](#9-容错机制)
+10. [常见问题](#10-常见问题)
 
 ---
 
@@ -528,7 +530,119 @@ data/novels/nm_novel_20260503_xxxx/
 
 ---
 
-## 7. 检索功能
+## 7. 标签系统
+
+### 7.1 标签体系结构
+
+标签按维度和领域分级，存储在 PostgreSQL 数据库中：
+
+| 维度 | 说明 | 示例 |
+|------|------|------|
+| **element** | 小说元素 | 血脉、复仇、成长、背叛 |
+| **setting** | 世界观体系 | 修真体系、魔法体系、科幻体系 |
+| **style** | 叙事风格 | 华丽、朴素、暗黑、热血 |
+| **structure** | 叙事结构 | 三幕式、英雄之旅、多线叙事 |
+
+领域分类：
+- **common**：通用标签（所有题材共用）
+- **xuanhuan**：玄幻专属（血脉、飞升、洞天）
+- **xianxia**：仙侠专属（渡劫、宗门、炼丹）
+- **dushi**：都市专属（商战、娱乐圈、神豪）
+- **kehuan**：科幻专属（机甲、星际、丧尸）
+- **qihuan**：奇幻专属（魔法、骑士、精灵）
+- **lingyi**：悬疑灵异专属（诡异、克苏鲁）
+
+### 7.2 动态加载
+
+标签按题材动态加载，避免 LLM prompt 截断：
+
+```
+题材: 玄幻
+    ↓
+加载: common + xuanhuan 相关标签
+    ↓
+数量: 约 100 个（而非全部 600+）
+```
+
+### 7.3 标签管理命令
+
+```bash
+# 查看标签统计
+python scripts/tags/manage.py stats
+
+# 导出 YAML 视图（人读）
+python scripts/tags/manage.py export
+
+# 添加新标签
+python scripts/tags/manage.py add element 血脉 xuanhuan --group 设定元素
+
+# 删除标签
+python scripts/tags/manage.py remove element 血脉
+
+# 移动标签到其他领域
+python scripts/tags/manage.py move element 血脉 xianxia
+
+# 列出所有标签
+python scripts/tags/manage.py list-tags --dimension element
+```
+
+或使用 Makefile：
+
+```bash
+make tags-stats    # 标签统计
+make tags-export   # 导出 YAML 视图
+make tags-review   # 审核新标签候选
+```
+
+### 7.4 新标签审核
+
+新发现的标签会进入候选池，分级审核：
+
+| Level | 标签类型 | 审核方式 |
+|-------|---------|---------|
+| 0 | hooks/tropes/themes | 自动入库 |
+| 1 | element/style | 出现 ≥3 次自动批 |
+| 2 | setting/structure | LLM 辅助审核 |
+| 3 | genre | 人工审核 |
+
+审核命令：
+
+```bash
+# 查看待审核标签
+python scripts/tags/review.py list
+
+# 批准标签
+python scripts/tags/review.py approve 1 --domain xuanhuan
+
+# 拒绝标签
+python scripts/tags/review.py reject 1
+
+# 触发频率自动批
+python scripts/tags/scheduled.py auto-approve
+
+# 触发 LLM 批量审核
+python scripts/tags/scheduled.py llm-review
+```
+
+### 7.5 标签校验
+
+导入素材时会自动校验标签合法性：
+
+```bash
+# 校验单个标签
+python scripts/tags/validate.py element 血脉
+
+# 校验批量标签
+python -c "
+from scripts.tags.validate import validate_tags_batch
+valid, invalid = validate_tags_batch('element', ['血脉', '不存在的'])
+print(f'合法: {valid}, 非法: {invalid}')
+"
+```
+
+---
+
+## 8. 检索功能
 
 ### 7.1 检索脚本一览
 
@@ -667,7 +781,73 @@ python scripts/search/search_event.py "雨夜" --keyword --limit 10
 
 ---
 
-## 8. 常见问题
+## 9. 容错机制
+
+### 9.1 无人值守保障
+
+分析脚本内置容错，支持睡前启动多任务：
+
+| 失败场景 | 兜底方案 | 结果 |
+|----------|---------|------|
+| 前提提炼失败 | `premise="未知"` | 继续流程 |
+| 幕/序列生成失败 | `generate_simple_acts()` 简单划分 | 继续流程 |
+| 序列 beats 失败 | 跳过该序列 | 继续下一个 |
+| 世界观提取失败 | 空结构 | 继续流程 |
+| 人物提取失败 | 空列表 | 继续流程 |
+| 标签生成失败 | 默认标签 `genre=["其他"]` | 继续流程 |
+| 单章分析失败 | 跳过该章 | 继续下一章 |
+
+### 9.2 断点续传
+
+章级分析采用断点续传机制：
+
+```
+每章独立存储: chapters/{n:04d}.yaml
+    ↓
+崩溃恢复: 从最后完成的章节继续
+    ↓
+全部完成: 合并为 chapters.yaml
+```
+
+执行流程：
+
+```bash
+# 第一次执行（分析到第 500 章崩溃）
+make analyze ID=nm_novel_xxx
+
+# 第二次执行（自动从第 501 章继续）
+make analyze ID=nm_novel_xxx
+# 输出: "断点续传：已完成 500 章，从第 501 章继续"
+```
+
+### 9.3 API 重试策略
+
+LLM 调用自动重试：
+
+| 错误类型 | 重试策略 |
+|----------|---------|
+| 429（限流） | 优先读取 Retry-After 头，最多 8 次 |
+| 5xx（服务端） | 指数退避（4→8→16→…→120s） |
+| 网络超时 | 指数退避，最多 8 次 |
+| context_length_exceeded | 快速失败（不重试） |
+
+### 9.4 检查分析质量
+
+查看 `_index.yaml` 中的质量标记：
+
+```bash
+# 查看大纲生成状态
+cat data/novels/nm_novel_xxx/outline/_index.yaml
+# 输出包含: sequence_failed: 0（无失败）
+
+# 查看世界观提取状态
+cat data/novels/nm_novel_xxx/worldbuilding/_index.yaml
+# 输出包含: llm_success: true（成功）
+```
+
+---
+
+## 10. 常见问题
 
 ### Q1: Docker 容器启动失败
 
@@ -767,6 +947,11 @@ make finalize ID=<id>     # 收尾
 # 素材管理
 make import-material ID=<id>  # 导入
 make delete-material ID=<id>  # 删除
+
+# 标签管理
+make tags-stats              # 标签统计
+make tags-export             # 导出 YAML 视图
+make tags-review             # 审核新标签候选
 
 # 检索
 make search       # 显示检索帮助

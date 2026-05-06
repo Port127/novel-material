@@ -1,4 +1,4 @@
-.PHONY: help db-up db-down db-init db-shell db-reset ingest full analyze finalize search import-material delete-material validate docker-prune
+.PHONY: help db-up db-down db-init db-shell db-reset ingest full analyze finalize search import-material delete-material validate docker-prune tags-stats tags-export tags-review
 
 PYTHON := python
 
@@ -21,6 +21,11 @@ help:
 	@echo "素材管理:"
 	@echo "  import-material ID=  导入外部素材"
 	@echo "  delete-material ID=  删除素材及所有关联数据"
+	@echo ""
+	@echo "标签管理:"
+	@echo "  tags-stats     查看标签统计"
+	@echo "  tags-export    导出 YAML 视图（人读）"
+	@echo "  tags-review    审核新标签候选"
 	@echo ""
 	@echo "检索:"
 	@echo "  search TYPE=<world|outline|detail|chapter|character|event> ARGS=..."
@@ -140,3 +145,17 @@ validate:
 docker-prune:
 	@echo "▶ 清理未使用的 Docker 资源..."
 	docker system prune -f
+
+# ── 标签管理 ───────────────────────────────────────────────
+tags-stats:
+	@echo "▶ 查看标签统计..."
+	$(PYTHON) scripts/tags/manage.py stats
+
+tags-export:
+	@echo "▶ 导出 YAML 视图..."
+	$(PYTHON) scripts/tags/manage.py export
+	@echo "已导出到 data/tags_view.yaml"
+
+tags-review:
+	@echo "▶ 查看待审核新标签..."
+	$(PYTHON) scripts/tags/review.py list
