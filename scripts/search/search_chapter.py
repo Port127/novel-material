@@ -17,6 +17,7 @@ load_dotenv()
 
 from scripts.search._common import build_like_terms, require_database_url
 from scripts.core.embedding import get_embedding, load_embedding_config
+from scripts.tags.resolve import resolve_tag_domain, suggest_genre_for_tag
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
@@ -118,10 +119,28 @@ def search_chapters(query, genre=None, chapter_function=None, chapter_num=None, 
                 params.append(tension_max)
 
             if element:
+                # 标签领域定位（提示用户）
+                try:
+                    domain, is_common = resolve_tag_domain("element", element)
+                    if not is_common:
+                        suggested = suggest_genre_for_tag("element", element)
+                        if suggested and not genre:
+                            print(f"提示: '{element}' 是 {suggested} 题材专属标签")
+                            print(f"建议加 --genre 参数获得更精准结果")
+                except ValueError:
+                    print(f"警告: '{element}' 不在标签字典中")
+
                 sql += " AND n.tags->'elements' @> %s::jsonb"
                 params.append(json.dumps([element]))
 
             if style:
+                # 标签领域定位（提示用户）
+                try:
+                    domain, is_common = resolve_tag_domain("style", style)
+                    # style 通常都是 common，所以不需要特别提示
+                except ValueError:
+                    print(f"警告: '{style}' 不在标签字典中")
+
                 sql += " AND n.tags->'style' @> %s::jsonb"
                 params.append(json.dumps([style]))
 

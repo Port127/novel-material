@@ -21,8 +21,8 @@ if str(_ROOT) not in sys.path:
 from pydantic import BaseModel, field_validator, Field
 from pydantic import ValidationError as PydanticValidationError
 
-from scripts.core.paths import NOVELS_DIR, TAGS_FILE, VALID_STATUSES
-from scripts.utils.tag_validator import flatten_tags, build_synonym_reverse, synonym_expand
+from scripts.core.paths import NOVELS_DIR, VALID_STATUSES
+from scripts.tags.validate import validate_tag, validate_tags_batch
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 常量
@@ -204,7 +204,10 @@ def validate_chapters(material_id: str) -> list[str]:
 
 
 def validate_novel_tags(material_id: str) -> list[str]:
-    """校验 tags.yaml（小说级），返回错误描述列表。"""
+    """校验 tags.yaml（小说级），返回错误描述列表。
+
+    改用数据库校验标签合法性。
+    """
     tags_file = NOVELS_DIR / material_id / "tags.yaml"
     if not tags_file.exists():
         return []  # tags.yaml 可能还未生成，不视为错误
@@ -234,51 +237,35 @@ def validate_novel_tags(material_id: str) -> list[str]:
             field = ".".join(str(loc) for loc in err["loc"])
             errors.append(f"tags.yaml [{field}]: {err['msg']}")
 
-    # ── 标签白名单校验 ──
-    if TAGS_FILE.exists():
-        with open(TAGS_FILE, "r", encoding="utf-8") as f:
-            tags_dict = yaml.safe_load(f) or {}
+    # ── 标签白名单校验（改用数据库）──
+    # elements 列表校验
+    elements = data.get("elements") or []
+    if isinstance(elements, list):
+        valid, invalid = validate_tags_batch("element", elements)
+        for tag in invalid:
+            errors.append(f"tags.yaml [elements]: '{tag}' 不在标签字典中")
 
-        reverse_map = build_synonym_reverse(tags_dict)
+    # style 校验
+    style_val = data.get("style")
+    style_list = style_val if isinstance(style_val, list) else ([style_val] if style_val else [])
+    if style_list:
+        valid, invalid = validate_tags_batch("style", style_list)
+        for tag in invalid:
+            errors.append(f"tags.yaml [style]: '{tag}' 不在标签字典中")
 
-        valid_elements = flatten_tags(tags_dict.get("element", {}))
-        valid_styles = flatten_tags(tags_dict.get("style", {}))
-        valid_structures = flatten_tags(tags_dict.get("structure", {}))
-        valid_settings = flatten_tags(tags_dict.get("setting", {}))
-        valid_channels = set(tags_dict.get("channel", []))
+    # structure 单值校验
+    structure = data.get("structure")
+    if structure:
+        canonical = validate_tag("structure", structure)
+        if not canonical:
+            errors.append(f"tags.yaml [structure]: '{structure}' 不在标签字典中")
 
-        # channel 校验
-        channel = data.get("channel")
-        if channel and synonym_expand(channel, reverse_map) not in valid_channels:
-            errors.append(f"tags.yaml [channel]: '{channel}' 不在标签字典中")
-
-        # elements 列表校验
-        for tag in (data.get("elements") or []):
-            canonical = synonym_expand(str(tag), reverse_map)
-            if canonical not in valid_elements:
-                errors.append(f"tags.yaml [elements]: '{tag}' 不在标签字典中")
-
-        # style 列表校验
-        style_val = data.get("style")
-        style_list = style_val if isinstance(style_val, list) else ([style_val] if style_val else [])
-        for tag in style_list:
-            canonical = synonym_expand(str(tag), reverse_map)
-            if canonical not in valid_styles:
-                errors.append(f"tags.yaml [style]: '{tag}' 不在标签字典中")
-
-        # structure 单值校验
-        structure = data.get("structure")
-        if structure:
-            canonical = synonym_expand(str(structure), reverse_map)
-            if canonical not in valid_structures:
-                errors.append(f"tags.yaml [structure]: '{structure}' 不在标签字典中")
-
-        # setting 单值校验
-        setting = data.get("setting")
-        if setting:
-            canonical = synonym_expand(str(setting), reverse_map)
-            if canonical not in valid_settings:
-                errors.append(f"tags.yaml [setting]: '{setting}' 不在标签字典中")
+    # setting 单值校验
+    setting = data.get("setting")
+    if setting:
+        canonical = validate_tag("setting", setting)
+        if not canonical:
+            errors.append(f"tags.yaml [setting]: '{setting}' 不在标签字典中")
 
     return errors
 

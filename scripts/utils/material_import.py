@@ -1,16 +1,22 @@
 #!/usr/bin/env python
-"""导入外部已分析好的素材目录，重新生成 material_id 并注册。"""
+"""导入外部已分析好的素材目录，重新生成 material_id 并注册。
+
+改用数据库校验标签合法性。
+"""
 import sys
 import yaml
 import shutil
 import time
 from pathlib import Path
 from datetime import datetime
-from scripts.core.paths import NOVELS_DIR, TAGS_FILE, INDEX_FILE
 
 _ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
+
+from scripts.core.paths import NOVELS_DIR, INDEX_FILE
+from scripts.tags.validate import validate_tag, validate_tags_batch
+
 
 def generate_material_id():
     """生成唯一的 material_id: nm_novel_YYYYMMDD_xxxx"""
@@ -20,45 +26,41 @@ def generate_material_id():
     random_str = "".join(random.choices(string.ascii_lowercase + string.digits, k=4))
     return f"nm_novel_{date_str}_{random_str}"
 
-def load_tags_dict():
-    """加载标签字典。"""
-    tags_file = TAGS_FILE
-    if tags_file.exists():
-        with open(tags_file, "r", encoding="utf-8") as f:
-            return yaml.safe_load(f) or {}
-    return {}
 
-def validate_tags(tags, tags_dict):
-    """校验标签合法性。"""
+def validate_tags_with_db(tags):
+    """校验标签合法性（使用数据库）。"""
     invalid = []
     if isinstance(tags, dict):
-        for key, value in tags.items():
-            if key in ["channel", "genre_primary", "style", "structure", "setting"]:
-                valid_set = set()
-                if key == "channel":
-                    valid_set = set(tags_dict.get("channel", []))
-                elif key == "genre_primary":
-                    for g in tags_dict.get("genre", {}).values():
-                        if isinstance(g, list):
-                            valid_set.update(g)
-                elif key == "style":
-                    valid_set = set(tags_dict.get("style", []))
-                elif key == "structure":
-                    valid_set = set(tags_dict.get("structure", []))
-                elif key == "setting":
-                    valid_set = set(tags_dict.get("setting", []))
+        # elements 列表校验
+        elements = tags.get("elements") or []
+        if isinstance(elements, list):
+            _, inv = validate_tags_batch("element", elements)
+            for v in inv:
+                invalid.append(f"element={v}")
 
-                if value and value not in valid_set:
-                    invalid.append(f"{key}={value}")
+        # style 校验
+        style = tags.get("style") or []
+        if isinstance(style, str):
+            style = [style]
+        if isinstance(style, list):
+            _, inv = validate_tags_batch("style", style)
+            for v in inv:
+                invalid.append(f"style={v}")
 
-            elif key == "elements":
-                valid_elements = set(tags_dict.get("element", []))
-                if isinstance(value, list):
-                    for v in value:
-                        if v not in valid_elements:
-                            invalid.append(f"element={v}")
+        # structure 单值校验
+        structure = tags.get("structure")
+        if structure:
+            if not validate_tag("structure", structure):
+                invalid.append(f"structure={structure}")
+
+        # setting 单值校验
+        setting = tags.get("setting")
+        if setting:
+            if not validate_tag("setting", setting):
+                invalid.append(f"setting={setting}")
 
     return invalid
+
 
 def import_material(source_path):
     """导入外部素材目录。"""
@@ -79,6 +81,7 @@ def import_material(source_path):
 
     # 更新 meta.yaml
     meta_file = target_dir / "meta.yaml"
+    meta = {}
     if meta_file.exists():
         with open(meta_file, "r", encoding="utf-8") as f:
             meta = yaml.safe_load(f) or {}
@@ -90,14 +93,13 @@ def import_material(source_path):
         with open(meta_file, "w", encoding="utf-8") as f:
             yaml.dump(meta, f, allow_unicode=True, default_flow_style=False)
 
-    # 校验标签
-    tags_dict = load_tags_dict()
+    # 校验标签（使用数据库）
     tags_file = target_dir / "tags.yaml"
-    if tags_file.exists() and tags_dict:
+    if tags_file.exists():
         with open(tags_file, "r", encoding="utf-8") as f:
             tags = yaml.safe_load(f) or {}
 
-        invalid = validate_tags(tags, tags_dict)
+        invalid = validate_tags_with_db(tags)
         if invalid:
             print(f"警告: 发现 {len(invalid)} 个非法标签:")
             for inv in invalid:
@@ -129,6 +131,7 @@ def import_material(source_path):
     print(f"  python scripts/core/sync_db.py {new_id}")
 
     return new_id
+
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:

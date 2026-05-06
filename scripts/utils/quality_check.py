@@ -16,7 +16,7 @@ _ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-from scripts.core.paths import NOVELS_DIR, TAGS_FILE
+from scripts.core.paths import NOVELS_DIR
 from scripts.utils.schema_validator import validate_material
 
 

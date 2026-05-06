@@ -9,8 +9,15 @@ DATA_DIR = PROJECT_ROOT / "data"
 NOVELS_DIR = DATA_DIR / "novels"
 CONFIG_DIR = PROJECT_ROOT / "config"
 SCHEMAS_DIR = DATA_DIR / "schemas"
-TAGS_FILE = DATA_DIR / "tags.yaml"
+
+# === TAGS_FILE 已废弃 ===
+# 标签数据已迁移到数据库，不再使用文件
+# TAGS_FILE = DATA_DIR / "tags.yaml"  # 已废弃
+
 INDEX_FILE = DATA_DIR / "index.yaml"
+
+# tags_view.yaml 仅为导出视图，不参与代码逻辑
+TAGS_VIEW_FILE = DATA_DIR / "tags_view.yaml"
 
 # ──────────────────────────────────────────────
 # 统一 meta.yaml 状态管理

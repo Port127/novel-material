@@ -1,8 +1,17 @@
 #!/usr/bin/env python
-"""标签生成：LLM 为整部小说生成宏观标签（类型/基调/叙事结构/风格/长板/套路识别）。"""
+"""标签生成：LLM 为整部小说生成宏观标签（类型/基调/叙事结构/风格/长板/套路识别）。
+
+改动：
+- 使用数据库动态加载标签（load_tags_for_genre）
+- 分级处理新标签候选
+- 支持多主题材（genre_primary 改为数组）
+"""
+import os
 import sys
 import yaml
+import json
 import time
+import psycopg2
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parent.parent.parent
@@ -12,18 +21,21 @@ if str(_ROOT) not in sys.path:
 from dotenv import load_dotenv
 load_dotenv()
 
-from scripts.core.paths import NOVELS_DIR, TAGS_FILE
+from scripts.core.paths import NOVELS_DIR
 from scripts.core.llm_client import load_config, call_llm
-from scripts.utils.tag_validator import flatten_tags, build_synonym_reverse, synonym_expand
+from scripts.tags.load import load_tags_for_genre, format_tags_for_prompt
+from scripts.tags.validate import validate_tag, validate_tags_batch
+from scripts.tags.scheduled import auto_approve_by_frequency
 from scripts.utils.progress_tracker import get_pipeline_logger
 
 logger = get_pipeline_logger()
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-def load_tags_dict():
-    if TAGS_FILE.exists():
-        with open(TAGS_FILE, "r", encoding="utf-8") as f:
-            return yaml.safe_load(f) or {}
-    return {}
+
+def get_connection():
+    """获取数据库连接。"""
+    return psycopg2.connect(DATABASE_URL)
+
 
 def generate_tags(material_id):
     """为整部小说生成多维标签。"""
@@ -33,17 +45,34 @@ def generate_tags(material_id):
         return
 
     config = load_config()
-    tags_dict = load_tags_dict()
+
+    # 读取 meta 获取题材
+    meta_file = novel_dir / "meta.yaml"
+    if not meta_file.exists():
+        logger.error(f"meta.yaml 不存在: {meta_file}")
+        return
+
+    with open(meta_file, "r", encoding="utf-8") as f:
+        meta = yaml.safe_load(f) or {}
+
+    genre = meta.get("genre", [])
+    genre_primary = genre[0] if genre else "其他"
+    genre_secondary = genre[1] if len(genre) > 1 else None
+
+    # 动态加载标签（精简 prompt）
+    tags_data = load_tags_for_genre(genre_primary, genre_secondary)
+    logger.info(f"动态加载标签: {genre_primary} 题材，约 {count_tags(tags_data)} 个")
 
     # 读取原文（取前 5000 字）
-    with open(novel_dir / "source.txt", "r", encoding="utf-8") as f:
+    source_file = novel_dir / "source.txt"
+    if not source_file.exists():
+        logger.error(f"source.txt 不存在: {source_file}")
+        return
+
+    with open(source_file, "r", encoding="utf-8") as f:
         source_text = f.read()[:5000]
 
-    # 读取 meta 和大纲
-    with open(novel_dir / "meta.yaml", "r", encoding="utf-8") as f:
-        meta = yaml.safe_load(f)
-
-    # 如果有 outline，读取结构信息辅助标签生成
+    # 读取大纲结构信息（辅助标签生成）
     outline_index_file = novel_dir / "outline" / "_index.yaml"
     structure_info = ""
     if outline_index_file.exists():
@@ -51,66 +80,8 @@ def generate_tags(material_id):
             outline_index = yaml.safe_load(f) or {}
         structure_info = f"结构类型：{outline_index.get('structure_type', '未知')}"
 
-    # 从 tags_dict 中提取各维度标签（递归展开分组 dict）
-    valid_channels = tags_dict.get("channel", [])
-
-    # genre: 一级 key 列表
-    valid_genres_primary = list(tags_dict.get("genre", {}).keys())
-    # genre: 所有二级值
-    valid_genres_secondary = []
-    for sub in tags_dict.get("genre", {}).values():
-        if isinstance(sub, list):
-            valid_genres_secondary.extend(sub)
-
-    # element 分组展示（保留分组信息）
-    element_groups = tags_dict.get("element", {})
-    valid_elements = flatten_tags(element_groups)
-
-    # 其他维度平铺展开
-    valid_styles = flatten_tags(tags_dict.get("style", {}))
-    valid_structures = flatten_tags(tags_dict.get("structure", {}))
-    valid_settings = flatten_tags(tags_dict.get("setting", {}))
-
-    # 构建同义词反向映射
-    reverse_map = build_synonym_reverse(tags_dict)
-
-    # 元素标签分组展示字符串（按组展示）
-    element_prompt_parts = []
-    if isinstance(element_groups, dict):
-        for group_name, group_tags in element_groups.items():
-            if isinstance(group_tags, list) and group_tags:
-                element_prompt_parts.append(f"  《{group_name}》: {', '.join(group_tags[:15])}…")
-    element_prompt_str = "\n".join(element_prompt_parts) if element_prompt_parts else ", ".join(list(valid_elements)[:30])
-
-    # 风格标签分组展示字符串
-    style_groups = tags_dict.get("style", {})
-    style_prompt_parts = []
-    if isinstance(style_groups, dict):
-        for group_name, group_tags in style_groups.items():
-            if isinstance(group_tags, list) and group_tags:
-                style_prompt_parts.append(f"  《{group_name}》: {', '.join(group_tags[:10])}…")
-    style_prompt_str = "\n".join(style_prompt_parts) if style_prompt_parts else ", ".join(list(valid_styles)[:20])
-
-    system_prompt = f"""你是专业的小说标签标注师。请为小说生成以下多维标签：
-{{
-  "channel": "频道（必选 1 个）：{valid_channels}",
-  "genre_primary": "主题材（必选，从下列一级题材中选 1 个）：{valid_genres_primary}",
-  "genre_secondary": ["次题材（最多 2 个，从下列二级题材中选）：{valid_genres_secondary[:30]}…"],
-  "elements": ["元素标签（选 3-8 个，必须从以下分组中选取）:\n{element_prompt_str}"],
-  "style": ["风格标签（选 1-3 个，必须从以下分组中选取）:\n{style_prompt_str}"],
-  "structure": "叙事结构（从下列选 1 个）：{list(valid_structures)[:15]}",
-  "setting": "世界观力量体系（从下列选 1 个）：{list(valid_settings)[:15]}",
-  "hooks": ["长板/亮点（1-3 个，自由填写）"],
-  "tropes": ["套路识别（1-3 个，自由填写）"],
-  "themes": ["主题（1-3 个，自由填写）"]
-}}
-
-注意：
-1. channel/genre_primary/genre_secondary/style/structure/setting 必须从上面提供的字典中选取
-2. elements 必须从上面分组列表中选取 3-8 个，不得编造
-3. hooks/tropes/themes 可以自由填写
-4. 不要编造不在字典中的标签值"""
-
+    # 构建 prompt（使用精简后的标签）
+    system_prompt = build_system_prompt(tags_data)
     user_prompt = f"""请为以下小说生成标签：
 
 {meta.get('premise', 'N/A')}
@@ -125,70 +96,200 @@ def generate_tags(material_id):
     result = call_llm(system_prompt, user_prompt, config)
     time.sleep(rate_limit)
 
-    # 校验标签合法性（先同义词展开再判断）
+    # 校验并保存标签（分级处理新标签）
+    tags, new_candidates = validate_and_save_tags(material_id, result, genre_primary)
+
+    # 如果有新标签候选，触发频率自动批
+    if new_candidates:
+        auto_approve_by_frequency()
+
+    logger.info(f"标签生成完成:\n"
+                f"  题材: {tags.get('genre_primary')}\n"
+                f"  元素: {len(tags.get('elements', []))} 个\n"
+                f"  新标签候选: {len(new_candidates)} 个")
+
+
+def build_system_prompt(tags_data):
+    """构建 LLM prompt（使用精简后的标签）。"""
+
+    # 组织标签为 prompt 格式
+    element_prompt = format_dimension_prompt(tags_data.get("element", {}))
+    setting_prompt = format_dimension_prompt(tags_data.get("setting", {}))
+    style_prompt = format_dimension_prompt(tags_data.get("style", {}))
+    structure_prompt = format_dimension_prompt(tags_data.get("structure", {}))
+
+    # 获取所有一级题材
+    from scripts.tags.load import get_all_genres
+    all_genres = get_all_genres()
+
+    return f"""你是专业的小说标签标注师。请为小说生成以下多维标签：
+{
+  "genre_primary": ["主题材（选 1-2 个一级题材）：{all_genres}"],
+  "genre_secondary": ["次题材（选 0-2 个二级题材）"],
+  "elements": ["元素标签（选 3-8 个，必须从以下列表选取):\n{element_prompt}"],
+  "setting": "世界观力量体系（从下列选 1 个）：{setting_prompt}",
+  "style": ["风格标签（选 1-3 个，必须从以下列表选取):\n{style_prompt}"],
+  "structure": "叙事结构（从下列选 1 个）：{structure_prompt}",
+  "hooks": ["长板/亮点（1-3 个，自由填写）"],
+  "tropes": ["套路识别（1-3 个，自由填写）"],
+  "themes": ["主题（1-3 个，自由填写）"],
+  "genre_description": "题材自由描述（一句话，可选）"
+}
+
+注意：
+1. genre_primary 可以选择 1-2 个一级题材（跨题材小说）
+2. elements/style 必须从上面提供的字典中选取，不得编造
+3. setting/structure 必须从上面提供的字典中选取
+4. hooks/tropes/themes/genre_description 可以自由填写"""
+
+
+def format_dimension_prompt(dim_data):
+    """格式化维度标签为 prompt 字符串。"""
+    lines = []
+    for domain, groups in dim_data.items():
+        for group, tags in groups.items():
+            tags_str = ", ".join(tags[:15])  # 限制显示数量
+            lines.append(f"  《{group}》: {tags_str}…")
+    return "\n".join(lines) if lines else "（无限制）"
+
+
+def count_tags(tags_data):
+    """统计标签总数。"""
+    total = 0
+    for dim, domains in tags_data.items():
+        for dom, groups in domains.items():
+            for group, tag_list in groups.items():
+                total += len(tag_list)
+    return total
+
+
+def validate_and_save_tags(material_id, llm_result, context_genre):
+    """校验并保存标签，处理新标签候选。"""
+
     tags = {"material_id": material_id}
-    for key in ["channel", "genre_primary", "genre_secondary", "elements", "style", "structure", "setting", "hooks", "tropes", "themes"]:
-        value = result.get(key, [] if key not in ["channel", "genre_primary", "structure", "setting"] else "")
-        if isinstance(value, str) and value:
-            valid_set: set = set()
-            if key == "channel":
-                valid_set = set(valid_channels)
-            elif key == "genre_primary":
-                valid_set = set(valid_genres_primary)
-            elif key == "structure":
-                valid_set = valid_structures
-            elif key == "setting":
-                valid_set = valid_settings
+    new_candidates = []
 
-            if valid_set:
-                canonical = synonym_expand(value, reverse_map)
-                if canonical not in valid_set:
-                    logger.warning(f"标签 '{key}' 的值 '{value}' 不在字典中，跳过")
-                    continue
-                value = canonical  # 统一为标准名称
+    conn = get_connection()
+    conn.autocommit = True
 
-        elif isinstance(value, list):
-            valid_set = set()
-            if key == "elements":
-                valid_set = valid_elements
-            elif key == "style":
-                valid_set = valid_styles
-            elif key == "genre_secondary":
-                valid_set = set(valid_genres_secondary)
+    # === Level 3: 题材严格校验 ===
+    primary = llm_result.get("genre_primary", [])
+    if isinstance(primary, str):
+        primary = [primary]
 
-            if valid_set:
-                filtered = []
-                for v in value:
-                    canonical = synonym_expand(str(v), reverse_map)
-                    if canonical in valid_set:
-                        filtered.append(canonical)
-                    else:
-                        logger.warning(f"标签 '{key}' 中的 '{v}' 不在字典中，已过滤")
-                value = filtered
+    valid_genres, new_genres = validate_genres(conn, primary)
+    tags["genre_primary"] = valid_genres
 
+    # 如果所有题材都无效，使用"其他"
+    if not valid_genres:
+        tags["genre_primary"] = ["其他"]
+        logger.warning(f"小说 {material_id} 无法归类，使用'其他'")
+
+    # 新题材候选入库
+    for g in new_genres:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO new_genre_candidates (genre, source_material, description)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (genre) DO UPDATE SET occurrence_count = occurrence_count + 1
+            """, [g, material_id, llm_result.get("genre_description")])
+        logger.warning(f"发现新题材候选: {g}")
+
+    # === Level 1/2: 白名单字段校验 ===
+    for key in ["elements", "style"]:
+        value = llm_result.get(key, [])
+
+        if isinstance(value, list):
+            valid, invalid = validate_tags_batch(key, value)
+            tags[key] = valid
+
+            # 新标签候选入库
+            for tag in invalid:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        INSERT INTO new_tag_candidates (dimension, tag, context_genre, source_material)
+                        VALUES (%s, %s, %s, %s)
+                        ON CONFLICT (dimension, tag) DO UPDATE SET occurrence_count = occurrence_count + 1
+                    """, [key, tag, context_genre, material_id])
+                new_candidates.append({"dimension": key, "tag": tag})
+
+            if invalid:
+                logger.warning(f"发现新标签候选: {key}/{invalid}")
+
+    # === Level 2: setting/structure 校验 ===
+    for key in ["setting", "structure"]:
+        value = llm_result.get(key)
+
+        if value:
+            canonical = validate_tag(key, value)
+            if canonical:
+                tags[key] = canonical
+            else:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        INSERT INTO new_tag_candidates (dimension, tag, context_genre, source_material)
+                        VALUES (%s, %s, %s, %s)
+                        ON CONFLICT (dimension, tag) DO UPDATE SET occurrence_count = occurrence_count + 1
+                    """, [key, value, context_genre, material_id])
+                new_candidates.append({"dimension": key, "tag": value})
+                logger.warning(f"发现新标签候选: {key}/{value}")
+
+    # === Level 0: 自由字段自动入库 ===
+    for key in ["hooks", "tropes", "themes", "genre_description"]:
+        value = llm_result.get(key, [])
+        if isinstance(value, str):
+            value = [value] if value else []
         tags[key] = value
 
-    # 写入 tags.yaml
+        # 统计自由标签
+        for tag in value:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO free_tags_stats (dimension, tag)
+                    VALUES (%s, %s)
+                    ON CONFLICT (dimension, tag) DO UPDATE SET
+                        occurrence_count = occurrence_count + 1,
+                        last_seen = NOW()
+                """, [key, tag])
+
+    conn.close()
+
+    # 保存到 tags.yaml
+    novel_dir = NOVELS_DIR / material_id
     with open(novel_dir / "tags.yaml", "w", encoding="utf-8") as f:
         yaml.dump(tags, f, allow_unicode=True, default_flow_style=False)
 
-    # 更新 meta.yaml 中的 genre 和 tags
-    if "genre_primary" in tags:
-        genres = [tags["genre_primary"]]
-        if isinstance(tags.get("genre_secondary"), list):
-            genres.extend(tags["genre_secondary"])
-        meta["genre"] = genres
+    # 更新 meta.yaml
+    with open(novel_dir / "meta.yaml", "r", encoding="utf-8") as f:
+        meta = yaml.safe_load(f) or {}
 
+    meta["genre"] = tags.get("genre_primary", [])
     meta["tags"] = tags
 
     with open(novel_dir / "meta.yaml", "w", encoding="utf-8") as f:
         yaml.dump(meta, f, allow_unicode=True, default_flow_style=False)
 
-    logger.info(f"标签生成完成:\n"
-                f"  频道: {tags.get('channel')}\n"
-                f"  类型: {tags.get('genre_primary')}\n"
-                f"  元素: {len(tags.get('elements', []))} 个\n"
-                f"  风格: {tags.get('style')}")
+    return tags, new_candidates
+
+
+def validate_genres(conn, genre_list):
+    """校验题材是否合法。"""
+
+    with conn.cursor() as cur:
+        cur.execute("SELECT genre_primary FROM genre_domain_map")
+        valid_set = set(row[0] for row in cur.fetchall())
+
+    valid = []
+    new = []
+
+    for g in genre_list:
+        if g in valid_set:
+            valid.append(g)
+        else:
+            new.append(g)
+
+    return valid, new
+
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
