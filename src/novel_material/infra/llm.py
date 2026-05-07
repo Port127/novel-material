@@ -7,11 +7,16 @@ import logging
 import time
 from dotenv import load_dotenv
 import os
+from pathlib import Path
+import yaml
 
 load_dotenv()
 
 from .progress import get_pipeline_logger
 logger = get_pipeline_logger()
+
+# 多服务商配置文件路径
+PROVIDERS_CONFIG_FILE = Path(__file__).resolve().parent.parent.parent.parent / "config" / "providers.yaml"
 
 
 # API 调用统计
@@ -83,6 +88,94 @@ def load_config():
                 "input_per_1k": float(os.getenv("LLM_PRICE_INPUT_1K", "0.0004")),
                 "output_per_1k": float(os.getenv("LLM_PRICE_OUTPUT_1K", "0.0012")),
             },
+        }
+    }
+
+
+def _load_providers_yaml() -> dict | None:
+    """加载 providers.yaml 配置文件，返回 None 表示文件不存在。"""
+    if not PROVIDERS_CONFIG_FILE.exists():
+        return None
+    with open(PROVIDERS_CONFIG_FILE, "r", encoding="utf-8") as f:
+        return yaml.safe_load(f) or {}
+
+
+def list_available_providers() -> list[str]:
+    """列出所有可用的服务商名称。
+
+    返回：
+        list：服务商名称列表，若 providers.yaml 不存在则返回空列表
+    """
+    config = _load_providers_yaml()
+    if not config:
+        return []
+    providers = config.get("providers", [])
+    return [p.get("name", "") for p in providers if p.get("name")]
+
+
+def load_provider_config(provider_name: str | None = None) -> dict:
+    """加载指定服务商的配置。
+
+    配置优先级：
+    1. 指定的 provider_name
+    2. providers.yaml 中的 default_provider
+    3. .env 文件配置（向后兼容）
+
+    参数：
+        provider_name：服务商名称（可选，对应 providers.yaml 中的 name 字段）
+
+    返回：
+        dict：与 load_config() 格式一致的配置字典
+
+    异常：
+        ValueError：指定了 provider_name 但在 providers.yaml 中找不到
+    """
+    providers_yaml = _load_providers_yaml()
+
+    # 若 providers.yaml 不存在，使用 .env 配置
+    if not providers_yaml:
+        return load_config()
+
+    providers = providers_yaml.get("providers", [])
+
+    # 确定要使用的服务商
+    target_name = provider_name or providers_yaml.get("default_provider")
+
+    # 若未指定且无 default_provider，使用 .env 配置
+    if not target_name:
+        return load_config()
+
+    # 查找指定的服务商
+    provider_config = None
+    for p in providers:
+        if p.get("name") == target_name:
+            provider_config = p
+            break
+
+    if not provider_config:
+        available = list_available_providers()
+        raise ValueError(
+            f"服务商 '{target_name}' 不存在。可用服务商: {available}"
+        )
+
+    # 从环境变量获取 api_key
+    api_key_env = provider_config.get("api_key_env", "")
+    api_key = os.getenv(api_key_env, "")
+
+    if not api_key:
+        logger.warning(f"服务商 '{target_name}' 的 API Key 未配置（环境变量 {api_key_env}）")
+
+    # 从 .env 获取基础配置（公共参数）
+    base_config = load_config()
+
+    # 只覆盖服务商差异化参数
+    return {
+        "llm": {
+            **base_config["llm"],  # 复制 .env 的所有配置
+            "provider": target_name,
+            "model": provider_config.get("model", base_config["llm"]["model"]),
+            "api_key": api_key,
+            "base_url": provider_config.get("base_url", base_config["llm"]["base_url"]),
         }
     }
 

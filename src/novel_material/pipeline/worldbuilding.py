@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 
 from novel_material.infra.config import NOVELS_DIR
-from novel_material.infra.llm import load_config, call_llm
+from novel_material.infra.llm import load_config, load_provider_config, call_llm
 from novel_material.pipeline.loader import load_chapters_data, build_summary_pool
 from novel_material.infra.progress import get_pipeline_logger
 
@@ -31,18 +31,22 @@ def _build_context(novel_dir: Path, config: dict) -> tuple[str, str]:
         return f.read()[:10000], "原文摘录（前 10000 字）"
 
 
-def generate_worldbuilding(material_id) -> bool:
+def generate_worldbuilding(material_id, provider: str | None = None) -> bool:
     """提取世界观设定。
 
     容错策略：LLM 失败时生成空结构，不中断流程。
     返回 True 表示成功。
+
+    参数：
+        material_id: 素材 ID
+        provider: 服务商名称（可选，不指定则使用默认配置）
     """
     novel_dir = NOVELS_DIR / material_id
     if not novel_dir.exists():
         logger.error(f"小说目录不存在: {novel_dir}")
         return False
 
-    config = load_config()
+    config = load_provider_config(provider) if provider else load_config()
     wb_dir = novel_dir / "worldbuilding"
     wb_dir.mkdir(exist_ok=True)
 

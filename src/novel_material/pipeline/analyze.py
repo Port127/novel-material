@@ -22,7 +22,7 @@ from pathlib import Path
 from collections.abc import Callable
 
 from novel_material.infra.config import NOVELS_DIR, update_meta_status
-from novel_material.infra.llm import load_config, call_llm, truncate_to_tokens
+from novel_material.infra.llm import load_config, load_provider_config, call_llm, truncate_to_tokens
 from novel_material.validation.quality import run_quality_check
 from novel_material.infra.progress import get_pipeline_logger
 
@@ -276,6 +276,7 @@ def chapter_analyze(
     progress_callback: Callable[[int, int, str], None] | None = None,
     start_ch: int | None = None,
     end_ch: int | None = None,
+    provider: str | None = None,
 ) -> bool:
     """对指定小说进行章节分析（支持断点续传和范围指定）。
 
@@ -291,6 +292,7 @@ def chapter_analyze(
         progress_callback：可选进度回调函数 (done: int, total: int, desc: str) -> None
         start_ch：起始章节号（可选，不指定则从第一章开始）
         end_ch：结束章节号（可选，不指定则到最后一章）
+        provider：服务商名称（可选，不指定则使用默认配置）
 
     返回：
         True 表示成功，False 表示失败
@@ -300,7 +302,7 @@ def chapter_analyze(
         logger.error(f"小说目录不存在: {novel_dir}")
         return False
 
-    config = load_config()
+    config = load_provider_config(provider) if provider else load_config()
 
     # 加载小说基本信息
     meta_file = novel_dir / "meta.yaml"

@@ -13,7 +13,7 @@ from pathlib import Path
 from collections.abc import Callable
 
 from novel_material.infra.config import NOVELS_DIR
-from novel_material.infra.llm import load_config, call_llm
+from novel_material.infra.llm import load_config, load_provider_config, call_llm
 from novel_material.pipeline.loader import load_chapters_data, build_summary_pool
 from novel_material.infra.progress import get_pipeline_logger
 
@@ -140,7 +140,7 @@ def _generate_beats_for_sequence(
 # 主函数
 # ============================================================
 
-def generate_outline(material_id, progress_callback: Callable[[int, int, str], None] | None = None) -> bool:
+def generate_outline(material_id, progress_callback: Callable[[int, int, str], None] | None = None, provider: str | None = None) -> bool:
     """生成大纲：结构 + 序列 + 节拍 + 钩子网络。
 
     两阶段策略：
@@ -154,6 +154,7 @@ def generate_outline(material_id, progress_callback: Callable[[int, int, str], N
     参数：
         material_id: 素材 ID
         progress_callback: 可选进度回调函数 (done: int, total: int, desc: str) -> None
+        provider: 服务商名称（可选，不指定则使用默认配置）
 
     返回：
         True 表示成功，False 表示失败
@@ -163,7 +164,7 @@ def generate_outline(material_id, progress_callback: Callable[[int, int, str], N
         logger.error(f"小说目录不存在: {novel_dir}")
         return False
 
-    config = load_config()
+    config = load_provider_config(provider) if provider else load_config()
     model = config["llm"]["model"]
     outline_dir = novel_dir / "outline"
     outline_dir.mkdir(exist_ok=True)

@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 
 from novel_material.infra.config import NOVELS_DIR
-from novel_material.infra.llm import load_config, call_llm
+from novel_material.infra.llm import load_config, load_provider_config, call_llm
 from novel_material.pipeline.loader import load_chapters_data, build_summary_pool
 from novel_material.infra.progress import get_pipeline_logger
 
@@ -132,18 +132,22 @@ def _extract_minor_characters(
     return result.get("characters", [])
 
 
-def generate_characters(material_id) -> bool:
+def generate_characters(material_id, provider: str | None = None) -> bool:
     """分层提取人物体系。
 
     容错策略：任何轮次失败时使用空数组继续，不中断流程。
     返回 True 表示成功。
+
+    参数：
+        material_id: 素材 ID
+        provider: 服务商名称（可选，不指定则使用默认配置）
     """
     novel_dir = NOVELS_DIR / material_id
     if not novel_dir.exists():
         logger.error(f"小说目录不存在: {novel_dir}")
         return False
 
-    config = load_config()
+    config = load_provider_config(provider) if provider else load_config()
     char_dir = novel_dir / "characters"
     char_dir.mkdir(exist_ok=True)
     profiles_dir = char_dir / "profiles"

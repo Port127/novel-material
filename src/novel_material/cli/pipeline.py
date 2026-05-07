@@ -48,6 +48,7 @@ def cmd_analyze(
     material_id: str = typer.Argument(..., help="素材 ID"),
     start: int = typer.Option(None, "--start", "-s", help="起始章节号"),
     end: int = typer.Option(None, "--end", "-e", help="结束章节号（不指定则到结尾）"),
+    provider: str = typer.Option(None, "--provider", "-p", help="服务商名称（如 deepseek）"),
 ):
     """章级分析：生成摘要、人物、标签。"""
     # 验证参数
@@ -99,7 +100,7 @@ def cmd_analyze(
             progress.update(task, completed=done, description=f"章级分析: {desc}")
 
         pause_console_logging()
-        chapter_analyze(material_id, start_ch=start, end_ch=end, progress_callback=update_progress)
+        chapter_analyze(material_id, start_ch=start, end_ch=end, progress_callback=update_progress, provider=provider)
         resume_console_logging()
 
     console.print("[green]章级分析完成[/green]")
@@ -113,6 +114,7 @@ def cmd_analyze(
 @app.command("outline")
 def cmd_outline(
     material_id: str = typer.Argument(..., help="素材 ID"),
+    provider: str = typer.Option(None, "--provider", "-p", help="服务商名称"),
 ):
     """生成大纲结构。"""
     with Progress(
@@ -131,7 +133,7 @@ def cmd_outline(
                 progress.update(task, description=f"生成大纲: {desc}")
 
         pause_console_logging()
-        generate_outline(material_id, progress_callback=update_progress)
+        generate_outline(material_id, progress_callback=update_progress, provider=provider)
         resume_console_logging()
 
     console.print("[green]大纲生成完成[/green]")
@@ -140,6 +142,7 @@ def cmd_outline(
 @app.command("worldbuilding")
 def cmd_worldbuilding(
     material_id: str = typer.Argument(..., help="素材 ID"),
+    provider: str = typer.Option(None, "--provider", "-p", help="服务商名称"),
 ):
     """提取世界观设定。"""
     with Progress(
@@ -148,7 +151,7 @@ def cmd_worldbuilding(
         console=console,
     ) as progress:
         task = progress.add_task(f"提取世界观: {material_id}", total=None)
-        generate_worldbuilding(material_id)
+        generate_worldbuilding(material_id, provider=provider)
         progress.update(task, completed=True)
 
     console.print("[green]世界观提取完成[/green]")
@@ -157,6 +160,7 @@ def cmd_worldbuilding(
 @app.command("characters")
 def cmd_characters(
     material_id: str = typer.Argument(..., help="素材 ID"),
+    provider: str = typer.Option(None, "--provider", "-p", help="服务商名称"),
 ):
     """提取人物体系。"""
     with Progress(
@@ -165,7 +169,7 @@ def cmd_characters(
         console=console,
     ) as progress:
         task = progress.add_task(f"提取人物: {material_id}", total=None)
-        generate_characters(material_id)
+        generate_characters(material_id, provider=provider)
         progress.update(task, completed=True)
 
     console.print("[green]人物提取完成[/green]")
@@ -174,6 +178,7 @@ def cmd_characters(
 @app.command("tags")
 def cmd_tags(
     material_id: str = typer.Argument(..., help="素材 ID"),
+    provider: str = typer.Option(None, "--provider", "-p", help="服务商名称"),
 ):
     """生成多维标签。"""
     with Progress(
@@ -182,7 +187,7 @@ def cmd_tags(
         console=console,
     ) as progress:
         task = progress.add_task(f"生成标签: {material_id}", total=None)
-        generate_tags(material_id)
+        generate_tags(material_id, provider=provider)
         progress.update(task, completed=True)
 
     console.print("[green]标签生成完成[/green]")
@@ -191,6 +196,7 @@ def cmd_tags(
 @app.command("refine")
 def cmd_refine(
     material_id: str = typer.Argument(..., help="素材 ID"),
+    provider: str = typer.Option(None, "--provider", "-p", help="服务商名称"),
 ):
     """精调大纲/人物/标签。"""
     with Progress(
@@ -199,7 +205,7 @@ def cmd_refine(
         console=console,
     ) as progress:
         task = progress.add_task(f"精调数据: {material_id}", total=None)
-        refine(material_id)
+        refine(material_id, provider=provider)
         progress.update(task, completed=True)
 
     console.print("[green]精调完成[/green]")
@@ -210,6 +216,7 @@ def cmd_full(
     file_path: str = typer.Argument(..., help="小说文件路径"),
     start: int = typer.Option(None, "--start", "-s", help="起始章节号"),
     end: int = typer.Option(None, "--end", "-e", help="结束章节号（不指定则到结尾）"),
+    provider: str = typer.Option(None, "--provider", "-p", help="服务商名称"),
 ):
     """完整流水线：入库 → 章级分析 → 骨架分析 → 精调。"""
     # 验证参数
@@ -274,7 +281,7 @@ def cmd_full(
             progress.update(task2, completed=done, description=f"阶段 2/7: {desc}")
 
         pause_console_logging()  # 暂停日志输出，避免干扰进度条
-        chapter_analyze(material_id, start_ch=start, end_ch=end, progress_callback=update_progress)
+        chapter_analyze(material_id, start_ch=start, end_ch=end, progress_callback=update_progress, provider=provider)
         resume_console_logging()
         progress.remove_task(task2)
 
@@ -288,31 +295,31 @@ def cmd_full(
                 progress.update(task3, description=f"阶段 3/7: {desc}")
 
         pause_console_logging()
-        generate_outline(material_id, progress_callback=update_outline_progress)
+        generate_outline(material_id, progress_callback=update_outline_progress, provider=provider)
         resume_console_logging()
         progress.remove_task(task3)
 
         # 阶段 4: 世界观
         task4 = progress.add_task("阶段 4/7: 世界观提取", total=1)
-        generate_worldbuilding(material_id)
+        generate_worldbuilding(material_id, provider=provider)
         progress.update(task4, completed=1)
         progress.remove_task(task4)
 
         # 阶段 5: 人物
         task5 = progress.add_task("阶段 5/7: 人物提取", total=1)
-        generate_characters(material_id)
+        generate_characters(material_id, provider=provider)
         progress.update(task5, completed=1)
         progress.remove_task(task5)
 
         # 阶段 6: 标签
         task6 = progress.add_task("阶段 6/7: 标签生成", total=1)
-        generate_tags(material_id)
+        generate_tags(material_id, provider=provider)
         progress.update(task6, completed=1)
         progress.remove_task(task6)
 
         # 阶段 7: 精调
         task7 = progress.add_task("阶段 7/7: 数据精调", total=1)
-        refine(material_id)
+        refine(material_id, provider=provider)
         progress.update(task7, completed=1)
         progress.remove_task(task7)
 
@@ -356,6 +363,7 @@ def cmd_continue(
     skip_sync: bool = typer.Option(False, "--skip-sync", help="跳过数据库同步"),
     start: int = typer.Option(None, "--start", "-s", help="起始章节号"),
     end: int = typer.Option(None, "--end", "-e", help="结束章节号（不指定则到结尾）"),
+    provider: str = typer.Option(None, "--provider", "-p", help="服务商名称"),
 ):
     """自动从断点继续流水线。
 
@@ -442,7 +450,7 @@ def cmd_continue(
                 progress_bar.update(task1, completed=done, description=f"阶段 1: {desc}")
 
             pause_console_logging()
-            chapter_analyze(material_id, start_ch=start, end_ch=end, progress_callback=update_progress)
+            chapter_analyze(material_id, start_ch=start, end_ch=end, progress_callback=update_progress, provider=provider)
             resume_console_logging()
             progress_bar.remove_task(task1)
 
@@ -461,7 +469,7 @@ def cmd_continue(
                     progress_bar.update(task2, description=f"阶段 2: {desc}")
 
             pause_console_logging()
-            generate_outline(material_id, progress_callback=update_outline_progress)
+            generate_outline(material_id, progress_callback=update_outline_progress, provider=provider)
             resume_console_logging()
             progress_bar.remove_task(task2)
 
@@ -476,7 +484,7 @@ def cmd_continue(
         for name, func, key in other_stages:
             if not progress.get(key):
                 task = progress_bar.add_task(f"阶段 {task_num}: {name}", total=1)
-                func(material_id)
+                func(material_id, provider=provider)
                 progress_bar.update(task, completed=1)
                 progress_bar.remove_task(task)
             task_num += 1
@@ -484,7 +492,7 @@ def cmd_continue(
         # 阶段 6: 精调
         if not progress.get("refined"):
             task6 = progress_bar.add_task("阶段 6: 精调", total=1)
-            refine(material_id)
+            refine(material_id, provider=provider)
             progress_bar.update(task6, completed=1)
             progress_bar.remove_task(task6)
 

@@ -1,0 +1,13 @@
+# 多服务商配置文件
+# 只配置服务商差异化的部分（name, api_key_env, base_url, model）
+# 其他公共参数（超时、温度、max_tokens等）统一使用 .env 配置
+
+providers:
+  - name: aliyun-qwen
+    api_key_env: LLM_API_KEY_ALIYUN
+    base_url: https://coding.dashscope.aliyuncs.com/v1
+    model: qwen3.6-plus
+
+# 默认服务商（未指定 --provider 时使用）
+# 若此文件不存在或不指定 default_provider，则使用 .env 配置
+default_provider: aliyun-qwen

@@ -1,10 +1,12 @@
-"""精调工具：基于章级分析数据调整 outline/characters/tags。"""
+"""精调工具：基于章级分析数据调整 outline/characters/tags。
+
+注意：精调阶段不调用 LLM，仅基于章级分析数据进行统计聚合。
+"""
 import sys
 import yaml
 import time
 
 from novel_material.infra.config import NOVELS_DIR
-from novel_material.infra.llm import load_config, call_llm
 from novel_material.infra.progress import get_pipeline_logger
 
 logger = get_pipeline_logger()
@@ -125,8 +127,15 @@ def refine_tags(material_id, chapters_data):
     return True
 
 
-def refine(material_id) -> bool:
-    """主精调函数：调整 outline/characters/tags。返回 True 表示成功。"""
+def refine(material_id, provider: str | None = None) -> bool:
+    """主精调函数：调整 outline/characters/tags。
+
+    参数：
+        material_id: 素材 ID
+        provider: 服务商名称（可选，不指定则使用默认配置）
+
+    返回 True 表示成功。
+    """
     novel_dir = NOVELS_DIR / material_id
     if not novel_dir.exists():
         logger.error(f"小说目录不存在: {novel_dir}")

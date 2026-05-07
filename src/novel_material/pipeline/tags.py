@@ -13,7 +13,7 @@ import psycopg2
 from pathlib import Path
 
 from novel_material.infra.config import NOVELS_DIR
-from novel_material.infra.llm import load_config, call_llm
+from novel_material.infra.llm import load_config, load_provider_config, call_llm
 from novel_material.tags.load import load_tags_for_genre, format_tags_for_prompt, get_all_genres
 from novel_material.tags.validate import validate_tag, validate_tags_batch
 from novel_material.tags.scheduled import auto_approve_by_frequency
@@ -28,18 +28,22 @@ def get_connection():
     return psycopg2.connect(DATABASE_URL)
 
 
-def generate_tags(material_id) -> bool:
+def generate_tags(material_id, provider: str | None = None) -> bool:
     """为整部小说生成多维标签。
 
     容错策略：LLM 失败时生成默认标签，不中断流程。
     返回 True 表示成功。
+
+    参数：
+        material_id: 素材 ID
+        provider: 服务商名称（可选，不指定则使用默认配置）
     """
     novel_dir = NOVELS_DIR / material_id
     if not novel_dir.exists():
         logger.error(f"小说目录不存在: {novel_dir}")
         return False
 
-    config = load_config()
+    config = load_provider_config(provider) if provider else load_config()
 
     # 读取 meta 获取题材
     meta_file = novel_dir / "meta.yaml"
