@@ -40,10 +40,21 @@ def load_config():
             "max_tokens": int(os.getenv("LLM_MAX_TOKENS", "2000")),
             "temperature": float(os.getenv("LLM_TEMPERATURE", "0.3")),
             "rate_limit_seconds": int(os.getenv("LLM_RATE_LIMIT_SECONDS", "60")),
-            "timeout_seconds": int(os.getenv("LLM_TIMEOUT_SECONDS", "120")),
-            "chapter_batch_timeout_seconds": int(
-                os.getenv("LLM_CHAPTER_BATCH_TIMEOUT_SECONDS", "180")
-            ),
+            # 章级分析：原文输入，耗时长
+            "analyze_timeout": int(os.getenv("LLM_ANALYZE_TIMEOUT", "180")),
+            # 大纲生成：6000 tokens 摘要池
+            "outline_timeout": int(os.getenv("LLM_OUTLINE_TIMEOUT", "300")),
+            # 世界观提取：5000 tokens 摘要池
+            "worldbuilding_timeout": int(os.getenv("LLM_WORLDBUILDING_TIMEOUT", "300")),
+            # 人物提取：5000 tokens 摘要池，两轮调用
+            "characters_timeout": int(os.getenv("LLM_CHARACTERS_TIMEOUT", "300")),
+            # 其他小任务（默认兜底）
+            "other_timeout": int(os.getenv("LLM_OTHER_TIMEOUT", "120")),
+            # 摘要池 Token 上限（各阶段输入量）
+            "outline_summary_tokens": int(os.getenv("LLM_OUTLINE_SUMMARY_TOKENS", "20000")),
+            "outline_seq_summary_tokens": int(os.getenv("LLM_OUTLINE_SEQ_SUMMARY_TOKENS", "5000")),
+            "worldbuilding_summary_tokens": int(os.getenv("LLM_WORLDBUILDING_SUMMARY_TOKENS", "15000")),
+            "characters_summary_tokens": int(os.getenv("LLM_CHARACTERS_SUMMARY_TOKENS", "15000")),
             "chapter_batch_size": int(os.getenv("LLM_CHAPTER_BATCH_SIZE", "5")),
         }
     }
@@ -120,7 +131,7 @@ def call_llm(
     )
 
     effective_max_tokens = max_tokens_override or config["llm"].get("max_tokens", 2048)
-    total_timeout = timeout_override or config["llm"].get("timeout_seconds", 6000)
+    total_timeout = timeout_override or config["llm"].get("other_timeout", 120)
 
     def _should_retry(retry_state) -> bool:
         if not hasattr(retry_state, 'outcome') or retry_state.outcome is None:

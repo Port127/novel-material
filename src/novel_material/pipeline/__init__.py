@@ -9,6 +9,7 @@ from .outline import generate_outline, generate_simple_acts
 from .worldbuilding import generate_worldbuilding
 from .characters import generate_characters
 from .tags import generate_tags
+from .progress import get_pipeline_progress, print_pipeline_status, get_next_pending_stage
 
 __all__ = [
     "preprocess",
@@ -27,4 +28,7 @@ __all__ = [
     "generate_worldbuilding",
     "generate_characters",
     "generate_tags",
+    "get_pipeline_progress",
+    "print_pipeline_status",
+    "get_next_pending_stage",
 ]

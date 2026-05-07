@@ -14,18 +14,16 @@ from novel_material.infra.progress import get_pipeline_logger
 
 logger = get_pipeline_logger()
 
-_MAX_SUMMARY_TOKENS = 5000
 
-
-def _build_context(novel_dir: Path, model: str) -> tuple[str, str]:
+def _build_context(novel_dir: Path, config: dict) -> tuple[str, str]:
     """构建分析上下文，优先使用章级摘要池，兜底读原文片段。
 
-    章数 > 200 时自动启用分层均匀采样，确保全书首尾及中间均有代表，
-    避免 5000 token 预算仅覆盖超长书前 6-8% 章节的问题。
+    章数 > 200 时自动启用分层均匀采样，确保全书首尾及中间均有代表。
     """
+    model = config["llm"]["model"]
     chapters_data = load_chapters_data(novel_dir)
     if chapters_data:
-        pool = build_summary_pool(chapters_data, _MAX_SUMMARY_TOKENS, model)
+        pool = build_summary_pool(chapters_data, config["llm"]["worldbuilding_summary_tokens"], model)
         return pool, f"章级摘要池（共 {len(chapters_data)} 章）"
 
     logger.warning("章节数据不存在或为空，回退到原文前 10000 字（质量受限）")
@@ -44,7 +42,6 @@ def generate_worldbuilding(material_id):
         return
 
     config = load_config()
-    model = config["llm"]["model"]
     wb_dir = novel_dir / "worldbuilding"
     wb_dir.mkdir(exist_ok=True)
 
@@ -54,7 +51,7 @@ def generate_worldbuilding(material_id):
         meta = yaml.safe_load(f) or {}
 
     # 构建分析上下文（章级摘要池 > 原文片段）
-    context_text, context_label = _build_context(novel_dir, model)
+    context_text, context_label = _build_context(novel_dir, config)
     logger.info(f"使用 {context_label} 作为分析基础")
 
     system_prompt = """你是专业的小说世界观分析师。请根据提供的内容提取以下世界观设定，返回 JSON 格式：
@@ -106,7 +103,7 @@ def generate_worldbuilding(material_id):
     # ── 容错调用 ──
     result = {}
     try:
-        result = call_llm(system_prompt, user_prompt, config)
+        result = call_llm(system_prompt, user_prompt, config, timeout_override=config["llm"]["worldbuilding_timeout"])
         time.sleep(rate_limit)
     except Exception as e:
         logger.error(f"世界观提取失败: {e}")

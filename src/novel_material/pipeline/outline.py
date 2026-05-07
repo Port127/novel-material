@@ -18,11 +18,6 @@ from novel_material.infra.progress import get_pipeline_logger
 
 logger = get_pipeline_logger()
 
-# 全局摘要池送给 LLM 的最大 Token 数
-_MAX_SUMMARY_TOKENS = 6000
-# 每个序列 beats 生成时的摘要上下文 Token 上限
-_MAX_SEQ_SUMMARY_TOKENS = 2000
-
 
 # ============================================================
 # 第一阶段：生成幕 + 序列（不含 beats）
@@ -73,7 +68,7 @@ def _generate_acts_sequences(chapter_count: int, meta: dict, context_text: str, 
 
 请生成完整的幕/序列划分（仅需章节范围和描述，不需要 beats）。"""
 
-    result = call_llm(system_prompt, user_prompt, config, max_tokens_override=4000)
+    result = call_llm(system_prompt, user_prompt, config, max_tokens_override=4000, timeout_override=config["llm"]["outline_timeout"])
     return result.get("acts", [])
 
 
@@ -102,7 +97,7 @@ def _generate_beats_for_sequence(
         if isinstance(ch.get("chapter"), int) and seq_start <= ch["chapter"] <= seq_end
     ]
 
-    seq_context = build_summary_pool(seq_chapters, _MAX_SEQ_SUMMARY_TOKENS, model) if seq_chapters else ""
+    seq_context = build_summary_pool(seq_chapters, config["llm"]["outline_seq_summary_tokens"], model) if seq_chapters else ""
 
     system_prompt = """你是专业的小说结构分析师。请为指定序列生成节拍（beats）列表。
 返回 JSON 格式：
@@ -136,7 +131,7 @@ def _generate_beats_for_sequence(
 
 请为此序列生成节拍列表。"""
 
-    result = call_llm(system_prompt, user_prompt, config, max_tokens_override=2000)
+    result = call_llm(system_prompt, user_prompt, config, max_tokens_override=2000, timeout_override=config["llm"]["outline_timeout"])
     return result.get("beats", [])
 
 
@@ -179,7 +174,7 @@ def generate_outline(material_id):
     chapters_data = load_chapters_data(novel_dir)
 
     if chapters_data:
-        context_text = build_summary_pool(chapters_data, _MAX_SUMMARY_TOKENS, model)
+        context_text = build_summary_pool(chapters_data, config["llm"]["outline_summary_tokens"], model)
         context_label = f"章级摘要池（共 {len(chapters_data)} 章）"
         logger.info(f"使用 {context_label} 作为分析基础")
     else:
@@ -209,7 +204,7 @@ def generate_outline(material_id):
 
     result = {}
     try:
-        result = call_llm(system_prompt_premise, user_prompt_premise, config)
+        result = call_llm(system_prompt_premise, user_prompt_premise, config, timeout_override=config["llm"]["outline_timeout"])
     except Exception as e:
         logger.error(f"前提提炼失败: {e}")
         logger.warning("使用默认值继续，不中断流程")

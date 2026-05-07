@@ -85,7 +85,7 @@ def analyze_chapter(content: str, chapter_info: dict, config: dict) -> dict:
 请返回 JSON 格式：
 {_CHAPTER_JSON_SCHEMA}"""
 
-    timeout = config["llm"].get("chapter_batch_timeout_seconds", 300)
+    timeout = config["llm"].get("analyze_timeout", 300)
     return call_llm(_SYSTEM_PROMPT, user_prompt, config, timeout_override=timeout)
 
 
@@ -143,7 +143,7 @@ def analyze_chapters_batch(
         user_prompt,
         config,
         max_tokens_override=n * 450,
-        timeout_override=config["llm"].get("chapter_batch_timeout_seconds"),
+        timeout_override=config["llm"].get("analyze_timeout"),
     )
 
     # 解析返回结果

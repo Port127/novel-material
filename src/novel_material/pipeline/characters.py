@@ -18,18 +18,16 @@ from novel_material.infra.progress import get_pipeline_logger
 
 logger = get_pipeline_logger()
 
-_MAX_SUMMARY_TOKENS = 5000
 
-
-def _build_context(novel_dir: Path, model: str) -> tuple[str, str]:
+def _build_context(novel_dir: Path, config: dict) -> tuple[str, str]:
     """构建分析上下文，优先使用章级摘要池，兜底读原文片段。
 
-    章数 > 200 时自动启用分层均匀采样，确保全书首尾及中间均有代表，
-    避免 5000 token 预算仅覆盖超长书前 6-8% 章节的问题。
+    章数 > 200 时自动启用分层均匀采样，确保全书首尾及中间均有代表。
     """
+    model = config["llm"]["model"]
     chapters_data = load_chapters_data(novel_dir)
     if chapters_data:
-        pool = build_summary_pool(chapters_data, _MAX_SUMMARY_TOKENS, model)
+        pool = build_summary_pool(chapters_data, config["llm"]["characters_summary_tokens"], model)
         return pool, f"章级摘要池（共 {len(chapters_data)} 章）"
 
     logger.warning("章节数据不存在或为空，回退到原文前 8000 字（质量受限）")
@@ -83,7 +81,7 @@ def _extract_core_characters(context_text: str, context_label: str, meta: dict, 
 请返回 JSON 格式如上，只提取有完整弧线的重要角色。"""
 
     logger.info("第一轮：提取核心人物...")
-    result = call_llm(system_prompt, user_prompt, config, max_tokens_override=8000)
+    result = call_llm(system_prompt, user_prompt, config, max_tokens_override=8000, timeout_override=config["llm"]["characters_timeout"])
     return result.get("characters", [])
 
 
@@ -130,7 +128,7 @@ def _extract_minor_characters(
 请返回 JSON 格式如上，补充其他有剧情作用的次要角色。"""
 
     logger.info("第二轮：补充次要人物...")
-    result = call_llm(system_prompt, user_prompt, config, max_tokens_override=8000)
+    result = call_llm(system_prompt, user_prompt, config, max_tokens_override=8000, timeout_override=config["llm"]["characters_timeout"])
     return result.get("characters", [])
 
 
@@ -145,7 +143,6 @@ def generate_characters(material_id):
         return
 
     config = load_config()
-    model = config["llm"]["model"]
     char_dir = novel_dir / "characters"
     char_dir.mkdir(exist_ok=True)
     profiles_dir = char_dir / "profiles"
@@ -156,7 +153,7 @@ def generate_characters(material_id):
         meta = yaml.safe_load(f) or {}
 
     # 构建分析上下文
-    context_text, context_label = _build_context(novel_dir, model)
+    context_text, context_label = _build_context(novel_dir, config)
     logger.info(f"使用 {context_label} 作为分析基础")
 
     rate_limit = config["llm"].get("rate_limit_seconds", 1)
