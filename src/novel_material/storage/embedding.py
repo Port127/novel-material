@@ -33,27 +33,6 @@ def _save_embeddings(embeddings_npz: Path, embeddings: dict[int, list]) -> None:
     np.savez_compressed(str(embeddings_npz), chapters=chapters_arr, vectors=vectors_matrix)
 
 
-def _migrate_yaml_to_npz(novel_dir: Path, embeddings_npz: Path) -> dict[int, list]:
-    """把旧的 YAML 格式向量文件迁移到 NPZ 格式。"""
-    yaml_file = novel_dir / "chapter_embeddings.yaml"
-    if not yaml_file.exists():
-        return {}
-
-    print("检测到旧格式 chapter_embeddings.yaml，正在迁移到 .npz...")
-    with open(yaml_file, "r", encoding="utf-8") as f:
-        old_data = yaml.safe_load(f) or {}
-
-    if not old_data:
-        return {}
-
-    embeddings = {int(k): v for k, v in old_data.items()}
-    _save_embeddings(embeddings_npz, embeddings)
-
-    yaml_file.unlink()
-    print(f"迁移完成: {len(embeddings)} 章向量 → {embeddings_npz.name}，已删除旧 YAML 文件")
-    return embeddings
-
-
 def embed_chapters(material_id: str) -> None:
     """为指定小说的所有章节摘要生成向量。"""
     novel_dir = NOVELS_DIR / material_id
@@ -75,9 +54,7 @@ def embed_chapters(material_id: str) -> None:
 
     embeddings_npz = novel_dir / "chapter_embeddings.npz"
 
-    existing = _migrate_yaml_to_npz(novel_dir, embeddings_npz)
-    if not existing:
-        existing = _load_embeddings(embeddings_npz)
+    existing = _load_embeddings(embeddings_npz)
 
     if existing:
         print(f"断点续传：已有 {len(existing)} 章向量，跳过")
