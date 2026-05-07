@@ -4,6 +4,9 @@ import os
 
 load_dotenv()
 
+from novel_material.infra.progress import get_pipeline_logger
+logger = get_pipeline_logger()
+
 
 def load_embedding_config():
     """从 .env 加载向量化配置。"""
@@ -98,5 +101,6 @@ if __name__ == "__main__":
     config = load_embedding_config()
     text = "这是一个测试文本"
     embedding = get_embedding(text, config)
-    print(f"维度: {len(embedding)}")
-    print(f"前 10 个值: {embedding[:10]}")
+    logger.debug(f"维度: {len(embedding)}")
+    logger.debug(f"前 10 个值: {embedding[:10]}")
+    print(f"测试成功: 维度={len(embedding)}")

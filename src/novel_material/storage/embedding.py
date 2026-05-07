@@ -8,6 +8,9 @@ import numpy as np
 
 from novel_material.infra.config import NOVELS_DIR
 from novel_material.infra.embedding import get_embedding, load_embedding_config
+from novel_material.infra.progress import get_pipeline_logger
+
+logger = get_pipeline_logger()
 
 _BATCH_SIZE = 20
 _RATE_LIMIT = 0.5
@@ -37,19 +40,19 @@ def embed_chapters(material_id: str) -> None:
     """为指定小说的所有章节摘要生成向量。"""
     novel_dir = NOVELS_DIR / material_id
     if not novel_dir.exists():
-        print(f"错误: 小说目录不存在: {novel_dir}")
+        logger.error(f"小说目录不存在: {novel_dir}")
         return
 
     chapters_file = novel_dir / "chapters.yaml"
     if not chapters_file.exists():
-        print("错误: chapters.yaml 不存在，请先运行 chapter_analyze")
+        logger.error("chapters.yaml 不存在，请先运行 chapter_analyze")
         return
 
     with open(chapters_file, "r", encoding="utf-8") as f:
         chapters = yaml.safe_load(f) or []
 
     if not chapters:
-        print("chapters.yaml 为空，跳过向量化")
+        logger.warning("chapters.yaml 为空，跳过向量化")
         return
 
     embeddings_npz = novel_dir / "chapter_embeddings.npz"
@@ -57,7 +60,7 @@ def embed_chapters(material_id: str) -> None:
     existing = _load_embeddings(embeddings_npz)
 
     if existing:
-        print(f"断点续传：已有 {len(existing)} 章向量，跳过")
+        logger.info(f"断点续传：已有 {len(existing)} 章向量，跳过")
 
     pending = [
         ch for ch in chapters
@@ -65,14 +68,15 @@ def embed_chapters(material_id: str) -> None:
     ]
 
     if not pending:
-        print("所有章节已向量化，无需处理")
-        _print_stats(existing)
+        logger.info("所有章节已向量化，无需处理")
+        _log_stats(existing)
         return
 
-    print(f"待向量化: {len(pending)} 章（共 {len(chapters)} 章）")
+    logger.info(f"待向量化: {len(pending)} 章（共 {len(chapters)} 章）")
 
     config = load_embedding_config()
     done = 0
+    errors = 0
 
     for i in range(0, len(pending), _BATCH_SIZE):
         batch = pending[i:i + _BATCH_SIZE]
@@ -84,26 +88,29 @@ def embed_chapters(material_id: str) -> None:
                 existing[ch_num] = vec
                 done += 1
             except Exception as e:
-                print(f"  警告: 第{ch_num}章向量化失败: {e}")
+                logger.warning(f"第{ch_num}章向量化失败: {e}")
+                errors += 1
                 continue
 
         _save_embeddings(embeddings_npz, existing)
-        print(f"  已完成 {done}/{len(pending)} 章")
+        logger.info(f"已完成 {done}/{len(pending)} 章")
 
         if i + _BATCH_SIZE < len(pending):
             time.sleep(_RATE_LIMIT)
 
-    _print_stats(existing)
+    _log_stats(existing)
+    if errors > 0:
+        logger.warning(f"向量化失败: {errors} 章")
 
 
-def _print_stats(embeddings: dict) -> None:
-    """打印向量化统计信息。"""
+def _log_stats(embeddings: dict) -> None:
+    """记录向量化统计信息。"""
     sample_vec = next(iter(embeddings.values()), None)
     if sample_vec:
         dim = len(sample_vec) if isinstance(sample_vec, list) else sample_vec.shape[0]
-        print(f"向量化完成: {len(embeddings)} 章，维度 {dim}")
+        logger.info(f"向量化完成: {len(embeddings)} 章，维度 {dim}")
     else:
-        print(f"向量化完成: {len(embeddings)} 章")
+        logger.info(f"向量化完成: {len(embeddings)} 章")
 
 
 if __name__ == "__main__":

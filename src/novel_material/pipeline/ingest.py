@@ -8,7 +8,10 @@ from datetime import datetime
 from pathlib import Path
 
 from novel_material.infra.config import NOVELS_DIR, INDEX_FILE
+from novel_material.infra.progress import get_pipeline_logger
 from .preprocess import preprocess
+
+logger = get_pipeline_logger()
 
 
 def generate_material_id():
@@ -65,15 +68,15 @@ def ingest_file(file_path):
     """入库单本小说。"""
     file_path = Path(file_path).resolve()
     if not file_path.exists():
-        print(f"错误: 文件不存在: {file_path}")
+        logger.error(f"文件不存在: {file_path}")
         return None
 
     material_id = generate_material_id()
     novel_dir = NOVELS_DIR / material_id
     novel_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"正在处理: {file_path.name}")
-    print(f"生成 material_id: {material_id}")
+    logger.info(f"正在处理: {file_path.name}")
+    logger.info(f"生成 material_id: {material_id}")
 
     with open(file_path, "rb") as f:
         raw_bytes = f.read()
@@ -83,11 +86,11 @@ def ingest_file(file_path):
 
     chapter_lines = detect_chapter_pattern(lines)
     if not chapter_lines:
-        print("警告: 未检测到章节名，请检查文件格式")
+        logger.warning("未检测到章节名，请检查文件格式")
         return None
 
     chapters = split_chapters(lines, chapter_lines)
-    print(f"识别到 {len(chapters)} 个章节")
+    logger.info(f"识别到 {len(chapters)} 个章节")
 
     source_lines = []
     chapter_index = []
@@ -142,7 +145,7 @@ def ingest_file(file_path):
 
     update_global_index(material_id, meta)
 
-    print(f"入库完成: {novel_dir}")
+    logger.info(f"入库完成: {novel_dir}")
     return material_id
 
 

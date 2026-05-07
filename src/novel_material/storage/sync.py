@@ -11,8 +11,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from novel_material.infra.config import NOVELS_DIR
+from novel_material.infra.progress import get_pipeline_logger
 from novel_material.validation.schema import validate_material
 
+logger = get_pipeline_logger()
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 
@@ -26,10 +28,10 @@ def get_db_connection():
 def _precheck_schema(material_id: str) -> bool:
     """同步前检查数据格式是否正确。"""
     if validate_material(material_id, verbose=True):
-        print(f"[sync_db] Schema 预检通过：{material_id}")
+        logger.info(f"Schema 预检通过: {material_id}")
         return True
 
-    print(f"[sync_db] Schema 预检失败，终止同步：{material_id}")
+    logger.error(f"Schema 预检失败，终止同步: {material_id}")
     return False
 
 
@@ -37,11 +39,11 @@ def sync_novel(material_id):
     """同步单本小说到数据库。"""
     novel_dir = NOVELS_DIR / material_id
     if not novel_dir.exists():
-        print(f"跳过: 目录不存在 {novel_dir}")
+        logger.warning(f"跳过: 目录不存在 {novel_dir}")
         return
 
     if not _precheck_schema(material_id):
-        raise ValueError(f"Schema 预检未通过，中止同步：{material_id}")
+        raise ValueError(f"Schema 预检未通过，中止同步: {material_id}")
 
     conn = get_db_connection()
     try:
@@ -51,10 +53,10 @@ def sync_novel(material_id):
         _sync_characters(conn, novel_dir, material_id)
         _sync_worldbuilding(conn, novel_dir, material_id)
         conn.commit()
-        print(f"同步完成: {material_id}")
+        logger.info(f"同步完成: {material_id}")
     except Exception as e:
         conn.rollback()
-        print(f"同步失败，已回滚: {e}")
+        logger.error(f"同步失败，已回滚: {e}")
         raise
     finally:
         conn.close()
@@ -98,7 +100,7 @@ def _sync_meta(conn, novel_dir, material_id):
             meta.get("created_at"),
             meta.get("updated_at"),
         ))
-    print(f"  已同步小说元信息: {meta.get('name')}")
+    logger.info(f"已同步小说元信息: {meta.get('name')}")
 
 
 def _sync_chapters(conn, novel_dir, material_id):
@@ -124,11 +126,11 @@ def _sync_chapters(conn, novel_dir, material_id):
         chapters_arr = data["chapters"]
         vectors_arr = data["vectors"]
         embeddings = {int(ch): vectors_arr[i].tolist() for i, ch in enumerate(chapters_arr)}
-        print(f"  加载向量 (.npz): {len(embeddings)} 章")
+        logger.info(f"加载向量 (.npz): {len(embeddings)} 章")
     elif embeddings_yaml.exists():
         with open(embeddings_yaml, "r", encoding="utf-8") as f:
             embeddings = yaml.safe_load(f) or {}
-        print(f"  加载向量 (.yaml 旧格式): {len(embeddings)} 章")
+        logger.info(f"加载向量 (.yaml 旧格式): {len(embeddings)} 章")
 
     BATCH_SIZE = 50
     synced = 0
@@ -193,9 +195,9 @@ def _sync_chapters(conn, novel_dir, material_id):
                         ch.get("characters_appear", []),
                     ))
         synced += len(batch)
-        print(f"  已同步章节 {synced}/{len(chapters)}")
+        logger.info(f"已同步章节 {synced}/{len(chapters)}")
 
-    print(f"  章节同步完成: 共 {len(chapters)} 章，其中 {len(embeddings)} 章含向量")
+    logger.info(f"章节同步完成: 共 {len(chapters)} 章，其中 {len(embeddings)} 章含向量")
 
 
 def _sync_outline(conn, novel_dir, material_id):
@@ -237,7 +239,7 @@ def _sync_outline(conn, novel_dir, material_id):
                 subplots.get("count"),
                 material_id,
             ))
-        print(f"  已同步大纲元信息（premise/theme/tone）")
+        logger.info(f"已同步大纲元信息（premise/theme/tone）")
 
     structure_file = novel_dir / "outline" / "structure.yaml"
     if not structure_file.exists():
@@ -306,7 +308,7 @@ def _sync_outline(conn, novel_dir, material_id):
                     ))
                     beat_count += 1
 
-    print(f"  已同步大纲结构：{seq_count} 个序列，{beat_count} 个节拍")
+    logger.info(f"已同步大纲结构: {seq_count} 个序列，{beat_count} 个节拍")
 
 
 def _sync_characters(conn, novel_dir, material_id):
@@ -367,7 +369,7 @@ def _sync_characters(conn, novel_dir, material_id):
                 profile.get("description"),
             ))
 
-    print(f"  已同步人物: {len(profile_files)} 个")
+    logger.info(f"已同步人物: {len(profile_files)} 个")
 
     _sync_character_appearances(conn, novel_dir, material_id)
 
@@ -393,7 +395,7 @@ def _sync_character_appearances(conn, novel_dir, material_id):
                     ) VALUES (%s, %s, %s, %s)
                 """, (material_id, char_name, ch_num, "major"))
 
-    print(f"  已同步人物出场记录")
+    logger.info(f"已同步人物出场记录")
 
 
 def _sync_worldbuilding(conn, novel_dir, material_id):
@@ -470,13 +472,13 @@ def _sync_worldbuilding(conn, novel_dir, material_id):
                 ))
                 synced += 1
 
-    print(f"  已同步世界观实体: {synced} 个")
+    logger.info(f"已同步世界观实体: {synced} 个")
 
 
 def sync_all():
     """同步所有小说到数据库。"""
     if not NOVELS_DIR.exists():
-        print("没有小说目录")
+        logger.warning("没有小说目录")
         return
 
     for novel_dir in sorted(NOVELS_DIR.iterdir()):
