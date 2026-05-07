@@ -46,12 +46,45 @@ def cmd_ingest(
 @app.command("analyze")
 def cmd_analyze(
     material_id: str = typer.Argument(..., help="素材 ID"),
+    start: int = typer.Option(None, "--start", "-s", help="起始章节号"),
+    end: int = typer.Option(None, "--end", "-e", help="结束章节号（不指定则到结尾）"),
 ):
     """章级分析：生成摘要、人物、标签。"""
+    # 验证参数
+    if start is not None and start < 1:
+        console.print("[red]起始章节号必须 >= 1[/red]")
+        raise typer.Exit(1)
+    if start is not None and end is not None and end < start:
+        console.print("[red]结束章节号必须 >= 起始章节号[/red]")
+        raise typer.Exit(1)
+
     novel_dir = NOVELS_DIR / material_id
     with open(novel_dir / "chapter_index.yaml", "r", encoding="utf-8") as f:
         chapter_index = yaml.safe_load(f)
     total_chapters = len(chapter_index)
+
+    # 验证范围不超出章节总数
+    if start is not None and start > total_chapters:
+        console.print(f"[red]起始章节号 {start} 超出总章数 {total_chapters}[/red]")
+        raise typer.Exit(1)
+    if end is not None and end > total_chapters:
+        console.print(f"[red]结束章节号 {end} 超出总章数 {total_chapters}[/red]")
+        raise typer.Exit(1)
+
+    # 计算范围内章节数
+    chapters_in_range = [
+        ch for ch in chapter_index
+        if (start is None or ch["chapter"] >= start)
+        and (end is None or ch["chapter"] <= end)
+    ]
+    range_total = len(chapters_in_range)
+
+    # 显示范围信息
+    range_desc = ""
+    if start is not None or end is not None:
+        range_start = start or 1
+        range_end = end or total_chapters
+        range_desc = f" (第 {range_start}-{range_end} 章)"
 
     with Progress(
         SpinnerColumn(),
@@ -60,16 +93,21 @@ def cmd_analyze(
         TaskProgressColumn(),
         console=console,
     ) as progress:
-        task = progress.add_task(f"章级分析: {material_id}", total=total_chapters)
+        task = progress.add_task(f"章级分析: {material_id}{range_desc}", total=range_total)
 
         def update_progress(done: int, total: int, desc: str):
             progress.update(task, completed=done, description=f"章级分析: {desc}")
 
         pause_console_logging()
-        chapter_analyze(material_id, progress_callback=update_progress)
+        chapter_analyze(material_id, start_ch=start, end_ch=end, progress_callback=update_progress)
         resume_console_logging()
 
     console.print("[green]章级分析完成[/green]")
+
+    # 如果指定了范围，警告后续阶段可能基于不完整数据
+    if start is not None or end is not None:
+        console.print("[yellow]警告：仅分析了部分章节，后续阶段（大纲、世界观等）将基于不完整的章级数据生成[/yellow]")
+        console.print("[yellow]建议：分析全书后再执行后续阶段，或使用 nm pipeline continue --skip-sync 完成后续[/yellow]")
 
 
 @app.command("outline")
@@ -170,9 +208,26 @@ def cmd_refine(
 @app.command("full")
 def cmd_full(
     file_path: str = typer.Argument(..., help="小说文件路径"),
+    start: int = typer.Option(None, "--start", "-s", help="起始章节号"),
+    end: int = typer.Option(None, "--end", "-e", help="结束章节号（不指定则到结尾）"),
 ):
     """完整流水线：入库 → 章级分析 → 骨架分析 → 精调。"""
-    console.print("[cyan]开始完整流水线[/cyan]")
+    # 验证参数
+    if start is not None and start < 1:
+        console.print("[red]起始章节号必须 >= 1[/red]")
+        raise typer.Exit(1)
+    if start is not None and end is not None and end < start:
+        console.print("[red]结束章节号必须 >= 起始章节号[/red]")
+        raise typer.Exit(1)
+
+    # 显示范围信息
+    range_desc = ""
+    if start is not None or end is not None:
+        range_start = start or 1
+        range_end_text = end or "末"
+        range_desc = f" (第 {range_start}-{range_end_text} 章)"
+
+    console.print(f"[cyan]开始完整流水线{range_desc}[/cyan]")
 
     with Progress(
         SpinnerColumn(),
@@ -197,13 +252,29 @@ def cmd_full(
             chapter_index = yaml.safe_load(f)
         total_chapters = len(chapter_index)
 
-        task2 = progress.add_task("阶段 2/7: 章级分析", total=total_chapters)
+        # 验证范围不超出章节总数（入库后才知道总章数）
+        if start is not None and start > total_chapters:
+            console.print(f"[red]起始章节号 {start} 超出总章数 {total_chapters}[/red]")
+            raise typer.Exit(1)
+        if end is not None and end > total_chapters:
+            console.print(f"[red]结束章节号 {end} 超出总章数 {total_chapters}[/red]")
+            raise typer.Exit(1)
+
+        # 计算范围内章节数
+        chapters_in_range = [
+            ch for ch in chapter_index
+            if (start is None or ch["chapter"] >= start)
+            and (end is None or ch["chapter"] <= end)
+        ]
+        range_total = len(chapters_in_range)
+
+        task2 = progress.add_task("阶段 2/7: 章级分析", total=range_total)
 
         def update_progress(done: int, total: int, desc: str):
             progress.update(task2, completed=done, description=f"阶段 2/7: {desc}")
 
         pause_console_logging()  # 暂停日志输出，避免干扰进度条
-        chapter_analyze(material_id, progress_callback=update_progress)
+        chapter_analyze(material_id, start_ch=start, end_ch=end, progress_callback=update_progress)
         resume_console_logging()
         progress.remove_task(task2)
 
@@ -246,6 +317,10 @@ def cmd_full(
         progress.remove_task(task7)
 
     # 结果表格
+    # 如果指定了范围，警告后续阶段基于不完整数据
+    if start is not None or end is not None:
+        console.print("[yellow]警告：仅分析了部分章节，大纲/世界观/人物等基于不完整的章级数据生成[/yellow]")
+
     table = Table(title="流水线完成")
     table.add_column("阶段", style="cyan")
     table.add_column("状态", style="green")
@@ -279,6 +354,8 @@ def cmd_status(
 def cmd_continue(
     material_id: str = typer.Argument(..., help="素材 ID"),
     skip_sync: bool = typer.Option(False, "--skip-sync", help="跳过数据库同步"),
+    start: int = typer.Option(None, "--start", "-s", help="起始章节号"),
+    end: int = typer.Option(None, "--end", "-e", help="结束章节号（不指定则到结尾）"),
 ):
     """自动从断点继续流水线。
 
@@ -288,6 +365,14 @@ def cmd_continue(
     - 精调
     - 数据库同步
     """
+    # 验证参数
+    if start is not None and start < 1:
+        console.print("[red]起始章节号必须 >= 1[/red]")
+        raise typer.Exit(1)
+    if start is not None and end is not None and end < start:
+        console.print("[red]结束章节号必须 >= 起始章节号[/red]")
+        raise typer.Exit(1)
+
     progress = get_pipeline_progress(material_id)
     print_pipeline_status(progress)
 
@@ -301,18 +386,43 @@ def cmd_continue(
 
     # 显示续传信息
     next_stage = get_next_pending_stage(progress)
-    if not next_stage:
+    # 如果指定了范围，即使流水线已完成，也要执行（允许重新分析指定范围）
+    if not next_stage and start is None and end is None:
         console.print("\n[green]流水线已完成，无需续传[/green]")
         if not skip_sync and not progress.get("synced"):
             console.print("[yellow]提示：数据库未同步，可执行 nm storage sync[/yellow]")
         return
 
-    console.print(f"\n[cyan]从 {next_stage} 阶段继续[/cyan]")
-
+    # 加载章节信息（用于范围验证和显示）
     novel_dir = NOVELS_DIR / material_id
     with open(novel_dir / "chapter_index.yaml", "r", encoding="utf-8") as f:
         chapter_index = yaml.safe_load(f)
     total_chapters = len(chapter_index)
+
+    # 验证参数范围
+    if start is not None and start > total_chapters:
+        console.print(f"[red]起始章节号 {start} 超出总章数 {total_chapters}[/red]")
+        raise typer.Exit(1)
+    if end is not None and end > total_chapters:
+        console.print(f"[red]结束章节号 {end} 超出总章数 {total_chapters}[/red]")
+        raise typer.Exit(1)
+
+    # 显示范围信息
+    range_desc = ""
+    if start is not None or end is not None:
+        range_start = start or 1
+        range_end_text = end or total_chapters
+        range_desc = f" (第 {range_start}-{range_end_text} 章)"
+
+    console.print(f"\n[cyan]从 {next_stage or '章级分析'} 阶段继续{range_desc}[/cyan]")
+
+    # 计算范围内章节数
+    chapters_in_range = [
+        ch for ch in chapter_index
+        if (start is None or ch["chapter"] >= start)
+        and (end is None or ch["chapter"] <= end)
+    ]
+    range_total = len(chapters_in_range)
 
     with Progress(
         SpinnerColumn(),
@@ -323,19 +433,25 @@ def cmd_continue(
     ) as progress_bar:
 
         # 阶段 1: 章级分析（细粒度进度）
-        if not progress.get("analyzed"):
-            task1 = progress_bar.add_task("阶段 1: 章级分析", total=total_chapters)
+        # 如果指定了范围，即使进度检查认为已完成，也要进入分析阶段（让内部判断是否需要分析）
+        should_analyze = not progress.get("analyzed") or start is not None or end is not None
+        if should_analyze:
+            task1 = progress_bar.add_task("阶段 1: 章级分析", total=range_total)
 
             def update_progress(done: int, total: int, desc: str):
                 progress_bar.update(task1, completed=done, description=f"阶段 1: {desc}")
 
             pause_console_logging()
-            chapter_analyze(material_id, progress_callback=update_progress)
+            chapter_analyze(material_id, start_ch=start, end_ch=end, progress_callback=update_progress)
             resume_console_logging()
             progress_bar.remove_task(task1)
 
         # 阶段 2: 大纲（不确定进度）
         if not progress.get("outline"):
+            # 警告：如果指定了范围，后续阶段基于不完整数据
+            if start is not None or end is not None:
+                console.print("[yellow]警告：仅分析了部分章节，大纲/世界观/人物等将基于不完整的章级数据生成[/yellow]")
+
             task2 = progress_bar.add_task("阶段 2: 大纲", total=None)
 
             def update_outline_progress(done: int, total: int, desc: str):
@@ -386,6 +502,11 @@ def cmd_continue(
                 console.print("[yellow]可手动执行 nm storage sync 重试[/yellow]")
 
     # 完成表格
+    # 如果指定了范围且后续阶段已存在，警告数据不一致
+    if (start is not None or end is not None) and progress.get("outline"):
+        console.print("[yellow]警告：指定范围分析后，大纲等后续阶段未重新生成，数据可能不一致[/yellow]")
+        console.print("[yellow]建议：如需重新生成，可手动删除 outline/ 目录后重新执行[/yellow]")
+
     table = Table(title="流水线完成")
     table.add_column("阶段", style="cyan")
     table.add_column("状态", style="green")

@@ -274,18 +274,23 @@ def _get_batch_size(config: dict) -> int:
 def chapter_analyze(
     material_id: str,
     progress_callback: Callable[[int, int, str], None] | None = None,
+    start_ch: int | None = None,
+    end_ch: int | None = None,
 ) -> bool:
-    """对指定小说进行章节分析（支持断点续传）。
+    """对指定小说进行章节分析（支持断点续传和范围指定）。
 
     流程：
     1. 加载章节索引和原文
     2. 检查已分析的章节（断点续传）
-    3. 批量或逐章分析待处理章节
-    4. 合并结果并执行质量检查
+    3. 过滤指定范围内的待处理章节
+    4. 批量或逐章分析待处理章节
+    5. 合并结果并执行质量检查
 
     参数：
         material_id：素材 ID（如 nm_novel_20240101_abc1）
         progress_callback：可选进度回调函数 (done: int, total: int, desc: str) -> None
+        start_ch：起始章节号（可选，不指定则从第一章开始）
+        end_ch：结束章节号（可选，不指定则到最后一章）
 
     返回：
         True 表示成功，False 表示失败
@@ -313,15 +318,26 @@ def chapter_analyze(
 
     chapter_count = len(chapter_index)
 
-    # 输出小说基本信息
-    logger.info(f"小说: {title} | {chapter_count} 章 | {word_count} 字 | 状态: {status}")
+    # 输出小说基本信息和范围信息
+    range_info = ""
+    if start_ch is not None or end_ch is not None:
+        range_start = start_ch or 1
+        range_end = end_ch or chapter_count
+        range_info = f" | 分析范围: 第 {range_start}-{range_end} 章"
+    logger.info(f"小说: {title} | {chapter_count} 章 | {word_count} 字 | 状态: {status}{range_info}")
 
     with open(novel_dir / "source.txt", "r", encoding="utf-8") as f:
         full_text = f.read()
 
     lines = full_text.split("\n")
 
-    total = len(chapter_index)  # 先定义 total
+    # 计算范围内的章节总数
+    chapters_in_range = [
+        ch for ch in chapter_index
+        if (start_ch is None or ch["chapter"] >= start_ch)
+        and (end_ch is None or ch["chapter"] <= end_ch)
+    ]
+    total = len(chapters_in_range)
     rate_limit = config["llm"].get("rate_limit_seconds", 1)
     batch_size = _get_batch_size(config)
     completed = 0
@@ -329,14 +345,27 @@ def chapter_analyze(
 
     # 加载已分析的章节（断点续传）
     done = _load_existing_chapters(novel_dir)
-    if done:
+    done_in_range = {
+        ch_num: data for ch_num, data in done.items()
+        if (start_ch is None or ch_num >= start_ch)
+        and (end_ch is None or ch_num <= end_ch)
+    }
+    if done_in_range:
         if progress_callback:
-            progress_callback(len(done), total, f"断点续传：已完成 {len(done)} 章")
+            progress_callback(len(done_in_range), total, f"断点续传：已完成 {len(done_in_range)} 章")
         else:
-            logger.info(f"断点续传：已完成 {len(done)} 章，从第 {max(done.keys()) + 1} 章继续")
+            next_ch = max(done_in_range.keys()) + 1
+            if start_ch and next_ch < start_ch:
+                next_ch = start_ch
+            logger.info(f"断点续传：已完成 {len(done_in_range)} 章，从第 {next_ch} 章继续")
 
-    # 过滤出待处理章节
-    pending = [ch for ch in chapter_index if ch["chapter"] not in done]
+    # 过滤出待处理章节（结合断点续传和范围指定）
+    pending = [
+        ch for ch in chapter_index
+        if ch["chapter"] not in done
+        and (start_ch is None or ch["chapter"] >= start_ch)
+        and (end_ch is None or ch["chapter"] <= end_ch)
+    ]
     skipped = total - len(pending)
 
     if not pending:
@@ -422,7 +451,7 @@ def chapter_analyze(
 
     # 质量检查
     logger.info("执行章级分析质量校验...")
-    if not run_quality_check(material_id):
+    if not run_quality_check(material_id, start_ch=start_ch, end_ch=end_ch):
         update_meta_status(material_id, "failed")
         raise ValueError(f"章级分析质量校验未通过：{material_id}")
 
