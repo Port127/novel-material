@@ -1,5 +1,22 @@
 #!/usr/bin/env python
-"""YAML → PostgreSQL 数据同步工具。"""
+"""数据库同步：把本地 YAML 文件同步到 PostgreSQL。
+
+为什么需要同步？
+- 本地 YAML 文件方便编辑和查看
+- 但数据库更适合搜索、统计、多条件查询
+- 同步就是把本地数据"上传"到数据库
+
+同步什么数据？
+- novels：小说元信息（书名、作者、字数、状态）
+- chapters：章节分析结果（摘要、人物、紧张度）
+- outline：大纲结构（幕、序列、节拍）
+- characters：人物档案（角色、性格、出场）
+- worldbuilding：世界观（势力、地点、力量体系）
+
+使用方法：
+    python sync_db.py <material_id>  # 同步单本小说
+    python sync_db.py all            # 同步所有小说
+"""
 import os
 import sys
 import json
@@ -23,13 +40,22 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 
 
 def get_db_connection():
+    """获取数据库连接。"""
     conn = psycopg2.connect(DATABASE_URL)
     conn.autocommit = False
     return conn
 
 
 def _precheck_schema(material_id: str) -> bool:
-    """同步前执行 schema 预检，发现错误则打印并返回 False。"""
+    """同步前检查数据格式是否正确。
+
+    为什么检查？
+    - 数据格式错误会导致同步失败或数据库损坏
+    - 检查发现问题可以提前报错，避免浪费时间
+
+    返回：
+        bool：检查通过返回 True，否则返回 False
+    """
     if validate_material(material_id, verbose=True):
         print(f"[sync_db] Schema 预检通过：{material_id}")
         return True
@@ -39,7 +65,16 @@ def _precheck_schema(material_id: str) -> bool:
 
 
 def sync_novel(material_id):
-    """同步单本小说到数据库（同步前执行 schema 预检）。"""
+    """同步单本小说到数据库。
+
+    流程：
+    1. 检查数据格式（schema 验证）
+    2. 同步元信息、章节、大纲、人物、世界观
+    3. 如果任何步骤失败，回滚所有更改
+
+    参数：
+        material_id：素材 ID
+    """
     novel_dir = NOVELS_DIR / material_id
     if not novel_dir.exists():
         print(f"跳过: 目录不存在 {novel_dir}")
@@ -66,7 +101,10 @@ def sync_novel(material_id):
 
 
 def _sync_meta(conn, novel_dir, material_id):
-    """同步 meta.yaml → novels 表。"""
+    """同步 meta.yaml 到 novels 表。
+
+    写入字段：书名、作者、类型、字数、章数、状态、标签。
+    """
     meta_file = novel_dir / "meta.yaml"
     if not meta_file.exists():
         return
@@ -107,7 +145,14 @@ def _sync_meta(conn, novel_dir, material_id):
 
 
 def _sync_chapters(conn, novel_dir, material_id):
-    """同步 chapters.yaml + chapter_embeddings.npz → chapters 表，按批次提交。"""
+    """同步章节分析结果和向量。
+
+    写入字段：摘要、人物、紧张度、节奏、场景、向量。
+
+    向量来源：
+    - chapter_embeddings.npz（新格式，优先）
+    - chapter_embeddings.yaml（旧格式，兼容）
+    """
     chapters_file = novel_dir / "chapters.yaml"
     if not chapters_file.exists():
         return
@@ -118,11 +163,11 @@ def _sync_chapters(conn, novel_dir, material_id):
     if not chapters:
         return
 
-    # 加载向量（可选，不存在则不写入向量字段）
-    # 优先读 .npz（新格式），兜底读旧 .yaml（向后兼容）
+    # 加载向量
     embeddings: dict = {}
     embeddings_npz = novel_dir / "chapter_embeddings.npz"
     embeddings_yaml = novel_dir / "chapter_embeddings.yaml"
+
     if embeddings_npz.exists():
         import numpy as np
         data = np.load(str(embeddings_npz))
@@ -146,6 +191,7 @@ def _sync_chapters(conn, novel_dir, material_id):
                 vec = embeddings.get(ch_num)
 
                 if vec is not None:
+                    # 有向量
                     cur.execute("""
                         INSERT INTO chapters (
                             material_id, chapter, title, summary, word_count,
@@ -173,6 +219,7 @@ def _sync_chapters(conn, novel_dir, material_id):
                         vec,
                     ))
                 else:
+                    # 无向量
                     cur.execute("""
                         INSERT INTO chapters (
                             material_id, chapter, title, summary, word_count,
@@ -204,8 +251,18 @@ def _sync_chapters(conn, novel_dir, material_id):
 
 
 def _sync_outline(conn, novel_dir, material_id):
-    """同步 outline/_index.yaml → novels 表，outline/structure.yaml → outline_sequences/beats 表。"""
-    # 1. _index.yaml → novels 表元信息
+    """同步大纲结构。
+
+    大纲分三层：
+    - Act（幕）：故事的大阶段（如第一幕、第二幕）
+    - Sequence（序列）：幕内的情节片段
+    - Beat（节拍）：序列内的具体场景
+
+    写入表：
+    - novels：前提、主题、基调、结构类型
+    - outline_sequences：序列信息
+    - outline_beats：节拍信息
+    """
     outline_index = novel_dir / "outline" / "_index.yaml"
     if outline_index.exists():
         with open(outline_index, "r", encoding="utf-8") as f:
@@ -245,7 +302,6 @@ def _sync_outline(conn, novel_dir, material_id):
             ))
         print(f"  已同步大纲元信息（premise/theme/tone）")
 
-    # 2. structure.yaml → outline_sequences + outline_beats 表
     structure_file = novel_dir / "outline" / "structure.yaml"
     if not structure_file.exists():
         return
@@ -257,33 +313,27 @@ def _sync_outline(conn, novel_dir, material_id):
     if not acts:
         return
 
-    # 先判断 structure_type
     structure_type = structure_data.get("structure_pattern", {}).get("type")
 
     seq_count = 0
     beat_count = 0
     with conn.cursor() as cur:
-        # 更新 novels 的 structure_type
         if structure_type:
             cur.execute(
                 "UPDATE novels SET structure_type = %s WHERE material_id = %s",
                 (structure_type, material_id)
             )
 
-        # 清除旧数据，重新写入（幂等）
+        # 清除旧数据（幂等）
         cur.execute("DELETE FROM outline_beats WHERE material_id = %s", (material_id,))
         cur.execute("DELETE FROM outline_sequences WHERE material_id = %s", (material_id,))
 
         for act_data in acts:
-            # 兼容两种字段名：act（旧）或 act_number（新）
             act_num = act_data.get("act") or act_data.get("act_number")
             for seq_data in act_data.get("sequences", []):
-                # 兼容两种字段名：sequence（旧）或 sequence_number（新）
                 seq_num = seq_data.get("sequence") or seq_data.get("sequence_number")
 
-                # 兼容两种章节范围格式：
-                # - 新格式：chapter_start, chapter_end（独立字段）
-                # - 旧格式：chapters = [start, end]（数组）
+                # 兼容两种章节范围格式
                 chapters_start = seq_data.get("chapter_start")
                 chapters_end = seq_data.get("chapter_end")
                 if chapters_start is None or chapters_end is None:
@@ -305,7 +355,6 @@ def _sync_outline(conn, novel_dir, material_id):
                 seq_count += 1
 
                 for beat_data in seq_data.get("beats", []):
-                    # 兼容两种字段名：beat（旧）或 beat_number（新）
                     beat_num = beat_data.get("beat") or beat_data.get("beat_number")
 
                     cur.execute("""
@@ -326,7 +375,12 @@ def _sync_outline(conn, novel_dir, material_id):
 
 
 def _sync_characters(conn, novel_dir, material_id):
-    """同步 characters/profiles/*.yaml → characters + character_appearances 表。"""
+    """同步人物档案。
+
+    人物数据来自两个来源：
+    - characters/profiles/*.yaml：人物详细信息（角色、性格、成长弧）
+    - chapters.yaml 的 characters_appear：人物出场记录
+    """
     profiles_dir = novel_dir / "characters" / "profiles"
     if not profiles_dir.exists():
         return
@@ -385,12 +439,16 @@ def _sync_characters(conn, novel_dir, material_id):
 
     print(f"  已同步人物: {len(profile_files)} 个")
 
-    # 从 chapters.yaml 的 characters_appear 字段提取出场记录
+    # 同步人物出场记录
     _sync_character_appearances(conn, novel_dir, material_id)
 
 
 def _sync_character_appearances(conn, novel_dir, material_id):
-    """从 chapters.yaml 提取人物出场记录 → character_appearances 表。"""
+    """从章节分析结果提取人物出场记录。
+
+    数据来源：chapters.yaml 的 characters_appear 字段
+    写入表：character_appearances（人物名、章节号）
+    """
     chapters_file = novel_dir / "chapters.yaml"
     if not chapters_file.exists():
         return
@@ -399,7 +457,7 @@ def _sync_character_appearances(conn, novel_dir, material_id):
         chapters = yaml.safe_load(f) or []
 
     with conn.cursor() as cur:
-        # 先清除旧记录（幂等）
+        # 清除旧记录（幂等）
         cur.execute("DELETE FROM character_appearances WHERE material_id = %s", (material_id,))
 
         for ch in chapters:
@@ -415,13 +473,19 @@ def _sync_character_appearances(conn, novel_dir, material_id):
 
 
 def _sync_worldbuilding(conn, novel_dir, material_id):
-    """同步 worldbuilding/ → worldbuilding_entities 表。"""
+    """同步世界观元素。
+
+    世界观分三类：
+    - factions：势力/组织
+    - regions：地点/区域
+    - power_systems：力量体系/修炼等级
+    """
     wb_index = novel_dir / "worldbuilding" / "_index.yaml"
     if not wb_index.exists():
         return
 
     def _load_worldbuilding_entities(entity_type: str) -> list[dict]:
-        """兼容新旧 worldbuilding 产物格式。"""
+        """加载世界观实体数据，兼容新旧格式。"""
         files_by_type = {
             "factions": ["factions.yaml"],
             "regions": ["regions.yaml", "geography.yaml"],
@@ -439,6 +503,7 @@ def _sync_worldbuilding(conn, novel_dir, material_id):
         if loaded is None:
             return []
 
+        # 格式兼容
         if entity_type == "regions" and isinstance(loaded, dict):
             loaded = loaded.get("regions", [])
         elif entity_type == "power_systems" and isinstance(loaded, dict):
@@ -492,7 +557,7 @@ def _sync_worldbuilding(conn, novel_dir, material_id):
 
 
 def sync_all():
-    """同步所有小说。"""
+    """同步所有小说到数据库。"""
     if not NOVELS_DIR.exists():
         print("没有小说目录")
         return

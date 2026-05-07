@@ -36,6 +36,7 @@ def _setup_logger() -> logging.Logger:
     """配置日志记录器，同时输出到控制台和日志文件。
 
     单例模式：一次运行只创建一个日志文件，后续调用返回同一个 logger。
+    使用 delay=True 延迟创建文件，避免 import 阶段产生空日志。
     """
     global _CURRENT_LOG_FILE, _CONSOLE_HANDLER
     logger = logging.getLogger("pipeline")
@@ -43,12 +44,12 @@ def _setup_logger() -> logging.Logger:
         return logger
     logger.setLevel(logging.DEBUG)
 
-    # 文件处理器：一次运行只创建一个文件
+    # 文件处理器：delay=True 延迟创建文件，直到第一条日志写入时才真正打开
     if _CURRENT_LOG_FILE is None:
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         _CURRENT_LOG_FILE = _LOG_DIR / f"pipeline_{timestamp}.log"
 
-    file_handler = logging.FileHandler(_CURRENT_LOG_FILE, encoding="utf-8")
+    file_handler = logging.FileHandler(_CURRENT_LOG_FILE, encoding="utf-8", delay=True)
     file_handler.setFormatter(
         logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s", datefmt="%H:%M:%S")
     )

@@ -1,5 +1,16 @@
 #!/usr/bin/env python
-"""Embedding 工具：将文本转换为向量。"""
+"""文本向量化工具：把文字转换成数字向量。
+
+什么是 Embedding？
+- Embedding 是把文字转换成一串数字（向量）
+- 相似的内容会有相似的向量（可以用来做语义搜索）
+- 比如"打架"和"战斗"的向量会很接近
+
+支持的提供商：
+- ollama：本地部署（免费，需要安装 Ollama）
+- openai：在线 API（收费，需要 API Key）
+- bge：本地模型（免费，需要下载模型文件）
+"""
 import sys
 from pathlib import Path
 
@@ -7,8 +18,9 @@ _ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
+
 def load_embedding_config():
-    """从环境变量加载 Embedding 配置（读取 .env）。"""
+    """从 .env 加载向量化配置。"""
     from dotenv import load_dotenv
     import os
     load_dotenv()
@@ -23,8 +35,17 @@ def load_embedding_config():
         }
     }
 
+
 def get_embedding(text, config=None):
-    """获取文本的 embedding 向量。"""
+    """获取单个文本的向量。
+
+    参数：
+        text：要向量化的文字
+        config：配置字典（可选，默认从 .env 加载）
+
+    返回：
+        list：向量数字列表，如 [0.123, -0.456, 0.789, ...]
+    """
     if config is None:
         config = load_embedding_config()
 
@@ -32,6 +53,7 @@ def get_embedding(text, config=None):
     model = config["embedding"]["model"]
 
     if provider == "openai":
+        # OpenAI API（在线）
         from openai import OpenAI
         client = OpenAI(
             api_key=config["embedding"]["api_key"],
@@ -44,9 +66,9 @@ def get_embedding(text, config=None):
         return response.data[0].embedding
 
     elif provider == "ollama":
+        # Ollama（本地部署）
         import requests
         base_url = config["embedding"].get("base_url", "http://localhost:11434")
-        # Ollama 使用 /api/embed 端点
         response = requests.post(
             f"{base_url}/api/embed",
             json={
@@ -56,11 +78,10 @@ def get_embedding(text, config=None):
         )
         response.raise_for_status()
         data = response.json()
-        # Ollama 返回格式: {"embeddings": [[...]]}
         return data["embeddings"][0]
 
     elif provider == "bge":
-        # 本地 BGE 模型
+        # BGE 本地模型（需要 transformers）
         from transformers import AutoTokenizer, AutoModel
         import torch
 
@@ -70,7 +91,6 @@ def get_embedding(text, config=None):
         inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True)
         with torch.no_grad():
             outputs = model_obj(**inputs)
-            # 使用 [CLS] 向量或 mean pooling
             embeddings = outputs.last_hidden_state[:, 0, :]
 
         return embeddings[0].numpy().tolist()
@@ -78,8 +98,17 @@ def get_embedding(text, config=None):
     else:
         raise ValueError(f"不支持的 embedding provider: {provider}")
 
+
 def get_embeddings_batch(texts, config=None):
-    """批量获取 embedding。"""
+    """批量获取多个文本的向量。
+
+    参数：
+        texts：文字列表
+        config：配置字典（可选）
+
+    返回：
+        list：向量列表，每个元素是一个向量
+    """
     if config is None:
         config = load_embedding_config()
 
@@ -89,7 +118,9 @@ def get_embeddings_batch(texts, config=None):
         embeddings.append(embedding)
     return embeddings
 
+
 if __name__ == "__main__":
+    # 测试向量化功能
     config = load_embedding_config()
     text = "这是一个测试文本"
     embedding = get_embedding(text, config)

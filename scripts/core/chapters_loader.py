@@ -1,25 +1,41 @@
-"""章节数据加载与摘要池构建的共享工具。
+"""章节数据加载与摘要池构建工具。
 
-- load_chapters_data : 从 chapters/ 子目录（分析期间）或 chapters.yaml（合并后）加载列表
-- build_summary_pool : 构建 LLM 摘要上下文，章数超阈值时均匀分层采样覆盖全书
+这个模块做什么？
+- load_chapters_data：加载章节数据列表
+- build_summary_pool：构建摘要池（供 LLM 分析时参考）
+
+什么是摘要池？
+- LLM 分析小说时，不可能把几千章原文全传过去
+- 但可以把每章的摘要（50-100字）传过去
+- 摘要池就是这些摘要的合集，让 LLM 了解全书脉络
+
+摘要池怎么处理长篇小说？
+- 200 以内：全量使用（直接截断到 Token 上限）
+- 200 章以上：分层采样（均匀抽取，覆盖首尾和中间）
 """
 import yaml
 from pathlib import Path
 
-# 章节数超过此值时启用分层采样（而非从头截断）
+# 章数超过此值时启用分层采样
 _SAMPLE_THRESHOLD = 200
-# 每条摘要行的平均 token 数估算（中文：第N章《标题》：50-100字摘要 ≈ 40 tokens）
+# 每条摘要预估的 Token 数（"第N章《标题》：摘要" ≈ 40 tokens）
 _AVG_TOKENS_PER_ENTRY = 40
 
 
 def load_chapters_data(novel_dir: Path) -> list[dict]:
     """加载章节数据列表。
 
-    优先策略：
-    1. 若 ``chapters/`` 子目录存在且含有比 ``chapters.yaml`` 更新的文件，
-       则即时合并返回（chapter_analyze 中断时确保下游脚本看到最新数据）。
-    2. 否则读取 ``chapters.yaml``（chapter_analyze 完成后的合并快照）。
-    3. 两者都不存在则返回空列表。
+    加载策略：
+    1. 如果 chapters/ 子目录存在且比 chapters.yaml 更新，即时合并返回
+       （分析中途断开时，确保下游脚本看到最新数据）
+    2. 否则读取 chapters.yaml（分析完成后的合并快照）
+    3. 都不存在则返回空列表
+
+    参数：
+        novel_dir：小说目录路径
+
+    返回：
+        list：章节字典列表，每个字典包含 chapter、title、summary 等字段
     """
     chapters_dir = novel_dir / "chapters"
     chapters_file = novel_dir / "chapters.yaml"
@@ -27,8 +43,7 @@ def load_chapters_data(novel_dir: Path) -> list[dict]:
     if chapters_dir.exists():
         individual_files = sorted(chapters_dir.glob("*.yaml"))
         if individual_files:
-            # 用时间戳最新的文件判断是否需要重合并（而非字母序最后一个）：
-            # 断点续传场景中，更新的是中间章节文件，字母序最后的文件可能仍是旧的。
+            # 用最新修改时间判断是否需要重新合并
             newest_file = max(individual_files, key=lambda f: f.stat().st_mtime)
             needs_merge = (
                 not chapters_file.exists()
@@ -49,19 +64,35 @@ def load_chapters_data(novel_dir: Path) -> list[dict]:
 
 
 def build_summary_pool(chapters_data: list, max_tokens: int, model: str) -> str:
-    """构建摘要池文本，超过阈值时均匀分层采样覆盖全书首尾及中间。
+    """构建摘要池文本。
 
-    - ``≤ _SAMPLE_THRESHOLD`` 章：全量拼接后按 token 从头截断（原有行为）
-    - ``> _SAMPLE_THRESHOLD`` 章：均匀采样约 ``max_tokens // _AVG_TOKENS_PER_ENTRY``
-      条，保证首章和末章必然入选，中间等距分布，避免仅看全书前 7-8%
+    什么是摘要池？
+    - 把所有章节的摘要拼接成一段文本
+    - 传给 LLM 作为参考上下文
+    - 让 LLM 了解全书内容，而不需要传原文
 
-    返回的字符串可直接插入 LLM user_prompt。
+    短篇小说（≤200 章）：
+    - 全量使用，按 Token 上限截断
+
+    长篇小说（>200 章）：
+    - 分层采样，均匀抽取覆盖全书
+    - 首章和末章必定入选，中间等距分布
+    - 避免 LLM 只看前 7-8% 的内容
+
+    参数：
+        chapters_data：章节数据列表
+        max_tokens：Token 上限
+        model：模型名称（用于 Token 计算）
+
+    返回：
+        str：摘要池文本，可直接插入 LLM prompt
     """
     from scripts.core.llm_client import truncate_to_tokens
 
     total = len(chapters_data)
 
     def _entry(ch: dict) -> str:
+        """格式化一条摘要。"""
         return (
             f"第{ch.get('chapter', '?')}章"
             f"《{ch.get('title', '')}》："
@@ -69,13 +100,15 @@ def build_summary_pool(chapters_data: list, max_tokens: int, model: str) -> str:
         )
 
     if total <= _SAMPLE_THRESHOLD:
+        # 短篇：全量拼接后截断
         lines = [_entry(ch) for ch in chapters_data if ch.get("summary")]
         return truncate_to_tokens("\n".join(lines), max_tokens, model=model)
 
-    # 分层均匀采样：首章 + 末章 + 中间等距
+    # 长篇：分层均匀采样
     n_samples = max(50, max_tokens // _AVG_TOKENS_PER_ENTRY)
     n_samples = min(n_samples, total)
 
+    # 首章 + 末章 + 中间等距
     sampled_indices: set[int] = {0, total - 1}
     step = total / n_samples
     for i in range(n_samples):

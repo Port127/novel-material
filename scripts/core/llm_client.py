@@ -1,10 +1,12 @@
-"""统一 LLM 调用客户端：所有脚本通过此模块调用 LLM，禁止在其他文件中复制。
+"""LLM API 调用客户端
 
-特性：
-- 指数退避自动重试（tenacity）：网络超时、限流、服务端 5xx 均自动重试
-- 429 速率限制：优先读取 Retry-After 响应头，保证按服务商要求等待
-- 最多重试 8 次，其他错误指数退避（2→4→8→…→120s）
-- tiktoken 动态 Token 截断工具（truncate_to_tokens）
+所有脚本必须通过这个模块调用 LLM，不要在其他文件中直接调用 API。
+
+核心功能：
+1. 自动重试：网络超时、速率限制、服务器错误都会自动重试
+2. 总超时控制：限制从请求开始到失败的总时间（包括所有重试）
+3. 智能等待：遇到速率限制时，按服务商要求等待，避免被反复拒绝
+4. Token 截断：把过长的文本截断到指定 Token 数量
 """
 import sys
 import json
@@ -15,35 +17,36 @@ _ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-# 使用统一的 pipeline logger（写入同一日志文件）
+# 使用统一的日志记录器
 from scripts.utils.progress_tracker import get_pipeline_logger
 logger = get_pipeline_logger()
 
-# ──────────────────────────────────────────────
-# 全局 API 调用计数器（pipeline 运行时读写）
-# ──────────────────────────────────────────────
+
+# ============================================================
+# API 调用统计（用于监控运行状态）
+# ============================================================
 
 _api_stats = {"calls": 0, "errors": 0, "tokens_total": 0}
 
 
 def get_api_stats() -> dict:
-    """获取全局 API 调用统计（只读快照）。"""
+    """获取当前 API 调用统计（调用次数、错误次数、总 Token 数）。"""
     return dict(_api_stats)
 
 
 def reset_api_stats() -> None:
-    """重置计数器（每次流水线启动时调用）。"""
+    """清零统计（每次流水线开始时调用）。"""
     _api_stats["calls"] = 0
     _api_stats["errors"] = 0
     _api_stats["tokens_total"] = 0
 
 
-# ──────────────────────────────────────────────
+# ============================================================
 # 配置加载
-# ──────────────────────────────────────────────
+# ============================================================
 
 def load_config():
-    """从环境变量加载 LLM 配置（读取 .env）。"""
+    """从 .env 文件加载 LLM 配置。"""
     from dotenv import load_dotenv
     import os
     load_dotenv()
@@ -51,40 +54,41 @@ def load_config():
     return {
         "llm": {
             "provider": os.getenv("LLM_PROVIDER", "openai"),
-            "model": os.getenv("LLM_MODEL", "gpt-4o-mini"),
+            "model": os.getenv("LLM_MODEL", "qwen3.6-plus"),
             "api_key": os.getenv("LLM_API_KEY", ""),
             "base_url": os.getenv("LLM_BASE_URL"),
-            "max_tokens": int(os.getenv("LLM_MAX_TOKENS", "500")),
+            "max_tokens": int(os.getenv("LLM_MAX_TOKENS", "2000")),
             "temperature": float(os.getenv("LLM_TEMPERATURE", "0.3")),
-            "rate_limit_seconds": int(os.getenv("LLM_RATE_LIMIT_SECONDS", "10")),
-            "timeout_seconds": int(os.getenv("LLM_TIMEOUT_SECONDS", "6000")),
+            # 批次间隔时间（秒）
+            "rate_limit_seconds": int(os.getenv("LLM_RATE_LIMIT_SECONDS", "60")),
+            # 总超时时间（秒）- 包括所有重试等待
+            "timeout_seconds": int(os.getenv("LLM_TIMEOUT_SECONDS", "120")),
+            # 章级分析专用：批量分析的总超时
             "chapter_batch_timeout_seconds": int(
-                os.getenv("LLM_CHAPTER_BATCH_TIMEOUT_SECONDS", "6000")
+                os.getenv("LLM_CHAPTER_BATCH_TIMEOUT_SECONDS", "180")
             ),
-            # 每次 API 调用批量处理的章节数（减少调用次数）
-            # 默认 10：平衡效率和稳定性，避免单批过大导致超时/失败。
-            # 章节内容越长，batch_size 应越小（建议 5-10）。
-            "chapter_batch_size": int(os.getenv("LLM_CHAPTER_BATCH_SIZE", "10")),
+            # 每批处理章节数
+            "chapter_batch_size": int(os.getenv("LLM_CHAPTER_BATCH_SIZE", "5")),
         }
     }
 
 
-# ──────────────────────────────────────────────
-# Token 工具
-# ──────────────────────────────────────────────
+# ============================================================
+# Token 截断工具
+# ============================================================
 
-def truncate_to_tokens(text: str, max_tokens: int, model: str = "gpt-4o-mini") -> str:
-    """将文本截断到指定 Token 数量上限。
+def truncate_to_tokens(text: str, max_tokens: int, model: str = "qwen3.6-plus") -> str:
+    """把文本截断到指定 Token 数量。
 
-    使用 tiktoken 精确计算，保留完整语义单元（不在词语中间截断）。
-    如果 tiktoken 不可用，回退到字符数估算（1 token ≈ 1.5 中文字）。
+    使用 tiktoken 精确计算 Token 数，保证截断后的文本不超过限制。
+    如果 tiktoken 不可用，则用字符数估算（1 Token ≈ 1.5 中文字）。
 
-    Args:
+    参数：
         text: 原始文本
         max_tokens: Token 上限
-        model: 用于计算 token 的模型名（影响编码方式）
+        model: 模型名称（影响 Token 计算方式）
 
-    Returns:
+    返回：
         截断后的文本
     """
     try:
@@ -92,6 +96,7 @@ def truncate_to_tokens(text: str, max_tokens: int, model: str = "gpt-4o-mini") -
         try:
             enc = tiktoken.encoding_for_model(model)
         except KeyError:
+            # 未知模型，使用通用编码
             enc = tiktoken.get_encoding("cl100k_base")
 
         tokens = enc.encode(text)
@@ -100,51 +105,66 @@ def truncate_to_tokens(text: str, max_tokens: int, model: str = "gpt-4o-mini") -
         truncated_tokens = tokens[:max_tokens]
         return enc.decode(truncated_tokens)
     except ImportError:
-        # 回退：中文平均 1 token ≈ 1.5 字符
+        # 没有 tiktoken，用字符数估算
         char_limit = int(max_tokens * 1.5)
         return text[:char_limit]
 
 
-# ──────────────────────────────────────────────
-# LLM 调用（带重试）
-# ──────────────────────────────────────────────
+# ============================================================
+# 重试等待策略
+# ============================================================
 
 def _retry_wait(retry_state) -> float:
-    """自适应等待策略：429 优先读取 Retry-After 头，其他错误指数退避。
+    """计算重试前需要等待多久。
 
-    服务商在 429 响应头中通常会通过 Retry-After 或
-    x-ratelimit-reset-requests 告知需要等待的秒数。
-    直接使用该值可避免"等待太短→再次 429→重试次数耗尽"的循环。
+    策略：
+    - 遇到速率限制（HTTP 429）：按服务商响应头的要求等待
+    - 其他错误：指数退避（2→4→8→...→最多 120 秒）
+
+    这样可以避免"等待太短→再次被拒绝→重试次数耗尽"的问题。
     """
     from openai import APIStatusError
-    exc = retry_state.outcome.exception()
 
+    # 检查是否有异常信息
+    if not hasattr(retry_state, 'outcome') or retry_state.outcome is None:
+        return 2.0
+    exc = retry_state.outcome.exception()
+    if exc is None:
+        return 2.0
+
+    # 处理速率限制（HTTP 429）
     if isinstance(exc, APIStatusError) and exc.status_code == 429:
-        # 尝试从响应头读取 Retry-After
+        # 尝试从响应头读取服务商要求的等待时间
         headers = {}
         try:
             headers = dict(exc.response.headers) if exc.response else {}
         except Exception:
             pass
 
+        # 常见的等待时间响应头
         for header in ("retry-after", "x-ratelimit-reset-requests", "ratelimit-reset"):
             val = headers.get(header) or headers.get(header.lower())
             if val:
                 try:
                     wait = float(val)
-                    logger.warning(f"速率限制（429），按服务商要求等待 {wait:.0f}s（来自 {header}）")
+                    logger.warning(f"速率限制（429），按服务商要求等待 {wait:.0f}s")
                     return wait
                 except (TypeError, ValueError):
                     pass
 
-        # 无头信息时保守等待 60s
-        logger.warning("速率限制（429），未找到 Retry-After 头，默认等待 60s")
+        # 没有响应头信息，默认等待 60 秒
+        logger.warning("速率限制（429），默认等待 60s")
         return 60.0
 
-    # 其他错误（网络、5xx）：指数退避，上限 120s
+    # 其他错误：指数退避，上限 120 秒
+    # 第 1 次重试等 4 秒，第 2 次等 8 秒，第 3 次等 16 秒...
     wait = min(2 ** retry_state.attempt_number * 2, 120)
     return wait
 
+
+# ============================================================
+# 主函数：调用 LLM
+# ============================================================
 
 def call_llm(
     system_prompt: str,
@@ -153,62 +173,73 @@ def call_llm(
     max_tokens_override: int | None = None,
     timeout_override: int | None = None,
 ) -> dict:
-    """调用 LLM API，返回解析后的 JSON 对象。
+    """调用 LLM API，返回 JSON 结果。
 
-    自动重试策略：
-    - 触发条件：网络错误、HTTP 429（限流）、HTTP 5xx（服务端错误）
+    重试机制：
+    - 会自动重试的错误：网络超时、速率限制（429）、服务器错误（5xx）
+    - 不重试的错误：参数错误（如 prompt 太长）
     - 最多重试 8 次
-    - 429：优先读取 Retry-After 响应头；无头信息则等待 60s
-    - 其他错误：指数退避（4→8→16→…→120s），避免雪崩
-    - context_length_exceeded：不重试，立即抛出（避免无意义等待）
+    - 总超时限制：超过指定秒数（包括所有重试等待）后放弃
 
-    Args:
+    参数：
         system_prompt: 系统提示词
         user_prompt: 用户提示词
-        config: 由 load_config() 返回的配置字典
-        max_tokens_override: 可选，覆盖 config 中的 max_tokens（适用于大输出场景）
-        timeout_override: 可选，覆盖 config 中的 timeout_seconds（默认6000秒）
+        config: 配置字典（由 load_config() 返回）
+        max_tokens_override: 输出 Token 上限（可选，覆盖配置）
+        timeout_override: 总超时秒数（可选，覆盖配置）
 
-    Returns:
+    返回：
         dict: LLM 返回的 JSON 对象
 
-    Raises:
-        openai.APIError: 超过最大重试次数后仍失败
-        openai.BadRequestError: context_length_exceeded 等参数错误（不重试）
+    可能抛出的异常：
+        - APITimeoutError: 超时
+        - APIStatusError: API 返回错误（如速率限制）
+        - BadRequestError: 参数错误（不重试）
     """
     from openai import OpenAI, APIStatusError, APIConnectionError, APITimeoutError, BadRequestError
     from tenacity import (
         retry,
         stop_after_attempt,
-        retry_if_exception_type,
+        stop_after_delay,
         retry_if_exception,
         before_sleep_log,
     )
 
     effective_max_tokens = max_tokens_override or config["llm"].get("max_tokens", 2048)
-    effective_timeout = timeout_override or config["llm"].get("timeout_seconds", 6000)
+    # 总超时：从请求开始到放弃的总时间（包括所有重试等待）
+    total_timeout = timeout_override or config["llm"].get("timeout_seconds", 6000)
 
     def _should_retry(retry_state) -> bool:
-        """判断是否应该重试：排除 BadRequestError（参数错误不重试）。"""
+        """判断是否应该重试。"""
+        # 检查异常信息
+        if not hasattr(retry_state, 'outcome') or retry_state.outcome is None:
+            return False
         exc = retry_state.outcome.exception()
-        # BadRequestError (400) 包括 context_length_exceeded，不重试
+        if exc is None:
+            return False
+        # 参数错误不重试（如 prompt 太长）
         if isinstance(exc, BadRequestError):
             return False
-        # 其他错误（网络、429、5xx）重试
+        # 网络错误、超时、速率限制、服务器错误：重试
         return isinstance(exc, (APIConnectionError, APITimeoutError, APIStatusError))
 
     @retry(
         retry=retry_if_exception(_should_retry),
-        stop=stop_after_attempt(8),
+        # 两个停止条件：重试 8 次或超过总超时
+        stop=(stop_after_attempt(8) | stop_after_delay(total_timeout)),
         wait=_retry_wait,
         before_sleep=before_sleep_log(logger, logging.WARNING),
         reraise=True,
     )
     def _call() -> dict:
+        # 创建客户端，禁用 SDK 内置重试（让 tenacity 控制）
         client = OpenAI(
             api_key=config["llm"]["api_key"],
             base_url=config["llm"].get("base_url"),
+            max_retries=0,
         )
+        # SDK 单次调用的超时设为总超时的 80%，留时间给重试
+        sdk_timeout = min(total_timeout * 0.8, 300)
         response = client.chat.completions.create(
             model=config["llm"]["model"],
             messages=[
@@ -217,9 +248,10 @@ def call_llm(
             ],
             temperature=config["llm"].get("temperature", 0.3),
             max_tokens=effective_max_tokens,
-            timeout=effective_timeout,
+            timeout=sdk_timeout,
             response_format={"type": "json_object"},
         )
+        # 记录统计
         usage = response.usage
         _api_stats["calls"] += 1
         if usage:
