@@ -7,11 +7,9 @@ import logging
 from pathlib import Path
 from contextlib import contextmanager
 
-from .config import PROJECT_ROOT
+from .logging_config import get_effective_level, ensure_log_dir
 
-_LOG_DIR = PROJECT_ROOT / "logs"
-_LOG_DIR.mkdir(exist_ok=True)
-
+_LOG_DIR = None  # 使用 logging_config 模块动态获取
 _CURRENT_LOG_FILE: Path | None = None
 _CONSOLE_HANDLER: logging.StreamHandler | None = None
 
@@ -22,16 +20,21 @@ def get_pipeline_logger() -> logging.Logger:
 
 
 def _setup_logger() -> logging.Logger:
-    """配置日志记录器。"""
+    """配置日志记录器（使用全局配置）。"""
     global _CURRENT_LOG_FILE, _CONSOLE_HANDLER
     logger = logging.getLogger("pipeline")
     if logger.handlers:
         return logger
-    logger.setLevel(logging.DEBUG)
+
+    # 使用配置模块
+    logger.setLevel(get_effective_level())
+
+    # 确保目录存在
+    log_dir = ensure_log_dir()
 
     if _CURRENT_LOG_FILE is None:
         timestamp = time.strftime("%Y%m%d_%H%M%S")
-        _CURRENT_LOG_FILE = _LOG_DIR / f"pipeline_{timestamp}.log"
+        _CURRENT_LOG_FILE = log_dir / f"pipeline_{timestamp}.log"
 
     file_handler = logging.FileHandler(_CURRENT_LOG_FILE, encoding="utf-8", delay=True)
     file_handler.setFormatter(
@@ -42,7 +45,7 @@ def _setup_logger() -> logging.Logger:
 
     _CONSOLE_HANDLER = logging.StreamHandler(sys.stdout)
     _CONSOLE_HANDLER.setFormatter(logging.Formatter("%(message)s"))
-    _CONSOLE_HANDLER.setLevel(logging.INFO)
+    _CONSOLE_HANDLER.setLevel(get_effective_level())
     logger.addHandler(_CONSOLE_HANDLER)
 
     return logger
@@ -55,9 +58,9 @@ def pause_console_logging() -> None:
 
 
 def resume_console_logging() -> None:
-    """恢复控制台日志输出。"""
+    """恢复控制台日志输出（恢复到配置的级别）。"""
     if _CONSOLE_HANDLER:
-        _CONSOLE_HANDLER.setLevel(logging.INFO)
+        _CONSOLE_HANDLER.setLevel(get_effective_level())
 
 
 def _fmt(sec: float) -> str:

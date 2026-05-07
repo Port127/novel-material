@@ -69,7 +69,7 @@ def _generate_acts_sequences(chapter_count: int, meta: dict, context_text: str, 
 
 请生成完整的幕/序列划分（仅需章节范围和描述，不需要 beats）。"""
 
-    result = call_llm(system_prompt, user_prompt, config, max_tokens_override=4000, timeout_override=config["llm"]["outline_timeout"])
+    result = call_llm(system_prompt, user_prompt, config, max_tokens_override=4000, timeout_override=config["llm"]["outline_timeout"], context="幕序列划分")
     return result.get("acts", [])
 
 
@@ -132,7 +132,7 @@ def _generate_beats_for_sequence(
 
 请为此序列生成节拍列表。"""
 
-    result = call_llm(system_prompt, user_prompt, config, max_tokens_override=2000, timeout_override=config["llm"]["outline_timeout"])
+    result = call_llm(system_prompt, user_prompt, config, max_tokens_override=2000, timeout_override=config["llm"]["outline_timeout"], context=f"beats#{seq.get('sequence_number', '?')}")
     return result.get("beats", [])
 
 
@@ -224,7 +224,7 @@ def generate_outline(material_id, progress_callback: Callable[[int, int, str], N
 
     result = {}
     try:
-        result = call_llm(system_prompt_premise, user_prompt_premise, config, timeout_override=config["llm"]["outline_timeout"])
+        result = call_llm(system_prompt_premise, user_prompt_premise, config, timeout_override=config["llm"]["outline_timeout"], context="前提提炼")
     except Exception as e:
         logger.error(f"前提提炼失败: {e}")
         logger.warning("使用默认值继续，不中断流程")

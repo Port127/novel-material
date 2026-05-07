@@ -106,7 +106,7 @@ def generate_tags(material_id) -> bool:
     # ── 容错调用 ──
     result = {}
     try:
-        result = call_llm(system_prompt, user_prompt, config)
+        result = call_llm(system_prompt, user_prompt, config, context="标签生成")
         time.sleep(rate_limit)
     except Exception as e:
         logger.error(f"标签生成失败: {e}")

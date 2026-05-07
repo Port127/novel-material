@@ -146,8 +146,18 @@ def call_llm(
     config: dict,
     max_tokens_override: int | None = None,
     timeout_override: int | None = None,
+    context: str | None = None,
 ) -> dict:
-    """调用 LLM API，返回 JSON 结果。"""
+    """调用 LLM API，返回 JSON 结果。
+
+    参数：
+        system_prompt: 系统提示词
+        user_prompt: 用户提示词
+        config: LLM 配置字典
+        max_tokens_override: 最大 tokens 覆盖
+        timeout_override: 超时时间覆盖
+        context: 上下文标签（如 "章节分析#批次53"），用于日志区分
+    """
     from openai import OpenAI, APIStatusError, APIConnectionError, APITimeoutError, BadRequestError
     from tenacity import (
         retry,
@@ -214,6 +224,7 @@ def call_llm(
             "timestamp": time.strftime("%H:%M:%S"),
         }
 
+        prefix = f"[{context}] " if context else ""
         if usage:
             _api_stats["tokens_total"] += usage.total_tokens
             detail["input_tokens"] = usage.prompt_tokens
@@ -222,13 +233,13 @@ def call_llm(
 
             # INFO 级别日志：每次调用详情
             logger.info(
-                f"API: {elapsed:.1f}s | "
+                f"{prefix}API: {elapsed:.1f}s | "
                 f"in={usage.prompt_tokens} out={usage.completion_tokens} "
                 f"total={usage.total_tokens}"
             )
         else:
             # usage 为 None 时仍记录调用
-            logger.warning(f"API: {elapsed:.1f}s | usage=None（无法获取 tokens）")
+            logger.warning(f"{prefix}API: {elapsed:.1f}s | usage=None（无法获取 tokens）")
 
         _call_details.append(detail)
         return json.loads(response.choices[0].message.content)
@@ -238,5 +249,6 @@ def call_llm(
     except Exception as e:
         _api_stats["errors"] += 1
         elapsed = time.monotonic() - _outer_start
-        logger.error(f"API 失败 ({elapsed:.1f}s): {type(e).__name__}: {e}")
+        prefix = f"[{context}] " if context else ""
+        logger.error(f"{prefix}API 失败 ({elapsed:.1f}s): {type(e).__name__}: {e}")
         raise

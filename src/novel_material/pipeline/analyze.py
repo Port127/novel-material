@@ -87,7 +87,8 @@ def analyze_chapter(content: str, chapter_info: dict, config: dict) -> dict:
 {_CHAPTER_JSON_SCHEMA}"""
 
     timeout = config["llm"].get("analyze_timeout", 300)
-    return call_llm(_SYSTEM_PROMPT, user_prompt, config, timeout_override=timeout)
+    context = f"单章#{chapter_info.get('chapter', 'N/A')}"
+    return call_llm(_SYSTEM_PROMPT, user_prompt, config, timeout_override=timeout, context=context)
 
 
 def analyze_chapters_batch(
@@ -139,12 +140,15 @@ def analyze_chapters_batch(
 
 重要：每个元素的 chapter 字段必须是整数，与输入章节号一致。"""
 
+    batch_nums = [ch_info["chapter"] for ch_info in batch_info]
+    batch_range = f"{min(batch_nums)}-{max(batch_nums)}"
     result = call_llm(
         system_prompt,
         user_prompt,
         config,
         max_tokens_override=n * 450,
         timeout_override=config["llm"].get("analyze_timeout"),
+        context=f"章节分析#批次[{batch_range}]",
     )
 
     # 解析返回结果

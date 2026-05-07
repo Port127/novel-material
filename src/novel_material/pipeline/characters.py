@@ -81,7 +81,7 @@ def _extract_core_characters(context_text: str, context_label: str, meta: dict, 
 请返回 JSON 格式如上，只提取有完整弧线的重要角色。"""
 
     logger.info("第一轮：提取核心人物...")
-    result = call_llm(system_prompt, user_prompt, config, max_tokens_override=8000, timeout_override=config["llm"]["characters_timeout"])
+    result = call_llm(system_prompt, user_prompt, config, max_tokens_override=8000, timeout_override=config["llm"]["characters_timeout"], context="人物#核心")
     return result.get("characters", [])
 
 
@@ -128,7 +128,7 @@ def _extract_minor_characters(
 请返回 JSON 格式如上，补充其他有剧情作用的次要角色。"""
 
     logger.info("第二轮：补充次要人物...")
-    result = call_llm(system_prompt, user_prompt, config, max_tokens_override=8000, timeout_override=config["llm"]["characters_timeout"])
+    result = call_llm(system_prompt, user_prompt, config, max_tokens_override=8000, timeout_override=config["llm"]["characters_timeout"], context="人物#次要")
     return result.get("characters", [])
 
 

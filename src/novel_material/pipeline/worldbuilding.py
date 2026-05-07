@@ -119,7 +119,7 @@ def generate_worldbuilding(material_id) -> bool:
     # ── 容错调用 ──
     result = {}
     try:
-        result = call_llm(system_prompt, user_prompt, config, timeout_override=config["llm"]["worldbuilding_timeout"])
+        result = call_llm(system_prompt, user_prompt, config, timeout_override=config["llm"]["worldbuilding_timeout"], context="世界观提取")
         time.sleep(rate_limit)
     except Exception as e:
         logger.error(f"世界观提取失败: {e}")
