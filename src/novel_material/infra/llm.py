@@ -4,6 +4,7 @@
 """
 import json
 import logging
+import time
 from dotenv import load_dotenv
 import os
 
@@ -16,6 +17,9 @@ logger = get_pipeline_logger()
 # API 调用统计
 _api_stats = {"calls": 0, "errors": 0, "tokens_total": 0}
 
+# 单次调用详情列表（供 StageTracker 使用）
+_call_details: list[dict] = []
+
 
 def get_api_stats() -> dict:
     """获取当前 API 调用统计。"""
@@ -27,6 +31,24 @@ def reset_api_stats() -> None:
     _api_stats["calls"] = 0
     _api_stats["errors"] = 0
     _api_stats["tokens_total"] = 0
+
+
+def get_call_details() -> list[dict]:
+    """获取单次调用详情列表（供 StageTracker 使用）。"""
+    return list(_call_details)
+
+
+def clear_call_details() -> None:
+    """清空单次调用详情（每个阶段开始时调用）。"""
+    _call_details.clear()
+
+
+def get_last_call_tokens() -> tuple[int, int]:
+    """获取最近一次调用的 tokens（供实时更新使用）。"""
+    if _call_details:
+        last = _call_details[-1]
+        return last.get("input_tokens", 0), last.get("output_tokens", 0)
+    return 0, 0
 
 
 def load_config():
@@ -56,6 +78,11 @@ def load_config():
             "worldbuilding_summary_tokens": int(os.getenv("LLM_WORLDBUILDING_SUMMARY_TOKENS", "15000")),
             "characters_summary_tokens": int(os.getenv("LLM_CHARACTERS_SUMMARY_TOKENS", "15000")),
             "chapter_batch_size": int(os.getenv("LLM_CHAPTER_BATCH_SIZE", "5")),
+            # 定价配置（用于成本估算，默认 qwen 价格）
+            "pricing": {
+                "input_per_1k": float(os.getenv("LLM_PRICE_INPUT_1K", "0.0004")),
+                "output_per_1k": float(os.getenv("LLM_PRICE_OUTPUT_1K", "0.0012")),
+            },
         }
     }
 
@@ -133,6 +160,9 @@ def call_llm(
     effective_max_tokens = max_tokens_override or config["llm"].get("max_tokens", 2048)
     total_timeout = timeout_override or config["llm"].get("other_timeout", 120)
 
+    # 外部计时起点（用于错误日志）
+    _outer_start = time.monotonic()
+
     def _should_retry(retry_state) -> bool:
         if not hasattr(retry_state, 'outcome') or retry_state.outcome is None:
             return False
@@ -151,6 +181,7 @@ def call_llm(
         reraise=True,
     )
     def _call() -> dict:
+        call_start = time.monotonic()
         client = OpenAI(
             api_key=config["llm"]["api_key"],
             base_url=config["llm"].get("base_url"),
@@ -168,14 +199,44 @@ def call_llm(
             timeout=sdk_timeout,
             response_format={"type": "json_object"},
         )
+        elapsed = time.monotonic() - call_start
+
         usage = response.usage
         _api_stats["calls"] += 1
+
+        # 记录调用详情（无论 usage 是否存在）
+        detail = {
+            "elapsed_sec": elapsed,
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "total_tokens": 0,
+            "model": config["llm"]["model"],
+            "timestamp": time.strftime("%H:%M:%S"),
+        }
+
         if usage:
             _api_stats["tokens_total"] += usage.total_tokens
+            detail["input_tokens"] = usage.prompt_tokens
+            detail["output_tokens"] = usage.completion_tokens
+            detail["total_tokens"] = usage.total_tokens
+
+            # INFO 级别日志：每次调用详情
+            logger.info(
+                f"API: {elapsed:.1f}s | "
+                f"in={usage.prompt_tokens} out={usage.completion_tokens} "
+                f"total={usage.total_tokens}"
+            )
+        else:
+            # usage 为 None 时仍记录调用
+            logger.warning(f"API: {elapsed:.1f}s | usage=None（无法获取 tokens）")
+
+        _call_details.append(detail)
         return json.loads(response.choices[0].message.content)
 
     try:
         return _call()
-    except Exception:
+    except Exception as e:
         _api_stats["errors"] += 1
+        elapsed = time.monotonic() - _outer_start
+        logger.error(f"API 失败 ({elapsed:.1f}s): {type(e).__name__}: {e}")
         raise

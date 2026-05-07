@@ -83,32 +83,46 @@ def save_run_history(novel_dir: Path, pipeline_name: str, stage_times: list[dict
     else:
         history = {"runs": []}
 
+    # 统计 tokens 和成本
+    total_tokens_in = sum(s.get("tokens_in", 0) for s in stage_times)
+    total_tokens_out = sum(s.get("tokens_out", 0) for s in stage_times)
+    total_api = sum(s.get("api_calls", 0) for s in stage_times)
+    total_errors = sum(s.get("api_errors", 0) for s in stage_times)
+
+    # 成本估算（默认 qwen 价格）
+    cost_in = total_tokens_in * 0.0004 / 1000
+    cost_out = total_tokens_out * 0.0012 / 1000
+    estimated_cost = cost_in + cost_out
+
     run_record = {
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "pipeline": pipeline_name,
         "status": status,
         "total_elapsed_sec": round(total_elapsed, 1),
         "total_elapsed_human": _fmt(total_elapsed),
+        "tokens_in": total_tokens_in,
+        "tokens_out": total_tokens_out,
+        "estimated_cost": round(estimated_cost, 2),
+        "api_total": total_api,
+        "api_errors": total_errors,
+        "api_error_rate": round(total_errors / total_api * 100, 1) if total_api > 0 else 0,
         "stages": [],
     }
 
-    total_api = 0
-    total_errors = 0
     for s in stage_times:
-        total_api += s.get("api_calls", 0)
-        total_errors += s.get("api_errors", 0)
-        run_record["stages"].append({
+        stage_record = {
             "name": s["name"],
             "elapsed_sec": round(s["elapsed_sec"], 1),
             "elapsed_human": _fmt(s["elapsed_sec"]),
             "pct": round(s["elapsed_sec"] / total_elapsed * 100, 1) if total_elapsed > 0 else 0,
             "api_calls": s.get("api_calls", 0),
             "api_errors": s.get("api_errors", 0),
-        })
-
-    run_record["api_total"] = total_api
-    run_record["api_errors"] = total_errors
-    run_record["api_error_rate"] = round(total_errors / total_api * 100, 1) if total_api > 0 else 0
+            "tokens_in": s.get("tokens_in", 0),
+            "tokens_out": s.get("tokens_out", 0),
+        }
+        if s.get("api_calls", 0) > 0:
+            stage_record["avg_tokens_per_call"] = round(s.get("tokens_in", 0) / s.get("api_calls", 1), 0)
+        run_record["stages"].append(stage_record)
 
     history["runs"].append(run_record)
 
@@ -124,10 +138,19 @@ def save_run_history(novel_dir: Path, pipeline_name: str, stage_times: list[dict
 class StageTracker:
     """阶段进度跟踪器。"""
 
-    def __init__(self, total_stages: int, stage_name: str, stage_num: int = 0):
+    def __init__(
+        self,
+        total_stages: int,
+        stage_name: str,
+        stage_num: int = 0,
+        material_id: str = None,
+        novel_info: dict = None,
+    ):
         self.total_stages = total_stages
         self.stage_name = stage_name
         self.stage_num = stage_num
+        self.material_id = material_id
+        self.novel_info = novel_info or {}
         self.stage_start = time.monotonic()
         self.wall_start = time.monotonic()
         self.api_calls = 0
@@ -142,6 +165,10 @@ class StageTracker:
         self._eta_seconds = 0
         self._logger = _setup_logger()
         self._completed_stage_times: list[float] = []
+        # Token 统计
+        self._tokens_in = 0
+        self._tokens_out = 0
+        self._call_count = 0
 
     def __enter__(self):
         self.print_header()
@@ -159,6 +186,12 @@ class StageTracker:
     @property
     def elapsed_total(self) -> float:
         return time.monotonic() - self.wall_start
+
+    def record_tokens(self, in_tokens: int, out_tokens: int):
+        """记录 token 消耗（每次 API 调用后调用）。"""
+        self._tokens_in += in_tokens
+        self._tokens_out += out_tokens
+        self._call_count += 1
 
     def set_sub_progress(self, done: int, total: int) -> None:
         self._sub_progress_total = total
@@ -180,10 +213,14 @@ class StageTracker:
             parts = [msg]
             parts.append(f"已耗时 {_fmt(elapsed)}")
 
+            # 显示 tokens 消耗
+            if self._tokens_in > 0:
+                parts.append(f"tokens {self._tokens_in:,}/{self._tokens_out:,}")
+
             if self._sub_progress_total > 0 and self._sub_progress_done > 0:
                 frac = self._sub_progress_done / self._sub_progress_total
                 eta = self._estimate_eta(frac)
-                if eta > 0:
+                if eta > 60:
                     parts.append(f"ETA {_fmt(eta)}")
                 parts.append(f"{self._sub_progress_done}/{self._sub_progress_total}")
 
@@ -216,19 +253,42 @@ class StageTracker:
             self.api_errors += 1
 
     def print_header(self) -> None:
+        # 显示小说基本信息
+        if self.novel_info:
+            title = self.novel_info.get("name", self.material_id or "未知")
+            chapters = self.novel_info.get("chapter_count", "?")
+            words = self.novel_info.get("word_count", "?")
+            status = self.novel_info.get("status", "?")
+            info_line = f"  小说: {title} | {chapters} 章 | {words} 字 | 状态: {status}"
+            print(info_line)
+            self._logger.info(info_line)
+
         tag = ""
         if self.total_stages > 0 and self.stage_num > 0:
             tag = f"[{self.stage_num}/{self.total_stages}] "
         header = f"\n{'=' * 60}\n{tag}{self.stage_name}\n{'=' * 60}"
         print(header)
-        self._logger.info(f"--- 阶段开始: {tag}{self.stage_name} ---")
+        self._logger.info(f"=== 阶段开始: {tag}{self.stage_name} ===")
 
     def print_footer(self) -> None:
         self._footer_printed = True
         elapsed = self.elapsed_stage
-        footer = f"\n--- {self.stage_name} 完成 | 耗时: {_fmt(elapsed)} ---"
+
+        footer = f"\n--- {self.stage_name} 完成 | 耗时: {_fmt(elapsed)}"
+        if self._tokens_in > 0:
+            footer += f" | tokens: in={self._tokens_in:,} out={self._tokens_out:,}"
+        footer += " ---"
         print(footer)
-        self._logger.info(f"--- 阶段完成: {self.stage_name} | 耗时: {_fmt(elapsed)} ---")
+
+        # 详细日志
+        log_msg = (
+            f"阶段完成: {self.stage_name} | elapsed={elapsed:.1f}s | "
+            f"tokens_in={self._tokens_in} tokens_out={self._tokens_out} | "
+            f"api_calls={self._call_count}"
+        )
+        if self.api_errors > 0:
+            log_msg += f" | errors={self.api_errors}"
+        self._logger.info(log_msg)
 
         if self.api_calls > 0:
             err_rate = self.api_errors / self.api_calls * 100
@@ -242,12 +302,22 @@ class StageTracker:
         lines = [
             f"\n{'=' * 60}",
             f"总耗时: {_fmt(total)}",
-            f"API 总调用: {self.api_calls} 次",
-            f"API 总错误: {self.api_errors} 次",
+            f"API 总调用: {self._call_count} 次",
         ]
-        if self.api_calls > 0:
-            avg = total / self.api_calls
-            lines.append(f"平均每次 API 谗时: {_fmt(avg)}")
+
+        if self._tokens_in > 0:
+            lines.append(f"tokens 输入: {self._tokens_in:,} 输出: {self._tokens_out:,}")
+
+        # 成本估算（使用默认 qwen 价格）
+        if self._tokens_in > 0 and self._tokens_out > 0:
+            cost_in = self._tokens_in * 0.0004 / 1000
+            cost_out = self._tokens_out * 0.0012 / 1000
+            estimated_cost = cost_in + cost_out
+            lines.append(f"预估成本: ¥{estimated_cost:.2f}")
+
+        if self._call_count > 0:
+            avg = total / self._call_count
+            lines.append(f"平均每次 API 耗时: {_fmt(avg)}")
 
         if stages:
             lines.append("")
@@ -259,7 +329,7 @@ class StageTracker:
 
         lines.append(f"{'=' * 60}")
         print("\n".join(lines))
-        self._logger.info(f"--- 流水线完成 | 总耗时: {_fmt(total)} | API: {self.api_calls} 调用, {self.api_errors} 错误 ---")
+        self._logger.info(f"--- 流水线完成 | 总耗时: {_fmt(total)} | API: {self._call_count} 调用, tokens: {self._tokens_in}/{self._tokens_out} ---")
 
 
 @contextmanager
@@ -276,29 +346,39 @@ def stage_context(total_stages: int, stage_num: int, stage_name: str):
 class PipelineRunner:
     """流水线运行器。"""
 
-    def __init__(self, name: str, total_stages: int, novel_dir: Path = None):
+    def __init__(self, name: str, total_stages: int, novel_dir: Path = None, material_id: str = None, novel_info: dict = None):
         self.name = name
         self.total_stages = total_stages
         self.wall_start = time.monotonic()
-        self._tracker = StageTracker(total_stages, name)
+        self.material_id = material_id
+        self.novel_info = novel_info or {}
+        self._tracker = StageTracker(total_stages, name, material_id=material_id, novel_info=novel_info)
         self._stage_times: list[tuple[str, float]] = []
         self._stage_details: list[dict] = []
         self._novel_dir = novel_dir
         self._logger = _setup_logger()
         self._logger.info(f"=== 流水线启动: {name} ({total_stages} 个阶段) ===")
 
+        if novel_info:
+            title = novel_info.get("name", material_id or "未知")
+            chapters = novel_info.get("chapter_count", "?")
+            words = novel_info.get("word_count", "?")
+            self._logger.info(f"  小说: {title} | {chapters} 章 | {words} 字")
+
     def stage(self, stage_num: int, stage_name: str) -> StageTracker:
-        tr = StageTracker(self.total_stages, stage_name, stage_num)
+        tr = StageTracker(self.total_stages, stage_name, stage_num, material_id=self.material_id, novel_info=self.novel_info)
         tr.wall_start = self.wall_start
         return tr
 
-    def record_stage_complete(self, stage_name: str, elapsed: float, api_calls: int = 0, api_errors: int = 0) -> None:
+    def record_stage_complete(self, stage_name: str, elapsed: float, api_calls: int = 0, api_errors: int = 0, tokens_in: int = 0, tokens_out: int = 0) -> None:
         self._stage_times.append((stage_name, elapsed))
         self._stage_details.append({
             "name": stage_name,
             "elapsed_sec": elapsed,
             "api_calls": api_calls,
             "api_errors": api_errors,
+            "tokens_in": tokens_in,
+            "tokens_out": tokens_out,
         })
 
     def print_final_summary(self) -> None:

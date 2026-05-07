@@ -1,9 +1,12 @@
 """Pipeline 子命令：数据处理流水线。"""
+import yaml
 import typer
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
 from rich.table import Table
 
+from novel_material.infra.config import NOVELS_DIR
+from novel_material.infra.progress import pause_console_logging, resume_console_logging
 from novel_material.pipeline import (
     ingest_file,
     chapter_analyze,
@@ -45,14 +48,26 @@ def cmd_analyze(
     material_id: str = typer.Argument(..., help="素材 ID"),
 ):
     """章级分析：生成摘要、人物、标签。"""
+    novel_dir = NOVELS_DIR / material_id
+    with open(novel_dir / "chapter_index.yaml", "r", encoding="utf-8") as f:
+        chapter_index = yaml.safe_load(f)
+    total_chapters = len(chapter_index)
+
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
         console=console,
     ) as progress:
-        task = progress.add_task(f"章级分析: {material_id}", total=None)
-        chapter_analyze(material_id)
-        progress.update(task, completed=True)
+        task = progress.add_task(f"章级分析: {material_id}", total=total_chapters)
+
+        def update_progress(done: int, total: int, desc: str):
+            progress.update(task, completed=done, description=f"章级分析: {desc}")
+
+        pause_console_logging()
+        chapter_analyze(material_id, progress_callback=update_progress)
+        resume_console_logging()
 
     console.print("[green]章级分析完成[/green]")
 
@@ -65,11 +80,21 @@ def cmd_outline(
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
         console=console,
     ) as progress:
         task = progress.add_task(f"生成大纲: {material_id}", total=None)
-        generate_outline(material_id)
-        progress.update(task, completed=True)
+
+        def update_progress(done: int, total: int, desc: str):
+            if total > 0:
+                progress.update(task, total=total, completed=done, description=f"生成大纲: {desc}")
+            else:
+                progress.update(task, description=f"生成大纲: {desc}")
+
+        pause_console_logging()
+        generate_outline(material_id, progress_callback=update_progress)
+        resume_console_logging()
 
     console.print("[green]大纲生成完成[/green]")
 
@@ -164,36 +189,61 @@ def cmd_full(
             console.print("[red]入库失败，终止流水线[/red]")
             raise typer.Exit(1)
         progress.update(task1, completed=1)
+        progress.remove_task(task1)  # 完成后移除，避免重复显示
 
-        # 阶段 2: 章级分析
-        task2 = progress.add_task("阶段 2/7: 章级分析", total=1)
-        chapter_analyze(material_id)
-        progress.update(task2, completed=1)
+        # 阶段 2: 章级分析（细粒度进度）
+        novel_dir = NOVELS_DIR / material_id
+        with open(novel_dir / "chapter_index.yaml", "r", encoding="utf-8") as f:
+            chapter_index = yaml.safe_load(f)
+        total_chapters = len(chapter_index)
 
-        # 阶段 3: 大纲
-        task3 = progress.add_task("阶段 3/7: 大纲生成", total=1)
-        generate_outline(material_id)
-        progress.update(task3, completed=1)
+        task2 = progress.add_task("阶段 2/7: 章级分析", total=total_chapters)
+
+        def update_progress(done: int, total: int, desc: str):
+            progress.update(task2, completed=done, description=f"阶段 2/7: {desc}")
+
+        pause_console_logging()  # 暂停日志输出，避免干扰进度条
+        chapter_analyze(material_id, progress_callback=update_progress)
+        resume_console_logging()
+        progress.remove_task(task2)
+
+        # 阶段 3: 大纲（不确定进度，序列数动态计算）
+        task3 = progress.add_task("阶段 3/7: 大纲生成", total=None)
+
+        def update_outline_progress(done: int, total: int, desc: str):
+            if total > 0:
+                progress.update(task3, total=total, completed=done, description=f"阶段 3/7: {desc}")
+            else:
+                progress.update(task3, description=f"阶段 3/7: {desc}")
+
+        pause_console_logging()
+        generate_outline(material_id, progress_callback=update_outline_progress)
+        resume_console_logging()
+        progress.remove_task(task3)
 
         # 阶段 4: 世界观
         task4 = progress.add_task("阶段 4/7: 世界观提取", total=1)
         generate_worldbuilding(material_id)
         progress.update(task4, completed=1)
+        progress.remove_task(task4)
 
         # 阶段 5: 人物
         task5 = progress.add_task("阶段 5/7: 人物提取", total=1)
         generate_characters(material_id)
         progress.update(task5, completed=1)
+        progress.remove_task(task5)
 
         # 阶段 6: 标签
         task6 = progress.add_task("阶段 6/7: 标签生成", total=1)
         generate_tags(material_id)
         progress.update(task6, completed=1)
+        progress.remove_task(task6)
 
         # 阶段 7: 精调
         task7 = progress.add_task("阶段 7/7: 数据精调", total=1)
         refine(material_id)
         progress.update(task7, completed=1)
+        progress.remove_task(task7)
 
     # 结果表格
     table = Table(title="流水线完成")
@@ -259,6 +309,11 @@ def cmd_continue(
 
     console.print(f"\n[cyan]从 {next_stage} 阶段继续[/cyan]")
 
+    novel_dir = NOVELS_DIR / material_id
+    with open(novel_dir / "chapter_index.yaml", "r", encoding="utf-8") as f:
+        chapter_index = yaml.safe_load(f)
+    total_chapters = len(chapter_index)
+
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
@@ -267,26 +322,47 @@ def cmd_continue(
         console=console,
     ) as progress_bar:
 
-        # 阶段 1: 章级分析
+        # 阶段 1: 章级分析（细粒度进度）
         if not progress.get("analyzed"):
-            task1 = progress_bar.add_task("阶段 1: 章级分析", total=1)
-            chapter_analyze(material_id)
-            progress_bar.update(task1, completed=1)
+            task1 = progress_bar.add_task("阶段 1: 章级分析", total=total_chapters)
 
-        # 阶段 2-5: 骨架分析
-        skeleton_stages = [
-            ("大纲", generate_outline, "outline"),
+            def update_progress(done: int, total: int, desc: str):
+                progress_bar.update(task1, completed=done, description=f"阶段 1: {desc}")
+
+            pause_console_logging()
+            chapter_analyze(material_id, progress_callback=update_progress)
+            resume_console_logging()
+            progress_bar.remove_task(task1)
+
+        # 阶段 2: 大纲（不确定进度）
+        if not progress.get("outline"):
+            task2 = progress_bar.add_task("阶段 2: 大纲", total=None)
+
+            def update_outline_progress(done: int, total: int, desc: str):
+                if total > 0:
+                    progress_bar.update(task2, total=total, completed=done, description=f"阶段 2: {desc}")
+                else:
+                    progress_bar.update(task2, description=f"阶段 2: {desc}")
+
+            pause_console_logging()
+            generate_outline(material_id, progress_callback=update_outline_progress)
+            resume_console_logging()
+            progress_bar.remove_task(task2)
+
+        # 阶段 3-5: 世界观/人物/标签
+        other_stages = [
             ("世界观", generate_worldbuilding, "worldbuilding"),
             ("人物", generate_characters, "characters"),
             ("标签", generate_tags, "tags"),
         ]
 
-        task_num = 2
-        for name, func, key in skeleton_stages:
+        task_num = 3
+        for name, func, key in other_stages:
             if not progress.get(key):
                 task = progress_bar.add_task(f"阶段 {task_num}: {name}", total=1)
                 func(material_id)
                 progress_bar.update(task, completed=1)
+                progress_bar.remove_task(task)
             task_num += 1
 
         # 阶段 6: 精调
@@ -294,6 +370,7 @@ def cmd_continue(
             task6 = progress_bar.add_task("阶段 6: 精调", total=1)
             refine(material_id)
             progress_bar.update(task6, completed=1)
+            progress_bar.remove_task(task6)
 
         # 阶段 7: 数据库同步
         sync_failed = False
@@ -302,6 +379,7 @@ def cmd_continue(
             try:
                 sync_novel(material_id)
                 progress_bar.update(task7, completed=1)
+                progress_bar.remove_task(task7)
             except Exception as e:
                 sync_failed = True
                 console.print(f"[red]数据库同步失败: {e}[/red]")
