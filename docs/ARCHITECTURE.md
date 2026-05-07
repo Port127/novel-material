@@ -93,6 +93,27 @@
 | `review.py` | 审核：新标签候选审批 |
 | `scheduled.py` | 批处理：频率自动批 + LLM 辅助审核 |
 
+## 数据库初始化
+
+### 表结构定义（DDL）
+
+所有表结构统一在 `scripts/core/schema.sql` 中定义：
+- 核心表：novels, chapters, outline_sequences, outline_beats, characters, worldbuilding_entities
+- 标签表：tags, genre_domain_map, new_tag_candidates, new_genre_candidates, free_tags_stats
+
+### 数据初始化（DML）
+
+基础数据初始化在 `scripts/core/init_data.py` 中：
+- genre_domain_map: 22 个一级题材的领域映射
+
+### 初始化命令
+
+```bash
+python scripts/core/init_db.py  # 创建表结构 + 初始化基础数据
+```
+
+---
+
 ## 数据库表结构
 
 ### 核心表
@@ -117,7 +138,7 @@ chapters (
   tension_level INTEGER,
   chapter_functions TEXT[],
   characters_appear TEXT[],
-  summary_embedding vector(1024)
+  summary_embedding vector(4096)
 )
 
 -- 大纲结构

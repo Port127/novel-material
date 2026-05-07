@@ -140,25 +140,25 @@ CREATE TABLE IF NOT EXISTS worldbuilding_entities (
 -- ============================================================
 
 -- 章节检索索引
-CREATE INDEX idx_chapters_material ON chapters(material_id);
-CREATE INDEX idx_chapters_functions ON chapters USING GIN(chapter_functions);
-CREATE INDEX idx_chapters_characters ON chapters USING GIN(characters_appear);
-CREATE INDEX idx_chapters_tension ON chapters(tension_level);
-CREATE INDEX idx_chapters_key_plot ON chapters(key_plot_point);
+CREATE INDEX IF NOT EXISTS idx_chapters_material ON chapters(material_id);
+CREATE INDEX IF NOT EXISTS idx_chapters_functions ON chapters USING GIN(chapter_functions);
+CREATE INDEX IF NOT EXISTS idx_chapters_characters ON chapters USING GIN(characters_appear);
+CREATE INDEX IF NOT EXISTS idx_chapters_tension ON chapters(tension_level);
+CREATE INDEX IF NOT EXISTS idx_chapters_key_plot ON chapters(key_plot_point);
 
 -- 人物检索索引
-CREATE INDEX idx_characters_material ON characters(material_id);
-CREATE INDEX idx_characters_name ON characters(name);
-CREATE INDEX idx_characters_archetype ON characters(archetype);
-CREATE INDEX idx_characters_role ON characters(role);
+CREATE INDEX IF NOT EXISTS idx_characters_material ON characters(material_id);
+CREATE INDEX IF NOT EXISTS idx_characters_name ON characters(name);
+CREATE INDEX IF NOT EXISTS idx_characters_archetype ON characters(archetype);
+CREATE INDEX IF NOT EXISTS idx_characters_role ON characters(role);
 
 -- 大纲检索索引
-CREATE INDEX idx_sequences_material ON outline_sequences(material_id);
-CREATE INDEX idx_beats_material ON outline_beats(material_id);
+CREATE INDEX IF NOT EXISTS idx_sequences_material ON outline_sequences(material_id);
+CREATE INDEX IF NOT EXISTS idx_beats_material ON outline_beats(material_id);
 
 -- 世界观检索索引
-CREATE INDEX idx_wb_material ON worldbuilding_entities(material_id);
-CREATE INDEX idx_wb_type ON worldbuilding_entities(entity_type);
+CREATE INDEX IF NOT EXISTS idx_wb_material ON worldbuilding_entities(material_id);
+CREATE INDEX IF NOT EXISTS idx_wb_type ON worldbuilding_entities(entity_type);
 
 -- 向量搜索索引
 -- 注意: pgvector (IVFFLAT/HNSW) 不支持超过 2000 维的向量索引
@@ -168,3 +168,72 @@ CREATE INDEX idx_wb_type ON worldbuilding_entities(entity_type);
 -- CREATE INDEX idx_beats_desc_vec ON outline_beats USING ivfflat (description_embedding vector_cosine_ops) WITH (lists = 100);
 -- CREATE INDEX idx_characters_arc_vec ON characters USING ivfflat (arc_summary_embedding vector_cosine_ops) WITH (lists = 100);
 -- CREATE INDEX idx_wb_desc_vec ON worldbuilding_entities USING ivfflat (description_embedding vector_cosine_ops) WITH (lists = 100);
+
+-- ============================================================
+-- 标签分级系统表
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS tags (
+    id SERIAL PRIMARY KEY,
+    dimension VARCHAR(50) NOT NULL,
+    tag VARCHAR(100) NOT NULL,
+    domain VARCHAR(50) NOT NULL,
+    group_name VARCHAR(100),
+    is_common BOOLEAN DEFAULT FALSE,
+    synonym_of VARCHAR(100),
+    description TEXT,
+    created_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE(dimension, tag)
+);
+
+CREATE INDEX IF NOT EXISTS idx_tags_dimension ON tags(dimension);
+CREATE INDEX IF NOT EXISTS idx_tags_domain ON tags(domain);
+CREATE INDEX IF NOT EXISTS idx_tags_tag ON tags(tag);
+CREATE INDEX IF NOT EXISTS idx_tags_synonym ON tags(synonym_of);
+
+CREATE TABLE IF NOT EXISTS genre_domain_map (
+    genre_primary VARCHAR(50) PRIMARY KEY,
+    domains JSONB NOT NULL,
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS new_tag_candidates (
+    id SERIAL PRIMARY KEY,
+    dimension VARCHAR(50) NOT NULL,
+    tag VARCHAR(100) NOT NULL,
+    suggested_domain VARCHAR(50),
+    source_material VARCHAR(100),
+    context_genre VARCHAR(50),
+    occurrence_count INTEGER DEFAULT 1,
+    status VARCHAR(20) DEFAULT 'pending',
+    reviewed_at TIMESTAMP,
+    reviewed_by VARCHAR(50),
+    created_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE(dimension, tag)
+);
+
+CREATE INDEX IF NOT EXISTS idx_candidates_status ON new_tag_candidates(status);
+CREATE INDEX IF NOT EXISTS idx_candidates_count ON new_tag_candidates(occurrence_count DESC);
+CREATE INDEX IF NOT EXISTS idx_candidates_dimension ON new_tag_candidates(dimension);
+
+CREATE TABLE IF NOT EXISTS new_genre_candidates (
+    id SERIAL PRIMARY KEY,
+    genre VARCHAR(50) NOT NULL,
+    description TEXT,
+    source_material VARCHAR(100),
+    occurrence_count INTEGER DEFAULT 1,
+    status VARCHAR(20) DEFAULT 'pending',
+    reviewed_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE(genre)
+);
+
+CREATE TABLE IF NOT EXISTS free_tags_stats (
+    dimension VARCHAR(50),
+    tag VARCHAR(100),
+    occurrence_count INTEGER DEFAULT 1,
+    last_seen TIMESTAMP DEFAULT NOW(),
+    UNIQUE(dimension, tag)
+);
+
+CREATE INDEX IF NOT EXISTS idx_free_tags_count ON free_tags_stats(occurrence_count DESC);

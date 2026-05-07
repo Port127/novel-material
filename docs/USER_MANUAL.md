@@ -151,9 +151,14 @@ python scripts/core/init_db.py
 
 成功输出：
 ```
-已启用 pgvector 扩展，创建所有表和索引
+已创建所有表：novels, chapters, outline, characters, worldbuilding, tags, genre_domain_map, ...
+已初始化 22 个一级题材的领域映射
 数据库初始化完成!
 ```
+
+初始化脚本执行内容：
+1. 创建所有表结构（核心表 + 标签表）
+2. 插入基础数据（genre_domain_map 22 条题材映射）
 
 ### 3.4 常用命令
 
