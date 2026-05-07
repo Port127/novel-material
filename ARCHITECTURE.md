@@ -1,110 +1,372 @@
-# 系统架构设计 (ARCHITECTURE.md)
+# Novel Material V2 - 系统架构
 
-本文档描述 Novel Material V2 的真实系统架构、数据流向以及各个模块的边界。
+本文档描述系统的真实架构、数据流向和模块边界。
 
-## 1. 核心定位与原则
+## 整体架构
 
-*   **双库驱动（YAML 为真值库）**：所有非结构化文本通过 LLM 抽取后，必须先固化为本地 `.yaml` 文件。PostgreSQL 仅作为“随抛随建”的加速检索层。
-*   **不作细粒度拆分**：项目坚决抵制拆分“事件”或“场景”。**章节 (Chapter)** 是系统进行大模型语义处理的最小单元。
-*   **AI Agent 首要支持**：抛弃繁琐的 Web UI，本项目所有的数据获取和修改均由具备 LLM 能力的 Agent 通过 CLI 脚本调用完成。
-
-## 2. 系统全景架构
-
-```mermaid
-graph TD
-    subgraph "1. 输入层 (Input)"
-        txt[网文原始 TXT]
-    end
-
-    subgraph "2. 管道处理层 (Pipeline & Analysis)"
-        ingest[ingest.py\n正则切分章节]
-        analyze[generate_*.py & chapter_analyze.py\n调用 OpenAI API]
-        refine_step[refine.py\n基于章级数据精调大纲/人物/标签]
-        txt --> ingest
-        ingest -->|生成 source.txt\n与 chapter_index| analyze
-        analyze --> refine_step
-    end
-
-    subgraph "3. 本地存储层 (Source of Truth)"
-        yaml[本地 YAML 集合\nmeta/chapters/outline 等]
-        schemas[data/schemas/*.schema.yaml\n数据字段契约]
-        analyze -->|JSON 落盘| yaml
-        refine_step -->|更新统计| yaml
-        schemas -.->|约束格式| yaml
-    end
-
-    subgraph "4. 检索加速层 (Database)"
-        sync[sync_db.py\n同步映射]
-        pg[(“PostgreSQL + pgvector”)]
-        yaml --> sync
-        sync --> pg
-    end
-
-    subgraph "5. Agent 交互层"
-        skills[.agents/skills/\n操作手册与能力定义]
-        search[scripts/search/\n各类检索入口]
-        search --> pg
-        skills -.->|指导 Agent 调用| search
-        skills -.->|指导 Agent 调用| ingest
-    end
-
-    subgraph "6. 工具层 (Utils)"
-        utils["quality_check.py / tag_validator.py\nmaterial_delete.py / material_import.py"]
-        utils -.->|校验/导入/删除| yaml
-    end
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         Novel Material V2                                │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐                   │
+│  │ 原始文本    │ →  │ CLI 入口    │ →  │ YAML 存储   │                   │
+│  │ (.txt)      │    │ nm pipeline │    │ data/novels │                   │
+│  └─────────────┘    └─────────────┘    └─────────────┘                   │
+│                            │                   │                         │
+│                            ↓                   ↓                         │
+│                     ┌─────────────┐    ┌─────────────┐                   │
+│                     │ Pipeline    │    │ Search      │                   │
+│                     │ (src/pipeline)│    │ (src/search)│                   │
+│                     └─────────────┘    └─────────────┘                   │
+│                            │                   │                         │
+│                            ↓                   ↓                         │
+│                     ┌─────────────────────────────────┐                  │
+│                     │      PostgreSQL + pgvector      │                  │
+│                     │  novels / chapters / tags / ... │                  │
+│                     └─────────────────────────────────┘                  │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
-## 3. 数据状态流转 (State Machine)
+## 目录结构
 
-一本小说在系统中的生命周期由 `meta.yaml` 中的 `status` 字段严格控制：
+```
+novel-material/
+├── src/novel_material/       # 核心代码
+│   ├── cli/                  # CLI 入口 (nm)
+│   │   ├── main.py           # 主入口
+│   │   ├── pipeline.py       # 流水线命令
+│   │   ├── search.py         # 检索命令
+│   │   ├── tags.py           # 标签管理
+│   │   ├── material.py       # 素材管理
+│   │   ├── storage.py        # 数据库管理
+│   │   └── validate.py       # 校验命令
+│   ├── pipeline/             # 流水线逻辑
+│   │   ├── ingest.py         # 入库：预处理 + 章节切分
+│   │   ├── preprocess.py     # 文本清洗
+│   │   ├── analyze.py        # 章级分析
+│   │   ├── outline.py        # 大纲生成
+│   │   ├── worldbuilding.py  # 世界观提取
+│   │   ├── characters.py     # 人物提取
+│   │   ├── tags.py           # 标签生成
+│   │   ├── refine.py         # 统计精调
+│   │   └── loader.py         # 摘要池构建
+│   ├── search/               # 检索逻辑
+│   │   ├── chapter.py        # 章节检索
+│   │   ├── world.py          # 世界观检索
+│   │   ├── outline.py        # 大纲检索
+│   │   ├── character.py      # 人物检索
+│   │   ├── event.py          # 事件检索
+│   │   └── common.py         # 公共工具
+│   ├── storage/              # 数据库层
+│   │   ├── init_db.py        # 表结构初始化
+│   │   ├── init_data.py      # 基础数据初始化
+│   │   ├── init_tags.py      # 标签字典导入
+│   │   ├── sync.py           # YAML → PostgreSQL 同步
+│   │   ├── embedding.py      # 向量化存储
+│   │   └── schema.sql        # DDL 定义
+│   ├── tags/                 # 标签系统
+│   │   ├── load.py           # 动态加载（按题材）
+│   │   ├── validate.py       # 校验 + 同义词映射
+│   │   ├── manage.py         # CLI 管理
+│   │   ├── review.py         # 新标签审核
+│   │   ├── scheduled.py      # 批处理审核
+│   │   └── export_view.py    # YAML 视图导出
+│   ├── infra/                # 基础设施
+│   │   ├── config.py         # 配置加载
+│   │   ├── llm.py            # LLM 调用客户端
+│   │   ├── embedding.py      # Embedding 调用
+│   │   └── progress.py       # 进度跟踪
+│   ├── validation/           # 校验层
+│   │   ├── schema.py         # YAML Schema 校验
+│   │   ├── quality.py        # 内容质量校验
+│   │   └── tag_rules.py      # 标签规则
+│   └── material/             # 素材管理
+│   │   ├── import_material.py
+│   │   └── delete.py
+├── data/                     # 数据目录
+│   ├── novels/               # 素材存储
+│   │   └── nm_novel_YYYYMMDD_xxxx/
+│   │       ├── source.txt
+│   │       ├── meta.yaml
+│   │       ├── chapters.yaml
+│   │       ├── outline/
+│   │       ├── characters/
+│   │       ├── worldbuilding/
+│   │       └── tags.yaml
+│   ├── schemas/              # YAML Schema 定义
+│   └── tag-system/           # 标签分类学文档
+├── .claude/skills/           # Agent Skills
+├── docs/                     # 文档
+├── Makefile                  # Docker 管理
+└── pyproject.toml            # Python 包配置
+```
 
-1.  **`raw`**：初始状态，尚未处理。
-2.  **`clean`**：经过 `ingest.py` 格式清洗和章节切分，拥有了 `chapter_index.yaml`。
-3.  **`analyzed`**：经过 LLM 抽取，大纲、世界观、章级摘要等均已生成（YAML 落盘完毕）。
-4.  **`indexed`**：向量数据生成完毕（`embed_chapters.py` 写入 `chapter_embeddings.yaml`），且全部映射写入 PostgreSQL。
+## 数据流
 
-## 4. 技术栈映射关系
+### 入库阶段（无 LLM）
 
-| 组件 | 选型 | 备注 |
-| :--- | :--- | :--- |
-| **基础语言** | Python 3.10+ | 负责流水线调度和所有数据处理 |
-| **LLM 抽取** | OpenAI 兼容接口 | 当前配置预期使用 `gpt-4o-mini` |
-| **关系型查询** | PostgreSQL | 支持 `chapters`, `characters`, `tags`(JSONB) 的高效过滤 |
-| **语义检索** | `pgvector` | （规划中）基于 1024 维 `BGE-large-zh` 进行相似度匹配 |
+```
+原始文本 → 预处理 → 章节切分 → YAML 存储
+   │          │          │          │
+   │      NFC 归一化   正则匹配   meta.yaml
+   │      去广告水印   边界重建   chapter_index.yaml
+   │      数字转换     索引生成   source.txt
+```
 
-## 5. Agent 协作机制 (`.agents/` 目录)
+### 分析阶段（LLM 调用）
 
-本项目的特殊之处在于其自带的 `.agents/skills` 目录。
-这些 Markdown 文件本身不被任何 Python 代码 `import`，而是作为**提示词（Prompt）和说明书**供外部 AI Agent 阅读的。
-当您让 Agent “检索一段大纲”时，Agent 会：
-1. 查阅 `.agents/skills/search/SKILL.md`。
-2. 获知应当执行 `python scripts/search/search_outline.py "..."`。
-3. 解析终端返回的 JSON 结果并回答您。
+```
+章级分析 → 向量化 → 骨架分析 → 精调 → 同步数据库
+    │         │         │        │         │
+    │      embedding  outline   统计     PostgreSQL
+    │      (OpenAI)   world     出场次数  novels
+    │                 characters 钩子数   chapters
+    │                 tags                characters
+    │                                     worldbuilding
+```
 
-## 6. 工具层 (`scripts/utils/`)
+## 核心模块详解
 
-项目包含一组被流水线或独立调用的工具脚本：
+### CLI 层 (`cli/`)
 
-| 脚本 | 用途 | 调用时机 |
-| :--- | :--- | :--- |
-| `refine.py` | 基于章级数据精调大纲/人物/标签 | 被 `pipeline.py finalize` 直接调用 |
-| `quality_check.py` | 校验章级分析的摘要长度、标签合法性等 | 独立调用 |
-| `tag_validator.py` | 校验标签是否来自 `data/tags.yaml` 字典 | 独立调用 |
-| `material_delete.py` | 删除素材及清理关联数据 | 独立调用 |
-| `material_import.py` | 导入外部已分析好的素材 | 独立调用 |
+| 命令 | 功能 | 底层调用 |
+|------|------|---------|
+| `nm pipeline ingest` | 入库 | `pipeline/ingest.py` |
+| `nm pipeline full` | 完整流水线 | 组合调用 |
+| `nm pipeline outline` | 大纲生成 | `pipeline/outline.py` |
+| `nm pipeline refine` | 精调同步 | `pipeline/refine.py` + `storage/sync.py` |
+| `nm search chapter` | 章节检索 | `search/chapter.py` |
+| `nm tags stats` | 标签统计 | 数据库查询 |
+| `nm storage init-db` | 初始化表 | `storage/init_db.py` |
 
-## 7. 数据契约层 (`data/schemas/` 与 `data/tag-system/`)
+### Pipeline 层 (`pipeline/`)
 
-*   **`data/schemas/`**：包含 11 份 YAML Schema 定义文件（如 `meta.schema.yaml`、`outline.schema.yaml`、`characters.schema.yaml` 等），是所有 YAML 数据文件的字段格式契约。任何新增或修改 YAML 字段均应先更新对应的 Schema。
-*   **`data/tag-system/`**：包含从频道层到章节功能层的完整 10 篇标签分类学规格，是 `data/tags.yaml` 的设计来源，也是 LLM 在执行标签标注时应当被注入 Prompt 的分类学依据。
+| 模块 | 功能 | 容错策略 |
+|------|------|---------|
+| `analyze.py` | 章级分析 | 断点续传 + 跳过失败章节 |
+| `outline.py` | 大纲生成 | 3层容错 + `generate_simple_acts` 兜底 |
+| `worldbuilding.py` | 世界观提取 | 空结构兜底 |
+| `characters.py` | 人物提取 | 空列表兜底 |
+| `tags.py` | 标签生成 | 默认标签兜底 |
+| `refine.py` | 统计精调 | 增量更新 |
 
-## 8. 已知的遗留问题与待决策项
+### Storage 层 (`storage/`)
 
-阶段一至六的修复工作已完成，以下是当前尚存的未解决问题：
+| 模块 | 功能 |
+|------|------|
+| `init_db.py` | 执行 schema.sql 创建表 |
+| `init_data.py` | 初始化 genre_domain_map |
+| `init_tags.py` | 导入标签字典（如 data/tags.yaml 存在） |
+| `sync.py` | YAML → PostgreSQL 同步 |
+| `embedding.py` | 章节摘要向量化 |
 
-*   **标签体系未激活**：`data/tag-system/` 包含 10 篇完整分类学文档（600+ 标签值），但没有任何脚本将其注入 LLM Prompt。`chapter_analyze.py` 让 LLM 选章节功能标签时，未提供合法值列表，导致 LLM 自由发挥后频繁触发校验报错。（详见 DEFECTS_AND_ROADMAP.md T1）
-*   **配置体系割裂**：`config/database.yaml` 无人读取；`requirements.txt` 中有 `sqlalchemy` 但实际代码全部使用裸 `psycopg2`。（待决策）
-*   **`material/` 目录归属不明**：根目录有一个未纳管的网文原文目录，不在 `.gitignore` 中，不被任何脚本引用。（待决策）
-*   **集成验证尚未执行**：所有修复均为代码层面，全链路端到端验证（含真实 LLM 调用和数据库写入）尚未进行。
+### Tags 层 (`tags/`)
 
-> **完整问题清单与下一步行动**：请查阅 [DEFECTS_AND_ROADMAP.md](docs/DEFECTS_AND_ROADMAP.md)。
+| 模块 | 功能 |
+|------|------|
+| `load.py` | 动态加载：按题材加载相关标签（600+ → ~100） |
+| `validate.py` | 校验标签合法性 + 同义词映射 |
+| `manage.py` | CLI 管理：add/remove/export |
+| `review.py` | 新标签候选审批 |
+
+## 数据库表结构
+
+### 核心表
+
+```sql
+-- 小说元信息
+novels (
+  material_id TEXT PRIMARY KEY,
+  name TEXT,
+  genre TEXT[],
+  premise TEXT,
+  chapter_count INTEGER,
+  tags JSONB,
+  status TEXT,
+  created_at TIMESTAMP,
+  updated_at TIMESTAMP
+)
+
+-- 章节分析
+chapters (
+  material_id TEXT,
+  chapter INTEGER,
+  title TEXT,
+  summary TEXT,
+  tension_level INTEGER,
+  chapter_functions TEXT[],
+  characters_appear TEXT[],
+  key_plot_point TEXT,
+  summary_embedding vector(4096)
+)
+
+-- 大纲
+outline_sequences (
+  material_id TEXT,
+  act INTEGER,
+  sequence INTEGER,
+  title TEXT,
+  description TEXT,
+  chapters_start INTEGER,
+  chapters_end INTEGER
+)
+
+outline_beats (
+  material_id TEXT,
+  act INTEGER,
+  sequence INTEGER,
+  beat INTEGER,
+  title TEXT,
+  description TEXT,
+  chapter INTEGER,
+  tension INTEGER
+)
+
+-- 人物
+characters (
+  material_id TEXT,
+  name TEXT,
+  role TEXT,
+  archetype TEXT,
+  arc_summary TEXT,
+  psychology JSONB,
+  appearance_count INTEGER
+)
+
+character_appearances (
+  material_id TEXT,
+  character_name TEXT,
+  chapter INTEGER,
+  significance TEXT
+)
+
+-- 世界观
+worldbuilding_entities (
+  material_id TEXT,
+  entity_type TEXT,
+  name TEXT,
+  importance TEXT,
+  description TEXT,
+  dimension TEXT
+)
+```
+
+### 标签表
+
+```sql
+-- 标签字典（唯一数据源）
+tags (
+  dimension VARCHAR(50),    -- element/setting/style/structure
+  tag VARCHAR(100),
+  domain VARCHAR(50),       -- xuanhuan/xianxia/common/...
+  group_name VARCHAR(100),
+  is_common BOOLEAN,
+  synonym_of VARCHAR(100),  -- 同义词指向
+  description TEXT
+)
+
+-- 题材领域映射
+genre_domain_map (
+  genre_primary VARCHAR(50) PRIMARY KEY,
+  domains JSONB             -- {"element": ["common", "xuanhuan"]}
+)
+
+-- 新标签候选
+new_tag_candidates (
+  id SERIAL,
+  dimension VARCHAR(50),
+  tag VARCHAR(100),
+  occurrence_count INTEGER,
+  source_material TEXT,
+  status VARCHAR(20)        -- pending/approved/rejected
+)
+```
+
+## 容错机制
+
+### LLM 调用容错
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        LLM 调用容错策略                                   │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  网络错误（429/5xx/超时）                                                 │
+│  ├─ 指数退避重试（最多 8 次）                                             │
+│  ├─ 429 优先读取 Retry-After 响应头                                      │
+│  └─ 总超时控制（含所有重试）                                              │
+│                                                                          │
+│  参数错误（context_length_exceeded）                                     │
+│  ├─ 快速失败，不重试                                                      │
+│  └─ 立即抛出，由上层容错处理                                              │
+│                                                                          │
+│  分析脚本容错                                                             │
+│  ├─ outline: 3层容错 + generate_simple_acts() 兜底                       │
+│  ├─ worldbuilding: 空结构兜底                                             │
+│  ├─ characters: 空列表兜底                                                │
+│  ├─ tags: 默认标签兜底                                                    │
+│  └─ 结果：流程不中断，使用默认值继续                                      │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### 断点续传
+
+```
+章级分析 → chapters/{n:04d}.yaml（独立文件）
+    ↓
+任意章节失败 → 跳过，继续下一章
+    ↓
+崩溃恢复 → 从 max(done.keys()) + 1 继续
+    ↓
+全部完成 → 合并为 chapters.yaml
+```
+
+## 标签分级系统
+
+### 动态加载
+
+```
+用户题材: 玄幻
+    ↓
+查询 genre_domain_map → {"element": ["common", "xuanhuan"]}
+    ↓
+加载 tags 表 → 约 100 个标签（而非 600+）
+    ↓
+精简 LLM prompt → 避免截断
+```
+
+### 分级审核
+
+| Level | 标签类型 | 审核方式 |
+|-------|---------|---------|
+| 0 | hooks/tropes/themes | 自动入库 |
+| 1 | element/style | 出现 ≥3 次自动批 |
+| 2 | setting/structure | LLM 辅助审核 |
+| 3 | genre | 人工审核 |
+
+## 检索架构
+
+### 向量检索
+
+```
+查询文本 → Embedding API → 查询向量
+    ↓
+PostgreSQL pgvector → cosine_similarity
+    ↓
+返回相似度最高的 N 条结果
+```
+
+### 标签领域定位
+
+```
+检索参数: --element 血脉
+    ↓
+resolve_tag_domain("element", "血脉")
+    ↓
+返回: ("xuanhuan", False)
+    ↓
+建议: --genre 玄幻（获得更精准结果）
+```

@@ -22,28 +22,27 @@ description: 基于证据的精调工具，根据章级分析数据调整大纲/
 ## 执行命令
 
 ```bash
-python scripts/utils/refine.py <material_id>
+nm pipeline refine <material_id>
 ```
-
-> 通常不需要直接调用。`pipeline.py finalize` 会自动调用此脚本。
 
 ## 精调内容
 
-### 大纲精调（`refine_outline`）
+### 大纲精调
+
 - 统计 `章末悬念` 标签出现次数 → 写入 `outline/_index.yaml` 的 `hook_count`
 - 计算所有章节的平均张力值 → 写入 `avg_tension`
 - 写入 `refined_at` 时间戳
 
-### 人物精调（`refine_characters`）
+### 人物精调
+
 - 遍历 `chapters.yaml` 中的 `characters_appear` 字段
 - 统计每个人物的总出场次数 → 更新 `profiles/*.yaml` 的 `appearance_count`
 - 计算首次/末次出场章节 → 更新 `first_appearance_chapter` / `last_appearance_chapter`
-- 写入 `refined_at` 时间戳
 
-### 标签精调（`refine_tags`）
+### 标签精调
+
 - 统计 `chapter_function` 字段的频率分布
 - 取 Top 5 最常见的章节功能标签 → 写入 `tags.yaml` 的 `top_chapter_functions`
-- 写入 `refined_at` 时间戳
 
 ## 成功校验
 

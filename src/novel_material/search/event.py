@@ -1,0 +1,128 @@
+"""事件检索：按语义描述检索章节（"雨中告别"、"主角初次突破"等），默认使用向量搜索。"""
+import os
+import psycopg2
+import psycopg2.extras
+import click
+from dotenv import load_dotenv
+
+load_dotenv()
+
+from .common import build_like_terms, require_database_url
+from novel_material.infra.embedding import get_embedding, load_embedding_config
+
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+
+def search_events(query, setting=None, emotion=None, limit=10, keyword=False):
+    """通过章节摘要检索事件，默认向量语义搜索。"""
+    conn = psycopg2.connect(require_database_url(DATABASE_URL))
+    conn.autocommit = True
+
+    results = []
+
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        # 向量语义搜索（默认）
+        if not keyword:
+            print("正在生成查询向量...")
+            config = load_embedding_config()
+            query_embedding = get_embedding(query, config)
+
+            sql = """
+                SELECT c.material_id, c.chapter, c.title, c.summary,
+                       c.tension_level, c.pacing, c.chapter_functions,
+                       c.characters_appear,
+                       n.name as novel_name, n.genre,
+                       c.summary_embedding <=> %s::vector as distance
+                FROM chapters c
+                JOIN novels n ON c.material_id = n.material_id
+                WHERE c.summary_embedding IS NOT NULL
+            """
+            params = [str(query_embedding)]
+
+            if setting:
+                sql += " AND c.setting @> ARRAY[%s]"
+                params.append(setting)
+
+            if emotion:
+                sql += " AND c.summary ILIKE %s"
+                params.append(f"%{emotion}%")
+
+            sql += " ORDER BY distance ASC LIMIT %s"
+            params.append(limit)
+
+        else:
+            # 关键词模糊搜索（回退模式）
+            sql = """
+                SELECT c.material_id, c.chapter, c.title, c.summary,
+                       c.tension_level, c.pacing, c.chapter_functions,
+                       c.characters_appear,
+                       n.name as novel_name, n.genre
+                FROM chapters c
+                JOIN novels n ON c.material_id = n.material_id
+                WHERE 1=1
+            """
+            params = []
+
+            terms = build_like_terms(query)
+            if terms:
+                clauses = []
+                for term in terms:
+                    fuzzy = f"%{term}%"
+                    clauses.append(
+                        """(
+                            c.title ILIKE %s
+                            OR c.summary ILIKE %s
+                            OR array_to_string(c.chapter_functions, ' ') ILIKE %s
+                            OR array_to_string(c.characters_appear, ' ') ILIKE %s
+                        )"""
+                    )
+                    params.extend([fuzzy, fuzzy, fuzzy, fuzzy])
+                sql += " AND (" + " OR ".join(clauses) + ")"
+
+            if setting:
+                sql += " AND c.setting @> ARRAY[%s]"
+                params.append(setting)
+
+            if emotion:
+                sql += " AND c.summary ILIKE %s"
+                params.append(f"%{emotion}%")
+
+            sql += " ORDER BY c.tension_level DESC NULLS LAST, c.chapter ASC LIMIT %s"
+            params.append(limit)
+
+        cur.execute(sql, params)
+        results = cur.fetchall()
+
+    conn.close()
+
+    if not results:
+        print("未找到匹配的事件")
+        return
+
+    print(f"找到 {len(results)} 个匹配事件:\n")
+
+    for r in results:
+        print(f"--- {r['novel_name']} 第{r['chapter']}章 ---")
+        print(f"标题: {r['title']}")
+        print(f"摘要: {r['summary']}")
+        if not keyword and 'distance' in r:
+            similarity = 1 - r['distance']
+            print(f"相似度: {similarity:.2%}")
+        print(f"张力: {r['tension_level']}/5 | 节奏: {r['pacing']}")
+        print(f"功能: {r['chapter_functions']}")
+        print(f"人物: {r['characters_appear']}")
+        print()
+
+
+@click.command()
+@click.argument("query")
+@click.option("--setting", default=None, help="场景类型")
+@click.option("--emotion", default=None, help="情绪基调")
+@click.option("--limit", default=10, help="返回结果数")
+@click.option("--keyword", is_flag=True, help="使用关键词搜索而非向量搜索")
+def main(query, setting, emotion, limit, keyword):
+    search_events(query=query, setting=setting, emotion=emotion, limit=limit, keyword=keyword)
+
+
+if __name__ == "__main__":
+    main()

@@ -10,13 +10,7 @@ description: 入库流水线，处理格式清洗和章节切分。不涉及 LLM
 ## 执行命令
 
 ```bash
-python scripts/pipeline.py ingest <小说文件路径>
-```
-
-或直接调用底层脚本：
-
-```bash
-python scripts/core/ingest.py <小说文件路径>
+nm pipeline ingest <小说文件路径>
 ```
 
 ## 前置条件

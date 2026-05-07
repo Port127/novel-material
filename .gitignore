@@ -6,6 +6,9 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+.pytest_cache/
+.coverage
+htmlcov/
 
 # 环境
 .env
@@ -35,4 +38,5 @@ data/novels/
 data/index.yaml
 .docker/
 
-material/
+# 根目录 material（外部素材）
+/material/

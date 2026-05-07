@@ -1,96 +1,144 @@
-# Novel Material V2 - Agent Map
+# Novel Material V2 - Agent 使用指南
 
-独立的小说素材管理系统，为多个小说项目提供共享素材检索服务。
+本文档定义 LLM Agent（如 Claude Code）操作本项目的规则。
 
-## Priorities
+## 项目定位
+
+Novel Material V2 是一个**小说素材管理系统**：
+
+- **入库**：清洗文本、切分章节
+- **分析**：LLM 自动提取大纲、世界观、人物、标签
+- **存储**：YAML 本地存储 + PostgreSQL 查询层
+- **检索**：语义搜索 + 结构化查询
+
+## Agent 工作原则
+
+### 1. 优先级
 
 1. 用户当前请求
-2. 本文件
-3. `ARCHITECTURE.md`
+2. 本文件（AGENTS.md）
+3. ARCHITECTURE.md
 
-## Quick Start
+### 2. 使用 CLI 而非底层脚本
 
-```bash
-# ── 流水线 ──
-python scripts/pipeline.py ingest  [路径]          # 独立入库（预处理+章节切分）
-python scripts/pipeline.py full    [路径]          # 完整流程（入库→章级分析→向量化→骨架分析→精调→同步）
-python scripts/pipeline.py analyze [material_id]  # 分析流水线（章级→大纲→世界观→人物→标签）
-python scripts/pipeline.py finalize [material_id] # 收尾流水线（精调+同步数据库）
+Agent 应使用 `nm` 命令，而非直接调用 Python 模块。
 
-# ── 检索 ──
-python scripts/search/search_world.py --type faction --genre 修仙 --limit 10
-python scripts/search/search_outline.py --genre 修仙 --query "废柴逆袭"
-python scripts/search/search_detail.py --genre 悬疑 --act 2
-python scripts/search/search_chapter.py "开局困境写法" --limit 10
-python scripts/search/search_character.py --archetype 导师 --genre 修仙
-python scripts/search/search_event.py "雨中告别的写法" --limit 10
-```
+| 用户意图 | 正确命令 | 错误做法 |
+|---------|---------|---------|
+| "入库这本小说" | `nm pipeline full ./novel.txt` | 直接调用 `pipeline/ingest.py` |
+| "分析 nm_xxx" | `nm pipeline analyze nm_xxx` | 直接调用 `pipeline/outline.py` |
+| "搜索修仙宗门" | `nm search world --type faction --genre 修仙` | 直接调用 `search/world.py` |
+| "查看标签统计" | `nm tags stats` | 查询数据库 |
 
-## Skills
+### 3. Skills 是上层入口
 
-| Skill | 用途 |
-|-------|------|
-| `material-add` | 添加新素材入库 |
-| `material-delete` | 删除素材+清理所有关联 |
-| `material-import` | 导入外部已分析好的素材 |
-| `pipeline-ingest` | 入库+格式清洗流水线 |
-| `pipeline-analyze` | 分析流水线（大纲/世界观/人物/标签/章级） |
-| `pipeline-finalize` | 收尾流水线（精调+同步数据库） |
-| `search` | 统一检索入口（自动路由） |
-| `refine` | 基于证据的精调（调整而非增量） |
+Skills（`.claude/skills/*/SKILL.md`）封装了 CLI 调用，提供更完整的操作流程。Agent 应优先使用 Skills。
 
-## ID 规范
+### 4. 标签数据源
 
-格式：`nm_{type}_{YYYYMMDD}_{random4}`
+- ✓ 标签字典存储在 PostgreSQL `tags` 表
+- ✓ 使用 `nm tags stats/list/add` 管理标签
+- ✓ `data/tags_view.yaml` 是导出视图（人读格式，不参与逻辑）
 
-## 数据生命周期
+### 5. 状态流转
 
 ```
-原文文件 → 格式清洗/章节切分 → 章级分析(LLM) → Embedding → 骨架分析(LLM) → 写入数据库
-    ↓              ↓              ↓                 ↓              ↓               ↓
-source.txt   chapter_index.yaml chapters.yaml  chapter_embeddings.npz  outline/…  PostgreSQL
+ingested → clean → analyzed → finalized
 ```
 
-## 标签体系
+| 状态 | 含义 | 可执行操作 |
+|------|------|-----------|
+| `ingested` | 已入库，未清洗 | 等待 |
+| `clean` | 已清洗，待分析 | `nm pipeline analyze` |
+| `analyzed` | 已分析，待精调 | `nm pipeline refine` |
+| `finalized` | 已完成 | `nm storage sync` |
 
-标签从 `data/tags.yaml` 字典中选取，包含 600+ 标签值。完整的分类学文档详见 `data/tag-system/`（含 10 篇从频道到章节功能的完整分类学）：
+Agent 不应：
+- 对 `analyzed` 状态执行 `analyze`（会覆盖）
+- 对 `clean` 状态执行 `refine`（无章级数据）
 
-```
-L0 频道层    → 男频 / 女频 / 中性                              (3)
-L1 题材层    → 玄幻/仙侠/都市/历史/科幻/游戏/悬疑/言情/...       (20 一级)
-L2 子题材层  → 东方玄幻/异世大陆/修真文明/都市异能/...           (100+ 二级)
-L3 元素层    → 系统/重生/无敌/废柴逆袭/种田/穿越/...            (200+)
-L4 风格层    → 热血/轻松/虐心/暗黑/搞笑/爽文/...                (50+)
-```
+## 常用操作
 
-## 硬规则
-
-- MUST 使用 skills 执行操作
-- MUST 素材 ID 遵循命名规范
-- MUST 标签从 `data/tags.yaml` 字典中选取
-- MUST 以章节为最小分析单元，不进行事件/场景拆分
-- MUST 章级分析写入后执行质量校验（摘要长度、标签合法性）
-- MUST Embedding 写入后执行维度校验（`embed_chapters.py` 完成后打印实际维度）
-- MUST 检索调用 `scripts/search/` 下的脚本
-- MUST YAML 文件作为 Source of Truth，数据库是派生查询层
-- NEVER 拆分事件（边界不可控）
-- NEVER 标注结构角色（转折/高潮定义模糊）
-- NEVER 用关键词匹配代替 LLM 理解
-- NEVER 绕过质量门控
-
-## 目录结构
+### 入库新小说
 
 ```
-├── scripts/                    # 脚本（core/analyze/search/utils）
-├── data/                       # 数据（运行时真值目录）
-│   ├── novels/                 # 小说数据
-│   ├── schemas/                # YAML 数据字段契约（9 份 schema）
-│   ├── tag-system/             # 标签分类学规格（10 篇，LLM Prompt 素材）
-│   ├── tags.yaml               # 标签值字典
-│   └── index.yaml              # 全局索引
-├── docs/                       # 文档（纯人类阅读）
-│   ├── research/               # 历史研究与架构决策记录
-│   └── DEFECTS_AND_ROADMAP.md  # 缺陷与路线图
-├── config/                     # 配置文件（database/llm/embedding）
-└── .agents/skills/             # Agent Skills
+用户: "入库 ./my-novel.txt"
+
+Agent:
+1. 检查文件存在
+2. 调用 Skill: material-add 或执行 nm pipeline full ./my-novel.txt
+3. 等待完成（长篇可能数小时）
+4. 检查 nm material list 或 data/novels/{id}/meta.yaml
 ```
+
+### 分析已入库素材
+
+```
+用户: "分析 nm_novel_20260501_abcd"
+
+Agent:
+1. 检查 meta.yaml 状态是否为 clean
+2. 执行 nm pipeline analyze nm_novel_20260501_abcd
+3. 或分步执行：
+   nm pipeline outline nm_xxx
+   nm pipeline worldbuilding nm_xxx
+   nm pipeline characters nm_xxx
+   nm pipeline tags nm_xxx
+```
+
+### 检索素材
+
+```
+用户: "找修仙小说的宗门设定"
+
+Agent:
+nm search world --type faction --genre 修仙 --limit 10
+```
+
+### 精调统计
+
+```
+用户: "精调 nm_xxx"
+
+Agent:
+nm pipeline refine nm_xxx
+nm storage sync nm_xxx
+```
+
+## 禁止操作
+
+| 操作 | 原因 |
+|------|------|
+| 对同一素材重复执行 `full` | 会覆盖已有分析结果 |
+| 在无 `LLM_API_KEY` 时执行分析 | 会立即失败 |
+| 手动编辑 `chapters/*.yaml` | 可能破坏断点续传机制 |
+
+## 错误处理
+
+### Pipeline 失败
+
+如果 `meta.yaml` 状态为 `failed`：
+
+1. 查看日志：`data/novels/{material_id}/pipeline.log`
+2. 检查错误类型：
+   - API Key 无效 → 修复 `.env`
+   - 网络错误 → 重试（有断点续传）
+   - `context_length_exceeded` → 检查截断逻辑
+3. 修复后重新执行对应流水线
+
+### 标签校验失败
+
+标签不在字典中时：
+
+1. 添加新标签：`nm tags add element 新标签 xuanhuan --group 设定元素`
+2. 或等待频率自动批（出现 ≥3 次自动入库）
+
+## 容错机制
+
+分析脚本已内置容错，Agent 无需额外处理：
+
+- `context_length_exceeded` 会快速失败（不触发无效重试）
+- 每个分析步骤失败时使用默认值继续
+- 流程不会因单步失败而中断
+
+Agent 只需检查 `meta.yaml` 中的状态字段。

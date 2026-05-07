@@ -1,0 +1,1 @@
+"""Tests for pipeline.__init__."""

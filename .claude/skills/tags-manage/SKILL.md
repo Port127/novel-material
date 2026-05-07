@@ -21,9 +21,7 @@ description: 标签管理：查看统计、导出视图、添加/删除标签、
 ### 查看统计
 
 ```bash
-python scripts/tags/manage.py stats
-# 或
-make tags-stats
+nm tags stats
 ```
 
 输出示例：
@@ -35,44 +33,28 @@ setting/cultivation: 40 个
 ...
 ```
 
-### 导出 YAML 视图
+### 列出标签
 
 ```bash
-python scripts/tags/manage.py export
-# 或
-make tags-export
+nm tags list --dimension element
 ```
-
-输出：`data/tags_view.yaml`（人读视图，不参与代码逻辑）
 
 ### 添加标签
 
 ```bash
-python scripts/tags/manage.py add <维度> <标签> <领域> [--group 分组]
+nm tags add <维度> <标签> <领域> [--group 分组]
 ```
 
 示例：
 ```bash
-python scripts/tags/manage.py add element 血脉 xuanhuan --group 设定元素
-python scripts/tags/manage.py add element 血脉觉醒 xuanhuan --synonym-of 血脉
+nm tags add element 血脉 xuanhuan --group 设定元素
+nm tags add element 血脉觉醒 xuanhuan --synonym-of 血脉
 ```
 
 ### 删除标签
 
 ```bash
-python scripts/tags/manage.py remove <维度> <标签>
-```
-
-### 移动标签领域
-
-```bash
-python scripts/tags/manage.py move <维度> <标签> <新领域>
-```
-
-### 列出标签
-
-```bash
-python scripts/tags/manage.py list-tags --dimension element
+nm tags remove <维度> <标签>
 ```
 
 ## 新标签审核
@@ -80,58 +62,20 @@ python scripts/tags/manage.py list-tags --dimension element
 ### 查看待审核
 
 ```bash
-python scripts/tags/review.py list
-# 或
-make tags-review
+nm tags review
 ```
 
-### 批准标签
+### 自动审批
 
 ```bash
-python scripts/tags/review.py approve <候选ID> --domain <领域>
-```
-
-示例：
-```bash
-python scripts/tags/review.py approve 1 --domain xuanhuan --group 设定元素
-```
-
-### 拒绝标签
-
-```bash
-python scripts/tags/review.py reject <候选ID>
-```
-
-### 批量处理
-
-```bash
-# 频率自动批（element/style 出现 ≥3 次自动入库）
-python scripts/tags/scheduled.py auto-approve
-
-# LLM 辅助审核（setting/structure）
-python scripts/tags/scheduled.py llm-review
-```
-
-## 校验标签
-
-```bash
-python scripts/tags/validate.py element 血脉
-```
-
-返回：`血脉`（合法）或 `None`（非法）
-
-批量校验：
-```python
-from scripts.tags.validate import validate_tags_batch
-valid, invalid = validate_tags_batch('element', ['血脉', '不存在的'])
+nm tags review --auto
 ```
 
 ## 注意事项
 
-1. **数据库是唯一数据源**：不要读取或编辑 `data/tags.yaml`（已废弃）
-2. **YAML 仅为人读视图**：`data/tags_view.yaml` 不参与代码逻辑
-3. **同义词自动映射**：`血脉觉醒` → `血脉`（synonym_of 字段）
-4. **分级审核**：
+1. **数据库是唯一数据源**：不要读取或编辑旧的 `data/tags.yaml`（已废弃）
+2. **同义词自动映射**：`血脉觉醒` → `血脉`（synonym_of 字段）
+3. **分级审核**：
    - Level 0：自由标签自动入库
    - Level 1：频率自动批（≥3 次）
    - Level 2：LLM 辅助审核

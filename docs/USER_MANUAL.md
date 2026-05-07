@@ -54,8 +54,8 @@ source.txt  清洗后文本  chapter_index.yaml  chapters.yaml  embeddings  outl
 ### 2.2 安装依赖
 
 ```bash
-# 安装 Python 依赖
-pip install -r requirements.txt
+# 安装 Python 包（可编辑模式）
+pip install -e .
 ```
 
 ### 2.3 配置 .env 文件
@@ -143,10 +143,11 @@ docker ps
 make db-init
 ```
 
-或直接运行脚本：
+或直接运行 CLI：
 
 ```bash
-python scripts/core/init_db.py
+nm storage init-db
+nm storage init-data
 ```
 
 成功输出：
@@ -424,23 +425,17 @@ WHERE psychology->>'fatal_flaw' LIKE '%傲慢%';
 
 | 流水线 | 命令 | 说明 |
 |--------|------|------|
-| **入库** | `make ingest FILE=<路径>` | 格式清洗 + 章节切分 |
-| **完整** | `make full FILE=<路径>` | 入库 → 分析 → 向量 → 精调 → 同步 |
-| **分析** | `make analyze ID=<material_id>` | 章级 → 大纲 → 世界观 → 人物 → 标签 |
-| **收尾** | `make finalize ID=<material_id>` | 精调 + 同步数据库 |
+| **入库** | `nm pipeline ingest <文件>` | 格式清洗 + 章节切分 |
+| **完整** | `nm pipeline full <文件>` | 入库 → 分析 → 向量 → 精调 → 同步 |
+| **分析** | `nm pipeline analyze <id>` | 章级 → 大纲 → 世界观 → 人物 → 标签 |
+| **收尾** | `nm pipeline refine <id>` | 精调 + 同步数据库 |
 
 ### 6.2 入库流水线（ingest）
 
 仅执行预处理和章节切分，不调用 LLM：
 
 ```bash
-make ingest FILE=./my-novel.txt
-```
-
-或：
-
-```bash
-python scripts/pipeline.py ingest ./my-novel.txt
+nm pipeline ingest ./my-novel.txt
 ```
 
 **输出结构**：
@@ -457,7 +452,7 @@ data/novels/nm_novel_20260503_xxxx/
 一键完成所有分析步骤：
 
 ```bash
-make full FILE=./my-novel.txt
+nm pipeline full ./my-novel.txt
 ```
 
 **执行顺序**：
@@ -477,7 +472,16 @@ make full FILE=./my-novel.txt
 对已入库的素材执行分析：
 
 ```bash
-make analyze ID=nm_novel_20260503_abcd
+nm pipeline analyze nm_novel_20260503_abcd
+```
+
+或单独执行各骨架分析：
+
+```bash
+nm pipeline outline nm_novel_20260503_abcd    # 大纲
+nm pipeline worldbuilding nm_novel_xxx        # 世界观
+nm pipeline characters nm_novel_xxx           # 人物
+nm pipeline tags nm_novel_xxx                 # 标签
 ```
 
 **执行顺序**：
@@ -494,7 +498,8 @@ make analyze ID=nm_novel_20260503_abcd
 对已分析的素材执行精调和同步：
 
 ```bash
-make finalize ID=nm_novel_20260503_abcd
+nm pipeline refine nm_novel_20260503_abcd
+nm storage sync nm_novel_20260503_abcd
 ```
 
 **执行顺序**：
@@ -573,30 +578,22 @@ data/novels/nm_novel_20260503_xxxx/
 
 ```bash
 # 查看标签统计
-python scripts/tags/manage.py stats
+nm tags stats
 
 # 导出 YAML 视图（人读）
-python scripts/tags/manage.py export
+nm tags export
 
 # 添加新标签
-python scripts/tags/manage.py add element 血脉 xuanhuan --group 设定元素
+nm tags add element 血脉 xuanhuan --group 设定元素
 
 # 删除标签
-python scripts/tags/manage.py remove element 血脉
-
-# 移动标签到其他领域
-python scripts/tags/manage.py move element 血脉 xianxia
+nm tags remove element 血脉
 
 # 列出所有标签
-python scripts/tags/manage.py list-tags --dimension element
-```
+nm tags list --dimension element
 
-或使用 Makefile：
-
-```bash
-make tags-stats    # 标签统计
-make tags-export   # 导出 YAML 视图
-make tags-review   # 审核新标签候选
+# 审核待定标签
+nm tags review
 ```
 
 ### 7.4 新标签审核
@@ -614,175 +611,74 @@ make tags-review   # 审核新标签候选
 
 ```bash
 # 查看待审核标签
-python scripts/tags/review.py list
+nm tags review
 
-# 批准标签
-python scripts/tags/review.py approve 1 --domain xuanhuan
-
-# 拒绝标签
-python scripts/tags/review.py reject 1
-
-# 触发频率自动批
-python scripts/tags/scheduled.py auto-approve
-
-# 触发 LLM 批量审核
-python scripts/tags/scheduled.py llm-review
+# 自动审批高频标签
+nm tags review --auto
 ```
 
 ### 7.5 标签校验
 
-导入素材时会自动校验标签合法性：
+导入素材时会自动校验标签合法性。也可手动校验：
 
 ```bash
-# 校验单个标签
-python scripts/tags/validate.py element 血脉
-
-# 校验批量标签
-python -c "
-from scripts.tags.validate import validate_tags_batch
-valid, invalid = validate_tags_batch('element', ['血脉', '不存在的'])
-print(f'合法: {valid}, 非法: {invalid}')
-"
+nm validate --all
 ```
 
 ---
 
 ## 8. 检索功能
 
-### 7.1 检索脚本一览
+### 8.1 检索命令一览
 
-| 脚本 | 功能 | 示例 |
-|------|------|------|
-| `search_world.py` | 世界观检索 | `--type faction --genre 修仙` |
-| `search_outline.py` | 大纲检索 | `--genre 科幻 --structure 三幕式` |
-| `search_detail.py` | 大纲细节检索 | `--genre 悬疑 --act 2` |
-| `search_chapter.py` | 章节检索 | `"开局困境写法" --limit 10` |
-| `search_character.py` | 人物检索 | `--archetype 导师 --genre 修仙` |
-| `search_event.py` | 事件检索 | `"雨中告别" --emotion 悲伤` |
-
-### 7.2 世界观检索
+使用 `nm search` 进行检索：
 
 ```bash
-python scripts/search/search_world.py --type faction --genre 修仙 --limit 10
+# 大纲检索
+nm search outline --genre 科幻 --query "废柴逆袭"
+
+# 章节检索（向量语义搜索）
+nm search chapter "开局困境" --limit 10
+
+# 人物检索
+nm search character --archetype 导师 --genre 修仙
+
+# 世界观检索
+nm search world --type faction --genre 修仙
+
+# 事件检索
+nm search event "雨中告别" --limit 10
 ```
 
-**参数说明**：
-
-| 参数 | 说明 | 示例值 |
-|------|------|--------|
-| `--type` | 实体类型 | `faction`, `region`, `power_system`, `item` |
-| `--genre` | 题材过滤 | `修仙`, `玄幻`, `科幻`, `悬疑` |
-| `--importance` | 重要性 | `primary`, `secondary`, `minor` |
-| `--name` | 名称关键词 | `宗门`, `门派`, `家族` |
-| `--limit` | 返回数量 | `10` |
-
-**输出示例**：
-```
-找到 5 个世界观设定:
-
---- 青云宗 (修仙小说A) ---
-类型: faction | 重要性: primary
-描述: 主角所在的修仙宗门，以剑道为主...
-
---- 天魔教 (修仙小说B) ---
-类型: faction | 重要性: antagonist
-描述: 与主角宗门对立的魔道势力...
-```
-
-### 7.3 大纲检索
+### 8.2 世界观检索
 
 ```bash
-python scripts/search/search_outline.py --genre 科幻 --structure 三幕式
+nm search world --type faction --genre 修仙 --limit 10
 ```
 
-**参数说明**：
-
-| 参数 | 说明 | 示例值 |
-|------|------|--------|
-| `--genre` | 题材过滤 | `科幻`, `悬疑`, `都市` |
-| `--element` | 元素标签 | `重生`, `系统`, `穿越` |
-| `--structure` | 叙事结构 | `三幕式`, `英雄之旅` |
-| `--query` | 前提关键词 | `废柴逆袭`, `末日求生` |
-| `--limit` | 返回数量 | `5` |
-
-### 7.4 章节检索
+### 8.3 大纲检索
 
 ```bash
-# 关键词搜索（默认）
-python scripts/search/search_chapter.py "雨夜" --limit 10
-
-# 向量语义搜索（更精准）
-python scripts/search/search_chapter.py "雨中告别" --semantic --limit 10
+nm search outline --genre 科幻 --query "废柴逆袭"
 ```
 
-**参数说明**：
-
-| 参数 | 说明 | 示例值 |
-|------|------|--------|
-| `QUERY` | 搜索关键词（必填） | `"雨夜"` |
-| `--semantic` | 启用向量语义搜索 | `--semantic` |
-| `--genre` | 题材过滤 | `修仙`, `玄幻` |
-| `--function` | 章节功能 | `开局困境`, `高潮`, `转折` |
-| `--chapter` | 确章节号 | `1`, `10` |
-| `--tension-min` | 张力最小值 | `3` (范围 1-5) |
-| `--tension-max` | 张力最大值 | `5` (范围 1-5) |
-| `--limit` | 返回数量 | `10` |
-
-**语义搜索说明**：
-- 使用 `--semantic` 启用向量搜索，能找到语义相似的章节（即使关键词不匹配）
-- 例如搜索"雨中告别"，能找到离别、分手等情感相似的章节
-- 输出会显示相似度百分比（越高越相似）
-
-**输出示例**：
-```
-找到 8 个章节:
-
---- 第1章: 废柴觉醒 (玄幻小说A) ---
-张力: 3 | 功能: [开局困境, 身份揭示]
-摘要: 主角林风在家族测试中觉醒废柴天赋...
-
---- 第3章: 绝境求生 (悬疑小说B) ---
-张力: 5 | 功能: [开局困境, 陷阱设置]
-摘要: 主角被困密室，必须在10分钟内解谜...
-```
-
-### 7.5 人物检索
+### 8.4 章节检索
 
 ```bash
-python scripts/search/search_character.py --archetype 导师 --genre 修仙
+nm search chapter "开局困境" --limit 10
 ```
 
-**参数说明**：
-
-| 参数 | 说明 | 示例值 |
-|------|------|--------|
-| `--archetype` | 人物原型 | `英雄`, `导师`, `反派`, `助手` |
-| `--role` | 角色类型 | `protagonist`, `antagonist`, `supporting`, `minor` |
-| `--genre` | 题材过滤 | `修仙`, `玄幻` |
-| `--name` | 名字关键词 | `叶`, `王`, `林` |
-| `--limit` | 返回数量 | `10` |
-
-### 7.6 事件检索
+### 8.5 人物检索
 
 ```bash
-# 向量语义搜索（默认，更精准）
-python scripts/search/search_event.py "雨中告别" --limit 10
-
-# 关键词搜索（回退模式）
-python scripts/search/search_event.py "雨夜" --keyword --limit 10
+nm search character --archetype 导师 --genre 修仙
 ```
 
-**参数说明**：
+### 8.6 事件检索
 
-| 参数 | 说明 | 示例值 |
-|------|------|--------|
-| `QUERY` | 搜索关键词 | `"雨中告别"` |
-| `--keyword` | 使用关键词搜索而非向量搜索 | `--keyword` |
-| `--setting` | 场景类型 | `雨天`, `夜晚`, `密室` |
-| `--emotion` | 情绪关键词 | `悲伤`, `愤怒`, `恐惧` |
-| `--limit` | 返回数量 | `10` |
-
-**语义搜索说明**：事件检索默认使用向量搜索，能找到语义相似的事件场景。使用 `--keyword` 可回退到关键词匹配模式。
+```bash
+nm search event "雨中告别" --limit 10
+```
 
 ---
 
@@ -818,10 +714,10 @@ python scripts/search/search_event.py "雨夜" --keyword --limit 10
 
 ```bash
 # 第一次执行（分析到第 500 章崩溃）
-make analyze ID=nm_novel_xxx
+nm pipeline analyze nm_novel_xxx
 
 # 第二次执行（自动从第 501 章继续）
-make analyze ID=nm_novel_xxx
+nm pipeline analyze nm_novel_xxx
 # 输出: "断点续传：已完成 500 章，从第 501 章继续"
 ```
 
@@ -904,13 +800,7 @@ make db-reset
 ### Q6: 如何删除某个素材
 
 ```bash
-make delete-material ID=nm_novel_20260503_abcd
-```
-
-或：
-
-```bash
-python scripts/utils/material_delete.py --id nm_novel_20260503_abcd
+nm material delete --id nm_novel_20260503_abcd
 ```
 
 删除会级联清理：
@@ -931,37 +821,41 @@ SELECT material_id, name, chapter_count FROM novels;
 
 ---
 
-## 附录：Makefile 命令速查
+## 附录：CLI 命令速查
 
 ```bash
-make help        # 显示所有可用命令
+nm --help         # 显示所有命令
 
-# Docker 数据库
-make db-up       # 启动容器
-make db-down     # 停止容器
-make db-init     # 初始化表
-make db-shell    # 进入 psql
-make db-reset    # 重置数据库
+# Docker 数据库（Makefile）
+make db-up        # 启动容器
+make db-down      # 停止容器
+make db-init      # 初始化表+数据
+make db-shell     # 进入 psql
+make db-reset     # 重置数据库
 
 # 流水线
-make ingest FILE=<路径>   # 入库
-make full FILE=<路径>     # 完整流水线
-make analyze ID=<id>      # 分析
-make finalize ID=<id>     # 收尾
+nm pipeline ingest <文件>    # 入库
+nm pipeline full <文件>      # 完整流水线
+nm pipeline analyze <id>     # 分析
+nm pipeline refine <id>      # 精调
 
 # 素材管理
-make import-material ID=<id>  # 导入
-make delete-material ID=<id>  # 删除
+nm material import <目录>    # 导入
+nm material delete --id <id> # 删除
+nm material list             # 列出所有素材
 
 # 标签管理
-make tags-stats              # 标签统计
-make tags-export             # 导出 YAML 视图
-make tags-review             # 审核新标签候选
+nm tags stats                # 标签统计
+nm tags export               # 导出 YAML 视图
+nm tags review               # 审核新标签候选
 
 # 检索
-make search       # 显示检索帮助
+nm search outline --genre <g> --query <q>
+nm search chapter <关键词> --limit 10
+nm search character --archetype <原型>
+nm search world --type <类型>
+nm search event <关键词>
 
-# 维护
-make validate     # 校验 YAML 格式
-make docker-prune # 清理 Docker 资源
+# 校验
+nm validate --all            # 校验 YAML 格式
 ```
