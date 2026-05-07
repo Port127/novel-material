@@ -82,6 +82,7 @@ def delete_material(material_id, confirm=True):
             print("全局索引已更新")
 
     print(f"\n删除完成: {material_id}")
+    return True
 
 
 if __name__ == "__main__":

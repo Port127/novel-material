@@ -31,15 +31,16 @@ def _build_context(novel_dir: Path, config: dict) -> tuple[str, str]:
         return f.read()[:10000], "原文摘录（前 10000 字）"
 
 
-def generate_worldbuilding(material_id):
+def generate_worldbuilding(material_id) -> bool:
     """提取世界观设定。
 
     容错策略：LLM 失败时生成空结构，不中断流程。
+    返回 True 表示成功。
     """
     novel_dir = NOVELS_DIR / material_id
     if not novel_dir.exists():
         logger.error(f"小说目录不存在: {novel_dir}")
-        return
+        return False
 
     config = load_config()
     wb_dir = novel_dir / "worldbuilding"
@@ -49,6 +50,21 @@ def generate_worldbuilding(material_id):
     meta_file = novel_dir / "meta.yaml"
     with open(meta_file, "r", encoding="utf-8") as f:
         meta = yaml.safe_load(f) or {}
+
+    title = meta.get("name", material_id)
+    word_count = meta.get("word_count", "?")
+    status = meta.get("status", "?")
+
+    # 读取章节索引获取章数
+    chapter_index_file = novel_dir / "chapter_index.yaml"
+    chapter_count = 0
+    if chapter_index_file.exists():
+        with open(chapter_index_file, "r", encoding="utf-8") as f:
+            chapter_index = yaml.safe_load(f) or []
+            chapter_count = len(chapter_index)
+
+    # 输出小说基本信息
+    logger.info(f"小说: {title} | {chapter_count} 章 | {word_count} 字 | 状态: {status}")
 
     # 构建分析上下文（章级摘要池 > 原文片段）
     context_text, context_label = _build_context(novel_dir, config)
@@ -153,6 +169,8 @@ def generate_worldbuilding(material_id):
                 f"  地理区域: {wb_index['region_count']} 个\n"
                 f"  势力: {wb_index['faction_count']} 个\n"
                 f"  历史事件: {wb_index['lore_items']} 个")
+
+    return True
 
 
 if __name__ == "__main__":

@@ -10,6 +10,7 @@ import sys
 import yaml
 import time
 from pathlib import Path
+from collections.abc import Callable
 
 from novel_material.infra.config import NOVELS_DIR
 from novel_material.infra.llm import load_config, call_llm
@@ -139,7 +140,7 @@ def _generate_beats_for_sequence(
 # 主函数
 # ============================================================
 
-def generate_outline(material_id):
+def generate_outline(material_id, progress_callback: Callable[[int, int, str], None] | None = None) -> bool:
     """生成大纲：结构 + 序列 + 节拍 + 钩子网络。
 
     两阶段策略：
@@ -149,26 +150,45 @@ def generate_outline(material_id):
     容错策略：
     - 每轮 LLM 调用失败时使用默认值继续
     - 序列 beats 生成失败时跳过该序列，继续下一个
+
+    参数：
+        material_id: 素材 ID
+        progress_callback: 可选进度回调函数 (done: int, total: int, desc: str) -> None
+
+    返回：
+        True 表示成功，False 表示失败
     """
     novel_dir = NOVELS_DIR / material_id
     if not novel_dir.exists():
         logger.error(f"小说目录不存在: {novel_dir}")
-        return
+        return False
 
     config = load_config()
     model = config["llm"]["model"]
     outline_dir = novel_dir / "outline"
     outline_dir.mkdir(exist_ok=True)
 
+    # 加载小说基本信息
+    meta_file = novel_dir / "meta.yaml"
+    with open(meta_file, "r", encoding="utf-8") as f:
+        meta = yaml.safe_load(f) or {}
+
+    title = meta.get("name", material_id)
+    word_count = meta.get("word_count", "?")
+    status = meta.get("status", "?")
+
     # 读取章节索引
     chapter_index_file = novel_dir / "chapter_index.yaml"
     if not chapter_index_file.exists():
         logger.error(f"chapter_index.yaml 不存在")
-        return
+        return False
 
     with open(chapter_index_file, "r", encoding="utf-8") as f:
         chapter_index = yaml.safe_load(f) or []
     chapter_count = len(chapter_index)
+
+    # 输出小说基本信息
+    logger.info(f"小说: {title} | {chapter_count} 章 | {word_count} 字 | 状态: {status}")
 
     # 加载章节数据（优先从 chapters/ 目录，兜底 chapters.yaml）
     chapters_data = load_chapters_data(novel_dir)
@@ -249,7 +269,10 @@ def generate_outline(material_id):
 
     # ── 第三轮：逐序列生成 beats（每个序列容错）──
     total_sequences = sum(len(act.get("sequences", [])) for act in acts)
-    logger.info(f"逐序列生成 beats（共 {total_sequences} 个序列）...")
+    if progress_callback:
+        progress_callback(0, total_sequences, f"逐序列生成 beats（共 {total_sequences} 个）")
+    else:
+        logger.info(f"逐序列生成 beats（共 {total_sequences} 个序列）...")
 
     beats_data = []
     seq_global = 0
@@ -259,7 +282,10 @@ def generate_outline(material_id):
         for seq in act.get("sequences", []):
             seq_global += 1
             seq_title = seq.get("title", "")
-            logger.info(f"  [{seq_global}/{total_sequences}] {act.get('name', '')} / {seq_title}")
+
+            # 序列开始时的日志（非回调模式）
+            if not progress_callback:
+                logger.info(f"  [{seq_global}/{total_sequences}] {act.get('name', '')} / {seq_title}")
 
             # 每个序列独立容错
             beats = []
@@ -288,6 +314,10 @@ def generate_outline(material_id):
                     "description": beat.get("description", ""),
                     "tension": beat.get("tension", 1)
                 })
+
+            # 进度更新：在序列完成后更新
+            if progress_callback:
+                progress_callback(seq_global, total_sequences, f"{act.get('name', '')} / {seq_title}")
 
             if seq_global < total_sequences:
                 time.sleep(rate_limit)
@@ -340,6 +370,8 @@ def generate_outline(material_id):
 
     logger.info(f"大纲生成完成: {len(acts)}幕, {total_sequences}序列, {len(beats_data)}节拍"
                 + (f" ({failed_sequences}序列失败)" if failed_sequences > 0 else ""))
+
+    return True
 
 
 def generate_simple_acts(chapter_count: int, structure_type: str = "三幕式") -> list:

@@ -19,6 +19,7 @@ import sys
 import yaml
 import time
 from pathlib import Path
+from collections.abc import Callable
 
 from novel_material.infra.config import NOVELS_DIR, update_meta_status
 from novel_material.infra.llm import load_config, call_llm, truncate_to_tokens
@@ -266,7 +267,10 @@ def _get_batch_size(config: dict) -> int:
     return max(1, batch_size)
 
 
-def chapter_analyze(material_id: str) -> None:
+def chapter_analyze(
+    material_id: str,
+    progress_callback: Callable[[int, int, str], None] | None = None,
+) -> bool:
     """对指定小说进行章节分析（支持断点续传）。
 
     流程：
@@ -277,49 +281,80 @@ def chapter_analyze(material_id: str) -> None:
 
     参数：
         material_id：素材 ID（如 nm_novel_20240101_abc1）
+        progress_callback：可选进度回调函数 (done: int, total: int, desc: str) -> None
+
+    返回：
+        True 表示成功，False 表示失败
     """
     novel_dir = NOVELS_DIR / material_id
     if not novel_dir.exists():
         logger.error(f"小说目录不存在: {novel_dir}")
-        return
+        return False
 
     config = load_config()
 
+    # 加载小说基本信息
+    meta_file = novel_dir / "meta.yaml"
+    meta = {}
+    if meta_file.exists():
+        with open(meta_file, "r", encoding="utf-8") as f:
+            meta = yaml.safe_load(f) or {}
+
+    title = meta.get("name", material_id)
+    word_count = meta.get("word_count", "?")
+    status = meta.get("status", "?")
+
     with open(novel_dir / "chapter_index.yaml", "r", encoding="utf-8") as f:
         chapter_index = yaml.safe_load(f)
+
+    chapter_count = len(chapter_index)
+
+    # 输出小说基本信息
+    logger.info(f"小说: {title} | {chapter_count} 章 | {word_count} 字 | 状态: {status}")
 
     with open(novel_dir / "source.txt", "r", encoding="utf-8") as f:
         full_text = f.read()
 
     lines = full_text.split("\n")
 
-    # 加载已分析的章节（断点续传）
-    done = _load_existing_chapters(novel_dir)
-    if done:
-        logger.info(f"断点续传：已完成 {len(done)} 章，从第 {max(done.keys()) + 1} 章继续")
-
-    total = len(chapter_index)
+    total = len(chapter_index)  # 先定义 total
     rate_limit = config["llm"].get("rate_limit_seconds", 1)
     batch_size = _get_batch_size(config)
     completed = 0
     skipped = 0
+
+    # 加载已分析的章节（断点续传）
+    done = _load_existing_chapters(novel_dir)
+    if done:
+        if progress_callback:
+            progress_callback(len(done), total, f"断点续传：已完成 {len(done)} 章")
+        else:
+            logger.info(f"断点续传：已完成 {len(done)} 章，从第 {max(done.keys()) + 1} 章继续")
 
     # 过滤出待处理章节
     pending = [ch for ch in chapter_index if ch["chapter"] not in done]
     skipped = total - len(pending)
 
     if not pending:
-        logger.info(f"所有 {total} 章已完成，跳过分析")
+        if progress_callback:
+            progress_callback(total, total, "所有章节已完成")
+        else:
+            logger.info(f"所有 {total} 章已完成，跳过分析")
     else:
         n_batches = (len(pending) + batch_size - 1) // batch_size
-        logger.info(f"待分析: {len(pending)} 章，批量大小: {batch_size}，共 {n_batches} 批次")
+        if progress_callback:
+            progress_callback(skipped, total, f"待分析 {len(pending)} 章")
+        else:
+            logger.info(f"待分析: {len(pending)} 章，批量大小: {batch_size}，共 {n_batches} 批次")
 
     for batch_idx, batch_start in enumerate(range(0, len(pending), batch_size)):
         batch = pending[batch_start:batch_start + batch_size]
         first_ch = batch[0]["chapter"]
         last_ch = batch[-1]["chapter"]
 
-        logger.info(f"[批次 {batch_idx + 1}/{n_batches}] 第 {first_ch}-{last_ch} 章（共 {len(batch)} 章）")
+        # 批次开始时的日志（非回调模式）
+        if not progress_callback:
+            logger.info(f"[批次 {batch_idx + 1}/{n_batches}] 第 {first_ch}-{last_ch} 章（共 {len(batch)} 章）")
 
         # 批量分析
         batch_results: dict[int, dict] = {}
@@ -340,7 +375,7 @@ def chapter_analyze(material_id: str) -> None:
 
             if result is None:
                 # 批量失败或缺漏，改用单章分析
-                if use_batch_mode:
+                if not progress_callback and use_batch_mode:
                     logger.info(f"[单章] 第 {ch_num} 章: {ch_info['title']}")
                 chapter_text = "\n".join(lines[ch_info["start_line"] - 1:ch_info["end_line"]])
                 try:
@@ -361,11 +396,22 @@ def chapter_analyze(material_id: str) -> None:
             _append_chapter(novel_dir, result)
             completed += 1
 
+            # 进度更新：在每章完成后更新
+            if progress_callback:
+                progress_callback(
+                    skipped + completed,
+                    total,
+                    f"第 {first_ch}-{last_ch} 章 ({batch_idx + 1}/{n_batches})"
+                )
+
         # 批次间等待（避免触发速率限制）
         if batch_start + batch_size < len(pending):
             time.sleep(rate_limit)
 
-    logger.info(f"章级分析完成: 新分析 {completed} 章，跳过已完成 {skipped} 章，共 {total} 章")
+    if progress_callback:
+        progress_callback(total, total, f"完成: {completed} 章")
+    else:
+        logger.info(f"章级分析完成: 新分析 {completed} 章，跳过已完成 {skipped} 章，共 {total} 章")
 
     # 合并所有章节文件
     _merge_chapters(novel_dir)
@@ -377,6 +423,8 @@ def chapter_analyze(material_id: str) -> None:
         raise ValueError(f"章级分析质量校验未通过：{material_id}")
 
     update_meta_status(material_id, "analyzed")
+
+    return True
 
 
 if __name__ == "__main__":

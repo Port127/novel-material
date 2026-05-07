@@ -132,15 +132,16 @@ def _extract_minor_characters(
     return result.get("characters", [])
 
 
-def generate_characters(material_id):
+def generate_characters(material_id) -> bool:
     """分层提取人物体系。
 
     容错策略：任何轮次失败时使用空数组继续，不中断流程。
+    返回 True 表示成功。
     """
     novel_dir = NOVELS_DIR / material_id
     if not novel_dir.exists():
         logger.error(f"小说目录不存在: {novel_dir}")
-        return
+        return False
 
     config = load_config()
     char_dir = novel_dir / "characters"
@@ -151,6 +152,21 @@ def generate_characters(material_id):
     # 读取 meta
     with open(novel_dir / "meta.yaml", "r", encoding="utf-8") as f:
         meta = yaml.safe_load(f) or {}
+
+    title = meta.get("name", material_id)
+    word_count = meta.get("word_count", "?")
+    status = meta.get("status", "?")
+
+    # 读取章节索引获取章数
+    chapter_index_file = novel_dir / "chapter_index.yaml"
+    chapter_count = 0
+    if chapter_index_file.exists():
+        with open(chapter_index_file, "r", encoding="utf-8") as f:
+            chapter_index = yaml.safe_load(f) or []
+            chapter_count = len(chapter_index)
+
+    # 输出小说基本信息
+    logger.info(f"小说: {title} | {chapter_count} 章 | {word_count} 字 | 状态: {status}")
 
     # 构建分析上下文
     context_text, context_label = _build_context(novel_dir, config)
@@ -254,6 +270,8 @@ def generate_characters(material_id):
                 f"  配角: {char_index['supporting_count']}\n"
                 f"  次要: {char_index['minor_count']}\n"
                 f"  关系: {len(all_relationships)} 条")
+
+    return True
 
 
 if __name__ == "__main__":

@@ -28,15 +28,16 @@ def get_connection():
     return psycopg2.connect(DATABASE_URL)
 
 
-def generate_tags(material_id):
+def generate_tags(material_id) -> bool:
     """为整部小说生成多维标签。
 
     容错策略：LLM 失败时生成默认标签，不中断流程。
+    返回 True 表示成功。
     """
     novel_dir = NOVELS_DIR / material_id
     if not novel_dir.exists():
         logger.error(f"小说目录不存在: {novel_dir}")
-        return
+        return False
 
     config = load_config()
 
@@ -44,14 +45,28 @@ def generate_tags(material_id):
     meta_file = novel_dir / "meta.yaml"
     if not meta_file.exists():
         logger.error(f"meta.yaml 不存在: {meta_file}")
-        return
+        return False
 
     with open(meta_file, "r", encoding="utf-8") as f:
         meta = yaml.safe_load(f) or {}
 
+    title = meta.get("name", material_id)
+    word_count = meta.get("word_count", "?")
+    status = meta.get("status", "?")
     genre = meta.get("genre", [])
     genre_primary = genre[0] if genre else "其他"
     genre_secondary = genre[1] if len(genre) > 1 else None
+
+    # 读取章节索引获取章数
+    chapter_index_file = novel_dir / "chapter_index.yaml"
+    chapter_count = 0
+    if chapter_index_file.exists():
+        with open(chapter_index_file, "r", encoding="utf-8") as f:
+            chapter_index = yaml.safe_load(f) or []
+            chapter_count = len(chapter_index)
+
+    # 输出小说基本信息
+    logger.info(f"小说: {title} | {chapter_count} 章 | {word_count} 字 | 状态: {status}")
 
     # 动态加载标签（精简 prompt）
     tags_data = load_tags_for_genre(genre_primary, genre_secondary)
@@ -61,7 +76,7 @@ def generate_tags(material_id):
     source_file = novel_dir / "source.txt"
     if not source_file.exists():
         logger.error(f"source.txt 不存在: {source_file}")
-        return
+        return False
 
     with open(source_file, "r", encoding="utf-8") as f:
         source_text = f.read()[:5000]
@@ -123,6 +138,8 @@ def generate_tags(material_id):
                 f"  题材: {tags.get('genre_primary')}\n"
                 f"  元素: {len(tags.get('elements', []))} 个\n"
                 f"  新标签候选: {len(new_candidates)} 个")
+
+    return True
 
 
 def build_system_prompt(tags_data):

@@ -125,21 +125,40 @@ def refine_tags(material_id, chapters_data):
     return True
 
 
-def refine(material_id):
-    """主精调函数：调整 outline/characters/tags。"""
+def refine(material_id) -> bool:
+    """主精调函数：调整 outline/characters/tags。返回 True 表示成功。"""
     novel_dir = NOVELS_DIR / material_id
     if not novel_dir.exists():
         logger.error(f"小说目录不存在: {novel_dir}")
-        return
+        return False
 
     chapters_file = novel_dir / "chapters.yaml"
     if not chapters_file.exists():
         logger.error("错误: chapters.yaml 不存在，无法精调")
-        return
+        return False
+
+    # 加载小说基本信息
+    meta_file = novel_dir / "meta.yaml"
+    with open(meta_file, "r", encoding="utf-8") as f:
+        meta = yaml.safe_load(f) or {}
+
+    title = meta.get("name", material_id)
+    word_count = meta.get("word_count", "?")
+    status = meta.get("status", "?")
+
+    # 读取章节索引获取章数
+    chapter_index_file = novel_dir / "chapter_index.yaml"
+    chapter_count = 0
+    if chapter_index_file.exists():
+        with open(chapter_index_file, "r", encoding="utf-8") as f:
+            chapter_index = yaml.safe_load(f) or []
+            chapter_count = len(chapter_index)
 
     with open(chapters_file, "r", encoding="utf-8") as f:
         chapters_data = yaml.safe_load(f) or []
 
+    # 输出小说基本信息
+    logger.info(f"小说: {title} | {chapter_count} 章 | {word_count} 字 | 状态: {status}")
     logger.info(f"开始精调: {material_id} ({len(chapters_data)} 章)")
     logger.info("=" * 60)
 
@@ -163,6 +182,8 @@ def refine(material_id):
     for module, success in refined.items():
         status = "已精调" if success else "跳过"
         logger.info(f"  {module}: {status}")
+
+    return True
 
 
 if __name__ == "__main__":
