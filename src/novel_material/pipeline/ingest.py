@@ -140,9 +140,6 @@ def ingest_file(file_path):
     (novel_dir / "worldbuilding").mkdir(exist_ok=True)
     (novel_dir / "chapters").mkdir(exist_ok=True)
 
-    with open(novel_dir / "chapters.yaml", "w", encoding="utf-8") as f:
-        yaml.dump([], f, allow_unicode=True, default_flow_style=False)
-
     update_global_index(material_id, meta)
 
     logger.info(f"入库完成: {novel_dir}")

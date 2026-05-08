@@ -29,6 +29,29 @@ def get_pipeline_progress(material_id: str) -> dict:
     if meta_file.exists():
         meta = yaml.safe_load(meta_file.read_text(encoding="utf-8")) or {}
 
+    # 检查章级分析是否完成
+    # 优先检查 chapters/ 目录（分析过程中每章独立保存）
+    # 其次检查 chapters.yaml（分析完成后合并的快照）
+    analyzed = False
+    chapter_index_file = novel_dir / "chapter_index.yaml"
+    if chapter_index_file.exists():
+        chapter_index = yaml.safe_load(chapter_index_file.read_text(encoding="utf-8")) or []
+        total_chapters = len(chapter_index)
+
+        # 统计已分析的章节数量
+        chapters_dir = novel_dir / "chapters"
+        if chapters_dir.exists():
+            analyzed_count = len(list(chapters_dir.glob("*.yaml")))
+        else:
+            chapters_file = novel_dir / "chapters.yaml"
+            if chapters_file.exists():
+                chapters_data = yaml.safe_load(chapters_file.read_text(encoding="utf-8")) or []
+                analyzed_count = len(chapters_data)
+            else:
+                analyzed_count = 0
+
+        analyzed = analyzed_count >= total_chapters and total_chapters > 0
+
     # 检查数据库同步
     synced = False
     try:
@@ -43,7 +66,7 @@ def get_pipeline_progress(material_id: str) -> dict:
     return {
         "exists": True,
         "ingested": (novel_dir / "chapter_index.yaml").exists(),
-        "analyzed": (novel_dir / "chapters.yaml").exists(),
+        "analyzed": analyzed,
         "outline": (novel_dir / "outline" / "_index.yaml").exists(),
         "worldbuilding": (novel_dir / "worldbuilding" / "_index.yaml").exists(),
         "characters": (novel_dir / "characters" / "_index.yaml").exists(),

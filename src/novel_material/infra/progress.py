@@ -20,10 +20,15 @@ def get_pipeline_logger() -> logging.Logger:
 
 
 def _setup_logger() -> logging.Logger:
-    """配置日志记录器（使用全局配置）。"""
+    """配置日志记录器（使用全局配置）。
+
+    使用 _CONSOLE_HANDLER 作为初始化标志，确保 pause/resume 功能可用。
+    """
     global _CURRENT_LOG_FILE, _CONSOLE_HANDLER
     logger = logging.getLogger("pipeline")
-    if logger.handlers:
+
+    # 已初始化则直接返回
+    if _CONSOLE_HANDLER is not None:
         return logger
 
     # 使用配置模块
@@ -61,6 +66,19 @@ def resume_console_logging() -> None:
     """恢复控制台日志输出（恢复到配置的级别）。"""
     if _CONSOLE_HANDLER:
         _CONSOLE_HANDLER.setLevel(get_effective_level())
+
+
+@contextmanager
+def silent_console():
+    """上下文管理器：暂停控制台日志，确保异常时也能恢复。
+
+    用于进度条显示期间，防止日志输出干扰。
+    """
+    pause_console_logging()
+    try:
+        yield
+    finally:
+        resume_console_logging()
 
 
 def _fmt(sec: float) -> str:

@@ -6,7 +6,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskPr
 from rich.table import Table
 
 from novel_material.infra.config import NOVELS_DIR
-from novel_material.infra.progress import pause_console_logging, resume_console_logging
+from novel_material.infra.progress import silent_console
 from novel_material.pipeline import (
     ingest_file,
     chapter_analyze,
@@ -99,9 +99,8 @@ def cmd_analyze(
         def update_progress(done: int, total: int, desc: str):
             progress.update(task, completed=done, description=f"章级分析: {desc}")
 
-        pause_console_logging()
-        chapter_analyze(material_id, start_ch=start, end_ch=end, progress_callback=update_progress, provider=provider)
-        resume_console_logging()
+        with silent_console():
+            chapter_analyze(material_id, start_ch=start, end_ch=end, progress_callback=update_progress, provider=provider)
 
     console.print("[green]章级分析完成[/green]")
 
@@ -132,9 +131,8 @@ def cmd_outline(
             else:
                 progress.update(task, description=f"生成大纲: {desc}")
 
-        pause_console_logging()
-        generate_outline(material_id, progress_callback=update_progress, provider=provider)
-        resume_console_logging()
+        with silent_console():
+            generate_outline(material_id, progress_callback=update_progress, provider=provider)
 
     console.print("[green]大纲生成完成[/green]")
 
@@ -246,7 +244,8 @@ def cmd_full(
 
         # 阶段 1: 入库
         task1 = progress.add_task("阶段 1/7: 入库", total=1)
-        material_id = ingest_file(file_path)
+        with silent_console():
+            material_id = ingest_file(file_path)
         if not material_id:
             console.print("[red]入库失败，终止流水线[/red]")
             raise typer.Exit(1)
@@ -280,9 +279,8 @@ def cmd_full(
         def update_progress(done: int, total: int, desc: str):
             progress.update(task2, completed=done, description=f"阶段 2/7: {desc}")
 
-        pause_console_logging()  # 暂停日志输出，避免干扰进度条
-        chapter_analyze(material_id, start_ch=start, end_ch=end, progress_callback=update_progress, provider=provider)
-        resume_console_logging()
+        with silent_console():
+            chapter_analyze(material_id, start_ch=start, end_ch=end, progress_callback=update_progress, provider=provider)
         progress.remove_task(task2)
 
         # 阶段 3: 大纲（不确定进度，序列数动态计算）
@@ -294,32 +292,35 @@ def cmd_full(
             else:
                 progress.update(task3, description=f"阶段 3/7: {desc}")
 
-        pause_console_logging()
-        generate_outline(material_id, progress_callback=update_outline_progress, provider=provider)
-        resume_console_logging()
+        with silent_console():
+            generate_outline(material_id, progress_callback=update_outline_progress, provider=provider)
         progress.remove_task(task3)
 
         # 阶段 4: 世界观
         task4 = progress.add_task("阶段 4/7: 世界观提取", total=1)
-        generate_worldbuilding(material_id, provider=provider)
+        with silent_console():
+            generate_worldbuilding(material_id, provider=provider)
         progress.update(task4, completed=1)
         progress.remove_task(task4)
 
         # 阶段 5: 人物
         task5 = progress.add_task("阶段 5/7: 人物提取", total=1)
-        generate_characters(material_id, provider=provider)
+        with silent_console():
+            generate_characters(material_id, provider=provider)
         progress.update(task5, completed=1)
         progress.remove_task(task5)
 
         # 阶段 6: 标签
         task6 = progress.add_task("阶段 6/7: 标签生成", total=1)
-        generate_tags(material_id, provider=provider)
+        with silent_console():
+            generate_tags(material_id, provider=provider)
         progress.update(task6, completed=1)
         progress.remove_task(task6)
 
         # 阶段 7: 精调
         task7 = progress.add_task("阶段 7/7: 数据精调", total=1)
-        refine(material_id, provider=provider)
+        with silent_console():
+            refine(material_id, provider=provider)
         progress.update(task7, completed=1)
         progress.remove_task(task7)
 
@@ -449,9 +450,8 @@ def cmd_continue(
             def update_progress(done: int, total: int, desc: str):
                 progress_bar.update(task1, completed=done, description=f"阶段 1: {desc}")
 
-            pause_console_logging()
-            chapter_analyze(material_id, start_ch=start, end_ch=end, progress_callback=update_progress, provider=provider)
-            resume_console_logging()
+            with silent_console():
+                chapter_analyze(material_id, start_ch=start, end_ch=end, progress_callback=update_progress, provider=provider)
             progress_bar.remove_task(task1)
 
         # 阶段 2: 大纲（不确定进度）
@@ -468,9 +468,8 @@ def cmd_continue(
                 else:
                     progress_bar.update(task2, description=f"阶段 2: {desc}")
 
-            pause_console_logging()
-            generate_outline(material_id, progress_callback=update_outline_progress, provider=provider)
-            resume_console_logging()
+            with silent_console():
+                generate_outline(material_id, progress_callback=update_outline_progress, provider=provider)
             progress_bar.remove_task(task2)
 
         # 阶段 3-5: 世界观/人物/标签
@@ -484,7 +483,8 @@ def cmd_continue(
         for name, func, key in other_stages:
             if not progress.get(key):
                 task = progress_bar.add_task(f"阶段 {task_num}: {name}", total=1)
-                func(material_id, provider=provider)
+                with silent_console():
+                    func(material_id, provider=provider)
                 progress_bar.update(task, completed=1)
                 progress_bar.remove_task(task)
             task_num += 1
@@ -492,7 +492,8 @@ def cmd_continue(
         # 阶段 6: 精调
         if not progress.get("refined"):
             task6 = progress_bar.add_task("阶段 6: 精调", total=1)
-            refine(material_id, provider=provider)
+            with silent_console():
+                refine(material_id, provider=provider)
             progress_bar.update(task6, completed=1)
             progress_bar.remove_task(task6)
 
@@ -500,14 +501,16 @@ def cmd_continue(
         sync_failed = False
         if not skip_sync and not progress.get("synced"):
             task7 = progress_bar.add_task("阶段 7: 同步数据库", total=1)
-            try:
-                sync_novel(material_id)
+            with silent_console():
+                try:
+                    sync_novel(material_id)
+                except Exception as e:
+                    sync_failed = True
+                    console.print(f"[red]数据库同步失败: {e}[/red]")
+                    console.print("[yellow]可手动执行 nm storage sync 重试[/yellow]")
+            if not sync_failed:
                 progress_bar.update(task7, completed=1)
                 progress_bar.remove_task(task7)
-            except Exception as e:
-                sync_failed = True
-                console.print(f"[red]数据库同步失败: {e}[/red]")
-                console.print("[yellow]可手动执行 nm storage sync 重试[/yellow]")
 
     # 完成表格
     # 如果指定了范围且后续阶段已存在，警告数据不一致

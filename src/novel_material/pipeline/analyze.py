@@ -42,7 +42,6 @@ _SYSTEM_PROMPT = """你是专业的小说分析助手，负责对每章内容生
 _CHAPTER_JSON_SCHEMA = """{
   "chapter": 1,
   "summary": "章节摘要，50-100字",
-  "word_count": 3000,
   "characters_appear": ["人物名1", "人物名2"],
   "chapter_functions": ["日常", "战斗"],
   "tension_level": 3,
@@ -54,8 +53,8 @@ _CHAPTER_JSON_SCHEMA = """{
 # LLM 返回格式的示例（批量）
 _BATCH_JSON_SCHEMA = """{
   "chapters": [
-    {"chapter": 1, "summary": "第一章摘要", "word_count": 3000, "characters_appear": ["人物名"], "chapter_functions": ["标签"], "tension_level": 3, "pacing": "快", "setting": ["场景"], "key_plot_point": ""},
-    {"chapter": 2, "summary": "第二章摘要", "word_count": 2500, "characters_appear": ["人物名"], "chapter_functions": ["标签"], "tension_level": 2, "pacing": "慢", "setting": ["场景"], "key_plot_point": ""}
+    {"chapter": 1, "summary": "第一章摘要", "characters_appear": ["人物名"], "chapter_functions": ["标签"], "tension_level": 3, "pacing": "快", "setting": ["场景"], "key_plot_point": ""},
+    {"chapter": 2, "summary": "第二章摘要", "characters_appear": ["人物名"], "chapter_functions": ["标签"], "tension_level": 2, "pacing": "慢", "setting": ["场景"], "key_plot_point": ""}
   ]
 }"""
 
@@ -426,6 +425,7 @@ def chapter_analyze(
 
             result["chapter"] = ch_num
             result["title"] = ch_info["title"]
+            result["word_count"] = ch_info.get("word_count", 0)  # 从索引中获取正确字数，防御性取值
 
             # 立即保存（断点续传关键）
             _append_chapter(novel_dir, result)
