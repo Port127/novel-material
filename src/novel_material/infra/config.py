@@ -75,7 +75,7 @@ def get_settings(*, reload: bool = False) -> dict:
                      "PGADMIN_EMAIL", "PGADMIN_PASSWORD",
                      "LLM_API_KEY", "LLM_API_KEY_ALIYUN", "LLM_API_KEY_DEEPSEEK",
                      "LLM_API_KEY_OPENAI", "LLM_PROVIDER", "LLM_MODEL",
-                     "LLM_BASE_URL"):
+                     "LLM_BASE_URL", "LOG_LEVEL", "LOG_DIR"):
             if key not in merged:
                 val = os.environ.get(key)
                 if val is not None:

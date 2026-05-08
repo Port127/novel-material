@@ -34,9 +34,6 @@ def version():
 
 def main():
     """CLI 入口函数。"""
-    # 启动时清理旧日志
-    from novel_material.infra.logging_config import cleanup_old_logs
-    cleanup_old_logs()
     app()
 
 

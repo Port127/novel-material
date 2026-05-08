@@ -9,8 +9,6 @@ from contextlib import contextmanager
 
 from .logging_config import get_effective_level, ensure_log_dir
 
-_LOG_DIR = None  # 使用 logging_config 模块动态获取
-_CURRENT_LOG_FILE: Path | None = None
 _CONSOLE_HANDLER: logging.StreamHandler | None = None
 
 
@@ -23,8 +21,9 @@ def _setup_logger() -> logging.Logger:
     """配置日志记录器（使用全局配置）。
 
     使用 _CONSOLE_HANDLER 作为初始化标志，确保 pause/resume 功能可用。
+    日志文件按天切分：pipeline_YYYY-MM-DD.log，同一天多次运行追加到同一文件。
     """
-    global _CURRENT_LOG_FILE, _CONSOLE_HANDLER
+    global _CONSOLE_HANDLER
     logger = logging.getLogger("pipeline")
 
     # 已初始化则直接返回
@@ -37,11 +36,9 @@ def _setup_logger() -> logging.Logger:
     # 确保目录存在
     log_dir = ensure_log_dir()
 
-    if _CURRENT_LOG_FILE is None:
-        timestamp = time.strftime("%Y%m%d_%H%M%S")
-        _CURRENT_LOG_FILE = log_dir / f"pipeline_{timestamp}.log"
-
-    file_handler = logging.FileHandler(_CURRENT_LOG_FILE, encoding="utf-8", delay=True)
+    # 按天切分：当天的日期作为文件名
+    today_file = log_dir / f"pipeline_{time.strftime('%Y-%m-%d')}.log"
+    file_handler = logging.FileHandler(today_file, encoding="utf-8", mode="a")
     file_handler.setFormatter(
         logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s", datefmt="%H:%M:%S")
     )
