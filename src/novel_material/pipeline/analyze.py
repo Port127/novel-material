@@ -29,6 +29,18 @@ from novel_material.infra.progress import get_pipeline_logger
 logger = get_pipeline_logger()
 
 
+def _fmt_duration(sec: float) -> str:
+    """将秒数格式化为可读时长（用于 ETA 显示）。"""
+    if sec < 60:
+        return f"{sec:.0f}s"
+    elif sec < 3600:
+        return f"{sec / 60:.0f}min"
+    else:
+        h = int(sec // 3600)
+        m = int((sec % 3600) / 60)
+        return f"{h}h{m}min"
+
+
 def _get_max_chapter_tokens() -> int:
     """读取单章输入截断上限配置。"""
     try:
@@ -443,6 +455,9 @@ def chapter_analyze(
     ]
     skipped = total - len(pending)
 
+    # ETA 估算：记录处理开始时间（跳过已完成章节后的真正起点）
+    eta_start_time = time.monotonic() if pending else None
+
     if not pending:
         if progress_callback:
             progress_callback(total, total, "所有章节已完成")
@@ -524,13 +539,20 @@ def chapter_analyze(
             _append_chapter(novel_dir, result)
             completed += 1
 
-            # 进度更新：在每章完成后更新
+            # 进度更新：在每章完成后更新（含 ETA 估算）
             if progress_callback:
-                progress_callback(
-                    skipped + completed,
-                    total,
-                    f"第 {first_ch}-{last_ch} 章 ({batch_idx + 1}/{n_batches})"
-                )
+                done = skipped + completed
+                remaining = total - done
+                desc = f"第 {first_ch}-{last_ch} 章 ({batch_idx + 1}/{n_batches})"
+
+                # ETA 估算：已耗时 × 剩余比例（至少完成 1 后才显示）
+                if eta_start_time and done > skipped and remaining > 0:
+                    elapsed = time.monotonic() - eta_start_time
+                    new_done = done - skipped  # 本次运行实际完成的章数
+                    eta_sec = elapsed * remaining / new_done
+                    desc += f" | ETA ~{_fmt_duration(eta_sec)}"
+
+                progress_callback(done, total, desc)
 
         # 批次耗时汇总
         batch_elapsed = time.monotonic() - batch_start_time
