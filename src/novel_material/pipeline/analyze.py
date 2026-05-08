@@ -68,12 +68,14 @@ _CHAPTER_JSON_SCHEMA = """{
 }"""
 
 # LLM 返回格式的示例（批量）
+# 注意：示例中用占位符，避免 LLM 误解为序号
 _BATCH_JSON_SCHEMA = """{
   "chapters": [
-    {"chapter": 1, "summary": "第一章摘要", "characters_appear": ["人物名"], "chapter_functions": ["标签"], "tension_level": 3, "pacing": "快", "setting": ["场景"], "key_plot_point": ""},
-    {"chapter": 2, "summary": "第二章摘要", "characters_appear": ["人物名"], "chapter_functions": ["标签"], "tension_level": 2, "pacing": "慢", "setting": ["场景"], "key_plot_point": ""}
+    {"chapter": 章节号, "summary": "摘要内容", "characters_appear": ["人物名"], "chapter_functions": ["标签"], "tension_level": 3, "pacing": "快", "setting": ["场景"], "key_plot_point": ""}
   ]
-}"""
+}
+
+关键：chapter 字段必须是输入中的实际章节号（如 171、172），绝对不能用序号（如 1、2、3）"""
 
 
 def analyze_chapter(content: str, chapter_info: dict, config: dict) -> dict:
@@ -135,15 +137,13 @@ def analyze_chapters_batch(
     # 构建每章内容，同时统计字符数
     blocks = []
     total_chars = 0
-    char_per_chapter = []
     for ch_info in batch_info:
         text = "\n".join(lines[ch_info["start_line"] - 1:ch_info["end_line"]])
         truncated = truncate_to_tokens(text, _get_max_chapter_tokens(), model=model)
         block_len = len(truncated)
         total_chars += block_len
-        char_per_chapter.append(block_len)
         blocks.append(
-            f"【第{ch_info['chapter']}章《{ch_info['title']}》》\n{truncated}"
+            f"========== 章节号: {ch_info['chapter']} ==========\n标题: {ch_info['title']}\n内容:\n{truncated}"
         )
 
     avg_chars_per_ch = total_chars // max(n, 1)
@@ -172,7 +172,11 @@ def analyze_chapters_batch(
 返回 JSON（chapters 数组长度必须等于 {n}）：
 {_BATCH_JSON_SCHEMA}
 
-重要：每个元素的 chapter 字段必须是整数，与输入章节号一致。"""
+【关键警告 - 章节号必须正确】
+- chapter 字段必须使用实际的章节号：{batch_nums}
+- 绝对禁止返回 1、2、3 这样的"序号"，必须返回真实章节号
+- 示例：如果输入是第 171 章，chapter 字段必须是 171，不是 1 或其他数字
+- 每个元素的 chapter 必须严格对应输入中的章节号，顺序一致"""
 
     # API 调用计时
     api_start = time.monotonic()
@@ -231,16 +235,12 @@ def analyze_chapters_batch(
             f"{prefix}批次[{batch_range}] 章节号错位: 返回了非期望章节号 {extra}（期望 {sorted(expected_chapters)}）"
         )
 
-    # 每章输出 tokens 分布（从返回数据估算）
+    # 每章输出统计
     total_summary_chars = sum(len(ch.get("summary", "")) for ch in parsed.values())
     avg_summary_len = total_summary_chars // max(returned_count, 1)
-    char_counts = {}
     tension_values = []
-    for ch_num, ch_data in parsed.items():
-        summary_len = len(ch_data.get("summary", ""))
-        char_count = len(ch_data.get("characters_appear", []))
+    for ch_data in parsed.values():
         tension = ch_data.get("tension_level", 0)
-        char_counts[ch_num] = {"summary_len": summary_len, "chars": char_count}
         if tension:
             tension_values.append(tension)
 

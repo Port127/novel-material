@@ -10,8 +10,10 @@
 import sys
 import yaml
 import time
+import re
 from pathlib import Path
 from collections import Counter
+from collections.abc import Callable
 
 from novel_material.infra.config import NOVELS_DIR
 from novel_material.infra.llm import load_config, call_llm, get_last_call_finish_reason
@@ -19,6 +21,9 @@ from novel_material.pipeline.loader import load_chapters_data, build_summary_poo
 from novel_material.infra.progress import get_pipeline_logger
 
 logger = get_pipeline_logger()
+
+# 有效角色类型
+VALID_ROLES = ("protagonist", "antagonist", "supporting", "minor")
 
 
 def _extract_appearance_stats(chapters_data: list) -> dict:
@@ -89,7 +94,7 @@ def _extract_core_characters(
 注意：
 1. 只提取有完整弧线的核心人物（主角、反派、重要配角），通常 10-25 人
 2. role 只能是 protagonist/antagonist/supporting（不要填写 minor）
-3. key_events 只记录关键节点（≤10个）
+3. key_events 按重要性排序（最重要的在前），最多 10 个
 4. 关系描述用中文"""
 
     # 构建出场统计文本（高频人物优先）
@@ -184,7 +189,7 @@ def _extract_minor_characters(
     return characters
 
 
-def generate_characters(material_id, provider: str | None = None) -> bool:
+def generate_characters(material_id, progress_callback: Callable[[int, int, str], None] | None = None, provider: str | None = None) -> bool:
     """分层提取人物体系。
 
     容错策略：任何轮次失败时使用空数组继续，不中断流程。
@@ -192,6 +197,7 @@ def generate_characters(material_id, provider: str | None = None) -> bool:
 
     参数：
         material_id: 素材 ID
+        progress_callback: 可选进度回调函数 (done: int, total: int, desc: str) -> None
         provider: 服务商名称（可选，不指定则使用默认配置）
     """
     novel_dir = NOVELS_DIR / material_id
@@ -234,14 +240,16 @@ def generate_characters(material_id, provider: str | None = None) -> bool:
     context_chars = len(context_text)
     logger.info(f"[{material_id}] 输入: {context_chars} 字符 | {context_label}")
 
-    rate_limit = config["llm"].get("rate_limit_seconds", 1)
-
     # ── 第一轮：核心人物（容错）──
     core_characters = []
     try:
+        if progress_callback:
+            progress_callback(0, 2, "提取核心人物")
         core_characters = _extract_core_characters(context_text, context_label, meta, appearance_stats, config)
-        time.sleep(rate_limit)
-        logger.info(f"  提取核心人物: {len(core_characters)} 人")
+        if progress_callback:
+            progress_callback(1, 2, f"核心人物: {len(core_characters)} 人")
+        else:
+            logger.info(f"  提取核心人物: {len(core_characters)} 人")
     except Exception as e:
         logger.error(f"核心人物提取失败: {e}")
         logger.warning("使用空列表继续，不中断流程")
@@ -252,9 +260,13 @@ def generate_characters(material_id, provider: str | None = None) -> bool:
     # ── 第二轮：次要人物（容错）──
     minor_characters = []
     try:
+        if progress_callback:
+            progress_callback(1, 2, "补充次要人物")
         minor_characters = _extract_minor_characters(context_text, context_label, meta, core_names, appearance_stats, config)
-        time.sleep(rate_limit)
-        logger.info(f"  补充次要人物: {len(minor_characters)} 人")
+        if progress_callback:
+            progress_callback(2, 2, f"次要人物: {len(minor_characters)} 人")
+        else:
+            logger.info(f"  补充次要人物: {len(minor_characters)} 人")
     except Exception as e:
         logger.error(f"次要人物提取失败: {e}")
         logger.warning("使用空列表继续，不中断流程")
@@ -263,12 +275,16 @@ def generate_characters(material_id, provider: str | None = None) -> bool:
     # 合并
     all_characters = core_characters + minor_characters
 
-    # 收集所有关系
+    # 收集所有关系（后续去重）
     all_relationships = []
 
     # 写入每个人物小传
-    for ch in all_characters:
+    for idx, ch in enumerate(all_characters):
+        # 验证 role 字段
         role = ch.get("role", "minor")
+        if role not in VALID_ROLES:
+            logger.warning(f"无效 role '{role}'，默认为 minor")
+            role = "minor"
 
         # 核心人物完整档案，次要人物精简档案
         if role in ("protagonist", "antagonist", "supporting"):
@@ -295,7 +311,11 @@ def generate_characters(material_id, provider: str | None = None) -> bool:
                 "relationships": ch.get("relationships", [])
             }
 
-        filename = f"{ch['name']}.yaml"
+        # slug 化文件名：只保留字母、数字、中文，其他替换为下划线
+        # 添加序号避免同名人物文件冲突
+        name = ch.get("name", f"unknown_{idx}")
+        slug = re.sub(r'[^\w一-鿿]', '_', name)
+        filename = f"{slug}_{idx:03d}.yaml"
         with open(profiles_dir / filename, "w", encoding="utf-8") as f:
             yaml.dump(profile, f, allow_unicode=True, default_flow_style=False)
 
@@ -307,6 +327,15 @@ def generate_characters(material_id, provider: str | None = None) -> bool:
                 "relationship": rel.get("relationship"),
                 "nature": rel.get("nature", "unknown")
             })
+
+    # 关系去重：按人物对去重（A-B 和 B-A 视为同一对）
+    seen_pairs = set()
+    unique_relationships = []
+    for rel in all_relationships:
+        pair_key = tuple(sorted([rel["from"], rel["to"]]))
+        if pair_key not in seen_pairs:
+            seen_pairs.add(pair_key)
+            unique_relationships.append(rel)
 
     # 写入人物索引
     char_index = {
@@ -323,7 +352,7 @@ def generate_characters(material_id, provider: str | None = None) -> bool:
 
     # 写入关系网
     with open(char_dir / "relationships.yaml", "w", encoding="utf-8") as f:
-        yaml.dump({"relationships": all_relationships}, f, allow_unicode=True, default_flow_style=False)
+        yaml.dump({"relationships": unique_relationships}, f, allow_unicode=True, default_flow_style=False)
 
     logger.info(
         f"[{material_id}] 人物提取完成:\n"
@@ -332,7 +361,7 @@ def generate_characters(material_id, provider: str | None = None) -> bool:
         f"  反派: {char_index['antagonist_count']}\n"
         f"  配角: {char_index['supporting_count']}\n"
         f"  次要: {char_index['minor_count']}\n"
-        f"  关系: {len(all_relationships)} 条"
+        f"  关系: {len(unique_relationships)} 条"
     )
 
     return True

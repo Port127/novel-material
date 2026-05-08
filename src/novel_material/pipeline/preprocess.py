@@ -179,20 +179,25 @@ def remove_duplicate_ads(text: str, min_length: int = 20) -> str:
 
 
 def remove_ad_lines(text: str) -> str:
-    """逐行过滤广告/水印行，并清理行内广告。"""
+    """逐行过滤广告/水印行，并清理行内广告。
+
+    注意：不删除空白行，空白行由 normalize_whitespace 统一处理。
+    """
     lines = text.split("\n")
     clean_lines = []
     for line in lines:
+        # 过滤广告行
         if any(pat.match(line) for pat in _AD_LINE_PATTERNS):
             continue
 
+        # 清理行内广告
         for pattern in _AD_INLINE_PATTERNS:
             line = re.sub(pattern, '', line, flags=re.IGNORECASE)
 
-        if not line.strip():
-            continue
-
+        # 清理行内多余空白，但保留空行
+        line = line.strip()
         clean_lines.append(line)
+
     return "\n".join(clean_lines)
 
 
