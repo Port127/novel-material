@@ -267,7 +267,7 @@ def generate_outline(material_id, progress_callback: Callable[[int, int, str], N
     """
     novel_dir = NOVELS_DIR / material_id
     if not novel_dir.exists():
-        logger.error(f"小说目录不存在: {novel_dir}")
+        logger.error(f"[{material_id}] 小说目录不存在: {novel_dir}")
         return False
 
     config = load_config(provider)
@@ -287,7 +287,7 @@ def generate_outline(material_id, progress_callback: Callable[[int, int, str], N
     # 读取章节索引
     chapter_index_file = novel_dir / "chapter_index.yaml"
     if not chapter_index_file.exists():
-        logger.error(f"chapter_index.yaml 不存在")
+        logger.error(f"[{material_id}] chapter_index.yaml 不存在")
         return False
 
     with open(chapter_index_file, "r", encoding="utf-8") as f:
@@ -295,7 +295,7 @@ def generate_outline(material_id, progress_callback: Callable[[int, int, str], N
     chapter_count = len(chapter_index)
 
     # 输出小说基本信息
-    logger.info(f"小说: {title} | {chapter_count} 章 | {word_count} 字 | 状态: {status}")
+    logger.info(f"[{material_id}] 小说: {title} | {chapter_count} 章 | {word_count} 字 | 状态: {status}")
 
     # 加载章节数据（优先从 chapters/ 目录，兜底 chapters.yaml）
     chapters_data = load_chapters_data(novel_dir)
@@ -304,17 +304,20 @@ def generate_outline(material_id, progress_callback: Callable[[int, int, str], N
     outline_stats = _extract_outline_stats(chapters_data) if chapters_data else {}
     high_tension_count = len(outline_stats.get("high_tension_chapters", []))
     suspense_count = len(outline_stats.get("suspense_chapters", []))
-    logger.info(f"大纲统计: {high_tension_count} 个高张力章节, {suspense_count} 个悬念章节")
+    logger.info(f"[{material_id}] 大纲统计: {high_tension_count} 个高张力章节, {suspense_count} 个悬念章节")
 
     if chapters_data:
         context_text = build_summary_pool(chapters_data, config["llm"]["outline_summary_tokens"], model)
+        context_chars = len(context_text)
         context_label = f"章级摘要池（共 {len(chapters_data)} 章）"
-        logger.info(f"使用 {context_label} 作为分析基础")
+        logger.info(f"[{material_id}] 输入: {context_chars} 字符 | {context_label}")
     else:
-        logger.warning("章节数据不存在或为空，回退到原文前 5000 字（质量受限）")
+        logger.warning(f"[{material_id}] 章节数据不存在或为空，回退到原文前 5000 字（质量受限）")
         with open(novel_dir / "source.txt", "r", encoding="utf-8") as f:
             context_text = f.read()[:5000]
+        context_chars = len(context_text)
         context_label = "原文摘录（前 5000 字）"
+        logger.info(f"[{material_id}] 输入: {context_chars} 字符 | {context_label}")
 
     rate_limit = config["llm"].get("rate_limit_seconds", 1)
 
@@ -492,8 +495,10 @@ def generate_outline(material_id, progress_callback: Callable[[int, int, str], N
     with open(outline_dir / "hooks_network.yaml", "w", encoding="utf-8") as f:
         yaml.dump({"hooks": [], "subplots": []}, f, allow_unicode=True, default_flow_style=False)
 
-    logger.info(f"大纲生成完成: {len(acts)}幕, {total_sequences}序列, {len(beats_data)}节拍"
-                + (f" ({failed_sequences}序列失败)" if failed_sequences > 0 else ""))
+    logger.info(
+        f"[{material_id}] 大纲生成完成: {len(acts)}幕, {total_sequences}序列, {len(beats_data)}节拍"
+        + (f" ({failed_sequences}序列失败)" if failed_sequences > 0 else "")
+    )
 
     return True
 

@@ -6,7 +6,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskPr
 from rich.table import Table
 
 from novel_material.infra.config import NOVELS_DIR
-from novel_material.infra.progress import silent_console
+from novel_material.infra.progress import silent_console, get_pipeline_logger
 from novel_material.pipeline import (
     ingest_file,
     chapter_analyze,
@@ -21,6 +21,8 @@ from novel_material.storage.sync import sync_novel
 
 app = typer.Typer(help="数据处理流水线")
 console = Console()
+logger = get_pipeline_logger()
+_PIPELINE_SEPARATOR = "=" * 60
 
 
 @app.command("ingest")
@@ -232,6 +234,7 @@ def cmd_full(
         range_desc = f" (第 {range_start}-{range_end_text} 章)"
 
     console.print(f"[cyan]开始完整流水线{range_desc}[/cyan]")
+    logger.info(_PIPELINE_SEPARATOR)
 
     with Progress(
         SpinnerColumn(),
@@ -425,6 +428,7 @@ def cmd_continue(
         range_desc = f" (第 {range_start}-{range_end_text} 章)"
 
     console.print(f"\n[cyan]从 {next_stage or '章级分析'} 阶段继续{range_desc}[/cyan]")
+    logger.info(_PIPELINE_SEPARATOR)
 
     # 计算范围内章节数
     chapters_in_range = [

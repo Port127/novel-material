@@ -196,7 +196,7 @@ def generate_characters(material_id, provider: str | None = None) -> bool:
     """
     novel_dir = NOVELS_DIR / material_id
     if not novel_dir.exists():
-        logger.error(f"小说目录不存在: {novel_dir}")
+        logger.error(f"[{material_id}] 小说目录不存在: {novel_dir}")
         return False
 
     config = load_config(provider)
@@ -222,16 +222,17 @@ def generate_characters(material_id, provider: str | None = None) -> bool:
             chapter_count = len(chapter_index)
 
     # 输出小说基本信息
-    logger.info(f"小说: {title} | {chapter_count} 章 | {word_count} 字 | 状态: {status}")
+    logger.info(f"[{material_id}] 小说: {title} | {chapter_count} 章 | {word_count} 字 | 状态: {status}")
 
     # 加载章节数据并统计出场人物
     chapters_data = load_chapters_data(novel_dir)
     appearance_stats = _extract_appearance_stats(chapters_data) if chapters_data else {}
-    logger.info(f"出场人物统计: {len(appearance_stats)} 个不同人物")
+    logger.info(f"[{material_id}] 出场人物统计: {len(appearance_stats)} 个不同人物")
 
     # 构建分析上下文
     context_text, context_label = _build_context(novel_dir, config)
-    logger.info(f"使用 {context_label} 作为分析基础")
+    context_chars = len(context_text)
+    logger.info(f"[{material_id}] 输入: {context_chars} 字符 | {context_label}")
 
     rate_limit = config["llm"].get("rate_limit_seconds", 1)
 
@@ -324,13 +325,15 @@ def generate_characters(material_id, provider: str | None = None) -> bool:
     with open(char_dir / "relationships.yaml", "w", encoding="utf-8") as f:
         yaml.dump({"relationships": all_relationships}, f, allow_unicode=True, default_flow_style=False)
 
-    logger.info(f"人物提取完成:\n"
-                f"  总人物: {char_index['character_count']}\n"
-                f"  主角: {char_index['protagonist_count']}\n"
-                f"  反派: {char_index['antagonist_count']}\n"
-                f"  配角: {char_index['supporting_count']}\n"
-                f"  次要: {char_index['minor_count']}\n"
-                f"  关系: {len(all_relationships)} 条")
+    logger.info(
+        f"[{material_id}] 人物提取完成:\n"
+        f"  总人物: {char_index['character_count']}\n"
+        f"  主角: {char_index['protagonist_count']}\n"
+        f"  反派: {char_index['antagonist_count']}\n"
+        f"  配角: {char_index['supporting_count']}\n"
+        f"  次要: {char_index['minor_count']}\n"
+        f"  关系: {len(all_relationships)} 条"
+    )
 
     return True
 

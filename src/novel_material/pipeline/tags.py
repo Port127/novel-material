@@ -40,7 +40,7 @@ def generate_tags(material_id, provider: str | None = None) -> bool:
     """
     novel_dir = NOVELS_DIR / material_id
     if not novel_dir.exists():
-        logger.error(f"小说目录不存在: {novel_dir}")
+        logger.error(f"[{material_id}] 小说目录不存在: {novel_dir}")
         return False
 
     config = load_config(provider)
@@ -48,7 +48,7 @@ def generate_tags(material_id, provider: str | None = None) -> bool:
     # 读取 meta 获取题材
     meta_file = novel_dir / "meta.yaml"
     if not meta_file.exists():
-        logger.error(f"meta.yaml 不存在: {meta_file}")
+        logger.error(f"[{material_id}] meta.yaml 不存在: {meta_file}")
         return False
 
     with open(meta_file, "r", encoding="utf-8") as f:
@@ -70,11 +70,11 @@ def generate_tags(material_id, provider: str | None = None) -> bool:
             chapter_count = len(chapter_index)
 
     # 输出小说基本信息
-    logger.info(f"小说: {title} | {chapter_count} 章 | {word_count} 字 | 状态: {status}")
+    logger.info(f"[{material_id}] 小说: {title} | {chapter_count} 章 | {word_count} 字 | 状态: {status}")
 
     # 动态加载标签（精简 prompt）
     tags_data = load_tags_for_genre(genre_primary, genre_secondary)
-    logger.info(f"动态加载标签: {genre_primary} 题材，约 {count_tags(tags_data)} 个")
+    logger.info(f"[{material_id}] 动态加载标签: {genre_primary} 题材，约 {count_tags(tags_data)} 个")
 
     # 读取原文（取前 5000 字）
     source_file = novel_dir / "source.txt"
@@ -137,13 +137,14 @@ def generate_tags(material_id, provider: str | None = None) -> bool:
         try:
             auto_approve_by_frequency()
         except Exception as e:
-            logger.warning(f"频率自动批失败: {e}，跳过")
+            logger.warning(f"[{material_id}] 频率自动批失败: {e}，跳过")
 
-    logger.info(f"标签生成完成:\n"
-                f"  题材: {tags.get('genre_primary')}\n"
-                f"  元素: {len(tags.get('elements', []))} 个\n"
-                f"  新标签候选: {len(new_candidates)} 个")
-
+    logger.info(
+        f"[{material_id}] 标签生成完成:\n"
+        f"  题材: {tags.get('genre_primary')}\n"
+        f"  元素: {len(tags.get('elements', []))} 个\n"
+        f"  新标签候选: {len(new_candidates)} 个"
+    )
     return True
 
 

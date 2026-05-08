@@ -186,7 +186,41 @@ def truncate_to_tokens(text: str, max_tokens: int, model: str = "qwen3.6-plus") 
         return text[:char_limit]
 
 
-def _retry_wait(retry_state) -> float:
+def _classify_error(exc: Exception) -> str:
+    """将异常分类为简短标签，便于日志快速识别。"""
+    from openai import APIStatusError, APIConnectionError, APITimeoutError, AuthenticationError
+
+    if isinstance(exc, AuthenticationError):
+        return "[AUTH]"
+    if isinstance(exc, APIStatusError):
+        if exc.status_code == 401:
+            return "[AUTH]"
+        if exc.status_code == 429:
+            return "[RATE]"
+        if exc.status_code >= 500:
+            return "[SERVER]"
+        return "[HTTP]"
+    if isinstance(exc, APITimeoutError):
+        return "[TIMEOUT]"
+    if isinstance(exc, APIConnectionError):
+        return "[CONN]"
+    if isinstance(exc, json.JSONDecodeError):
+        return "[JSON]"
+    return "[OTHER]"
+
+
+def _retry_log_callback(retry_state):
+    """重试前的日志回调，打印重试状态。"""
+    exc = retry_state.outcome.exception() if retry_state.outcome else None
+    if exc:
+        error_tag = _classify_error(exc)
+        attempt = retry_state.attempt_number
+        max_attempts = 8
+        wait_time = _retry_wait(retry_state)
+        logger.warning(f"{error_tag} 重试 {attempt}/{max_attempts}，等待 {wait_time:.0f}s: {type(exc).__name__}")
+
+
+def _retry_wait(retry_state):
     """计算重试前需要等待多久。"""
     from openai import APIStatusError
 
@@ -269,7 +303,7 @@ def call_llm(
         retry=retry_if_exception(_should_retry),
         stop=(stop_after_attempt(8) | stop_after_delay(total_timeout)),
         wait=_retry_wait,
-        before_sleep=before_sleep_log(logger, logging.WARNING),
+        before_sleep=_retry_log_callback,
         reraise=True,
     )
     def _call() -> dict:
@@ -309,6 +343,15 @@ def call_llm(
         response = client.chat.completions.create(**create_kwargs)
         elapsed = time.monotonic() - call_start
 
+        # 获取 request_id（用于服务商后台追踪）
+        request_id = getattr(response, "id", "")
+        if not request_id:
+            # 尝试从 headers 获取
+            try:
+                request_id = response._request_id if hasattr(response, "_request_id") else ""
+            except Exception:
+                request_id = ""
+
         usage = response.usage
         finish_reason = response.choices[0].finish_reason if response.choices else None
         _api_stats["calls"] += 1
@@ -323,6 +366,7 @@ def call_llm(
             "model": model_name,
             "timestamp": time.strftime("%H:%M:%S"),
             "finish_reason": finish_reason,
+            "request_id": request_id,
         }
 
         prefix = f"[{context}] " if context else ""
@@ -346,6 +390,8 @@ def call_llm(
             if detail["thinking_tokens"]:
                 log_parts.append(f"thinking={detail['thinking_tokens']}")
             log_parts.append(f"finish={finish_reason}")
+            if request_id:
+                log_parts.append(f"req={request_id[:12]}...")
 
             logger.info(" | ".join(log_parts))
         else:
@@ -368,7 +414,7 @@ def call_llm(
                 new_max = min(effective_max_tokens * 2, 65536)
                 prefix = f"[{context}] " if context else ""
                 logger.warning(
-                    f"{prefix}JSON 解析失败（max_tokens={effective_max_tokens}），"
+                    f"{prefix}[JSON] 解析失败（max_tokens={effective_max_tokens}），"
                     f"加大到 {new_max}，重试 {attempt+1}/{max_json_retries}"
                 )
                 effective_max_tokens = new_max
@@ -376,11 +422,12 @@ def call_llm(
                 _api_stats["errors"] += 1
                 elapsed = time.monotonic() - _outer_start
                 prefix = f"[{context}] " if context else ""
-                logger.error(f"{prefix}JSON 解析最终失败 ({elapsed:.1f}s): {e}")
+                logger.error(f"{prefix}[JSON] 解析最终失败 ({elapsed:.1f}s): {e}")
                 raise
         except Exception as e:
             _api_stats["errors"] += 1
             elapsed = time.monotonic() - _outer_start
+            error_tag = _classify_error(e)
             prefix = f"[{context}] " if context else ""
-            logger.error(f"{prefix}API 失败 ({elapsed:.1f}s): {type(e).__name__}: {e}")
+            logger.error(f"{prefix}{error_tag} API 失败 ({elapsed:.1f}s): {type(e).__name__}: {e}")
             raise

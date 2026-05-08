@@ -99,6 +99,7 @@ def analyze_chapters_batch(
     batch_info: list[dict],
     lines: list[str],
     config: dict,
+    material_id: str = "",
 ) -> dict[int, dict]:
     """批量分析多个章节，一次 API 调用返回所有结果。
 
@@ -110,6 +111,7 @@ def analyze_chapters_batch(
         batch_info：要分析的章节信息列表
         lines：原文所有行
         config：LLM 配置
+        material_id：素材 ID（用于日志追踪）
 
     返回：
         dict：{章节号: 分析结果}，只包含 LLM 成功返回的章节
@@ -118,14 +120,30 @@ def analyze_chapters_batch(
     model = config["llm"]["model"]
     n = len(batch_info)
 
-    # 构建每章内容
+    # 构建每章内容，同时统计字符数
     blocks = []
+    total_chars = 0
+    char_per_chapter = []
     for ch_info in batch_info:
         text = "\n".join(lines[ch_info["start_line"] - 1:ch_info["end_line"]])
         truncated = truncate_to_tokens(text, _get_max_chapter_tokens(), model=model)
+        block_len = len(truncated)
+        total_chars += block_len
+        char_per_chapter.append(block_len)
         blocks.append(
             f"【第{ch_info['chapter']}章《{ch_info['title']}》》\n{truncated}"
         )
+
+    avg_chars_per_ch = total_chars // max(n, 1)
+    batch_nums = [ch_info["chapter"] for ch_info in batch_info]
+    batch_range = f"{min(batch_nums)}-{max(batch_nums)}"
+
+    # 打印批次输入统计
+    prefix = f"[{material_id}] " if material_id else ""
+    logger.info(
+        f"{prefix}批次[{batch_range}] 输入: {total_chars} 字符 | "
+        f"平均 {avg_chars_per_ch} 字/章 | {n} 章"
+    )
 
     combined = ("\n\n" + "=" * 30 + "\n\n").join(blocks)
 
@@ -144,8 +162,8 @@ def analyze_chapters_batch(
 
 重要：每个元素的 chapter 字段必须是整数，与输入章节号一致。"""
 
-    batch_nums = [ch_info["chapter"] for ch_info in batch_info]
-    batch_range = f"{min(batch_nums)}-{max(batch_nums)}"
+    # API 调用计时
+    api_start = time.monotonic()
     result = call_llm(
         system_prompt,
         user_prompt,
@@ -153,16 +171,20 @@ def analyze_chapters_batch(
         max_tokens_override=n * 1500,
         timeout_override=config["llm"].get("analyze_timeout"),
         context=f"章节分析#批次[{batch_range}]",
-        thinking_budget=4000,
+        thinking_budget=12000,
     )
+    api_elapsed = time.monotonic() - api_start
+
+    # 解析计时
+    parse_start = time.monotonic()
 
     # 解析返回结果
     chapters_list = result.get("chapters", [])
     if not chapters_list:
-        logger.warning(f"批量返回无 chapters 数组，实际返回键: {list(result.keys())}")
+        logger.warning(f"{prefix}批量返回无 chapters 数组，实际返回键: {list(result.keys())}")
         # 兼容：如果返回单个章节对象而非数组
         if result.get("summary") and batch_info:
-            logger.warning("检测到单章格式返回，尝试兼容解析")
+            logger.warning(f"{prefix}检测到单章格式返回，尝试兼容解析")
             return {batch_info[0]["chapter"]: result}
 
     parsed = {}
@@ -170,19 +192,31 @@ def analyze_chapters_batch(
         if isinstance(item, dict) and isinstance(item.get("chapter"), int):
             parsed[item["chapter"]] = item
         else:
-            logger.warning(f"跳过无效章节项: {item}")
+            logger.warning(f"{prefix}跳过无效章节项: {item}")
 
     if len(parsed) < len(chapters_list):
-        logger.warning(f"解析丢失 {len(chapters_list) - len(parsed)} 章")
+        logger.warning(f"{prefix}解析丢失 {len(chapters_list) - len(parsed)} 章")
 
-    # 批次解析质量统计
+    # 批次解析质量统计：验证章节号是否与期望一致
+    expected_chapters = set(ch["chapter"] for ch in batch_info)
+    returned_chapters = set(parsed.keys())
+    missing = sorted(expected_chapters - returned_chapters)
+    extra = sorted(returned_chapters - expected_chapters)  # LLM 返回了不在批次中的章节号
+
     returned_count = len(parsed)
-    missing_count = n - returned_count
+    missing_count = len(missing)
+
+    parse_elapsed = time.monotonic() - parse_start
+
     if missing_count > 0:
-        missing = sorted([ch["chapter"] for ch in batch_info if ch["chapter"] not in parsed])
         logger.warning(
-            f"批次[{batch_range}] 返回不完整: 期望 {n} 章，实际 {returned_count} 章，"
-            f"缺失 {missing_count} 章 {missing}"
+            f"{prefix}批次[{batch_range}] 章节号错位: 期望 {sorted(expected_chapters)}，"
+            f"实际 {sorted(returned_chapters)}，缺失 {missing}"
+        )
+
+    if extra:
+        logger.warning(
+            f"{prefix}批次[{batch_range}] 章节号错位: 返回了非期望章节号 {extra}（期望 {sorted(expected_chapters)}）"
         )
 
     # 每章输出 tokens 分布（从返回数据估算）
@@ -198,11 +232,12 @@ def analyze_chapters_batch(
         if tension:
             tension_values.append(tension)
 
-    # 输出批次质量摘要
+    # 输出批次质量摘要（含解析耗时）
     logger.info(
-        f"批次[{batch_range}] 统计: 返回 {returned_count}/{n} 章 | "
+        f"{prefix}批次[{batch_range}] 统计: 返回 {returned_count}/{n} 章 | "
         f"摘要平均 {avg_summary_len} 字 | "
         f"张力范围 {min(tension_values) if tension_values else '?'}-{max(tension_values) if tension_values else '?'} | "
+        f"API {api_elapsed:.1f}s | 解析 {parse_elapsed:.2f}s | "
         f"finish={get_last_call_finish_reason()}"
     )
 
@@ -335,7 +370,7 @@ def chapter_analyze(
     """
     novel_dir = NOVELS_DIR / material_id
     if not novel_dir.exists():
-        logger.error(f"小说目录不存在: {novel_dir}")
+        logger.error(f"[{material_id}] 小说目录不存在: {novel_dir}")
         return False
 
     config = load_config(provider)
@@ -362,7 +397,7 @@ def chapter_analyze(
         range_start = start_ch or 1
         range_end = end_ch or chapter_count
         range_info = f" | 分析范围: 第 {range_start}-{range_end} 章"
-    logger.info(f"小说: {title} | {chapter_count} 章 | {word_count} 字 | 状态: {status}{range_info}")
+    logger.info(f"[{material_id}] 小说: {title} | {chapter_count} 章 | {word_count} 字 | 状态: {status}{range_info}")
 
     with open(novel_dir / "source.txt", "r", encoding="utf-8") as f:
         full_text = f.read()
@@ -397,7 +432,7 @@ def chapter_analyze(
             next_ch = max(done_in_range.keys()) + 1
             if start_ch and next_ch < start_ch:
                 next_ch = start_ch
-            logger.info(f"断点续传：已完成 {len(done_in_range)} 章，从第 {next_ch} 章继续")
+            logger.info(f"[{material_id}] 断点续传：已完成 {len(done_in_range)} 章，从第 {next_ch} 章继续")
 
     # 过滤出待处理章节（结合断点续传和范围指定）
     pending = [
@@ -412,13 +447,13 @@ def chapter_analyze(
         if progress_callback:
             progress_callback(total, total, "所有章节已完成")
         else:
-            logger.info(f"所有 {total} 章已完成，跳过分析")
+            logger.info(f"[{material_id}] 所有 {total} 章已完成，跳过分析")
     else:
         n_batches = (len(pending) + batch_size - 1) // batch_size
         if progress_callback:
             progress_callback(skipped, total, f"待分析 {len(pending)} 章")
         else:
-            logger.info(f"待分析: {len(pending)} 章，批量大小: {batch_size}，共 {n_batches} 批次")
+            logger.info(f"[{material_id}] 待分析: {len(pending)} 章，批量大小: {batch_size}，共 {n_batches} 批次")
 
     for batch_idx, batch_start in enumerate(range(0, len(pending), batch_size)):
         batch = pending[batch_start:batch_start + batch_size]
@@ -427,7 +462,11 @@ def chapter_analyze(
 
         # 批次开始时的日志（非回调模式）
         if not progress_callback:
-            logger.info(f"[批次 {batch_idx + 1}/{n_batches}] 第 {first_ch}-{last_ch} 章（共 {len(batch)} 章）")
+            progress_pct = (batch_idx * batch_size + skipped) / total * 100
+            logger.info(
+                f"[{material_id}] [批次 {batch_idx + 1}/{n_batches}] 第 {first_ch}-{last_ch} 章 "
+                f"| 进度 {skipped + batch_idx * batch_size}/{total} ({progress_pct:.1f}%)"
+            )
 
         batch_start_time = time.monotonic()
         batch_errors = 0
@@ -439,13 +478,16 @@ def chapter_analyze(
         use_batch_mode = batch_size > 1 and len(batch) > 1
         if use_batch_mode:
             try:
-                batch_results = analyze_chapters_batch(batch, lines, config)
+                batch_results = analyze_chapters_batch(batch, lines, config, material_id)
                 batch_api_calls += 1
-                if len(batch_results) < len(batch):
-                    missing = [ch["chapter"] for ch in batch if ch["chapter"] not in batch_results]
-                    batch_downgrades += len(missing)
+                # 检查章节号是否匹配（不只是数量）
+                expected_chapters = set(ch["chapter"] for ch in batch)
+                returned_chapters = set(batch_results.keys())
+                missing_in_batch = sorted(expected_chapters - returned_chapters)
+                if missing_in_batch:
+                    logger.warning(f"[{material_id}] 批量返回缺失 {len(missing_in_batch)} 章 {missing_in_batch}，降级为单章补齐")
             except Exception as e:
-                logger.warning(f"批量分析失败: {e}，降级为逐章模式")
+                logger.warning(f"[{material_id}] 批量分析失败: {e}，降级为逐章模式")
                 batch_errors += 1
                 batch_api_calls += 1
 
@@ -457,21 +499,21 @@ def chapter_analyze(
             if result is None:
                 # 批量失败或缺漏，改用单章分析
                 batch_downgrades += 1
-                if not progress_callback and use_batch_mode:
-                    logger.info(f"[单章] 第 {ch_num} 章: {ch_info['title']}")
+                if not progress_callback:
+                    logger.info(f"[{material_id}] [降级单章] 第 {ch_num} 章: {ch_info['title']}（批量返回缺失）")
                 chapter_text = "\n".join(lines[ch_info["start_line"] - 1:ch_info["end_line"]])
                 try:
                     result = analyze_chapter(chapter_text, ch_info, config)
                     batch_api_calls += 1
                 except Exception as e:
-                    logger.error(f"第 {ch_num} 章分析失败（已重试耗尽）: {e}")
+                    logger.error(f"[{material_id}] 第 {ch_num} 章分析失败（已重试耗尽）: {e}")
                     batch_errors += 1
                     continue
 
             # 检查结果质量
             errors = validate_chapter_analysis(result, ch_info)
             for err in errors:
-                logger.warning(err)
+                logger.warning(f"[{material_id}] [质量] {err}")
                 batch_errors += 1
 
             result["chapter"] = ch_num
@@ -497,10 +539,9 @@ def chapter_analyze(
         if not progress_callback:
             finish_reason = get_last_call_finish_reason()
             logger.info(
-                f"  批次#{batch_idx + 1} 完成: {batch_elapsed:.1f}s | "
+                f"[{material_id}] 批次#{batch_idx + 1} 完成: {batch_elapsed:.1f}s | "
                 f"返回 {len(batch_results)}/{len(batch)} 章 | "
-                f"降级 {batch_downgrades} 次 | "
-                f"错误 {batch_errors} 次 | "
+                f"降级 {batch_downgrades} 次 | 错误 {batch_errors} 次 | "
                 f"finish={finish_reason}"
             )
 
@@ -511,12 +552,12 @@ def chapter_analyze(
     if progress_callback:
         progress_callback(total, total, f"完成: {completed} 章")
     else:
-        logger.info(f"章级分析完成: 新分析 {completed} 章，跳过已完成 {skipped} 章，共 {total} 章")
+        logger.info(f"[{material_id}] 章级分析完成: 新分析 {completed} 章，跳过已完成 {skipped} 章，共 {total} 章")
         if total_downgrades > 0:
             total_chapters_attempted = n_batches * batch_size if pending else 1
             downgrade_rate = total_downgrades / total_chapters_attempted * 100
             logger.info(
-                f"  降级统计: {total_downgrades} 次降级（占 {downgrade_rate:.1f}%），"
+                f"[{material_id}] 降级统计: {total_downgrades} 次降级（占 {downgrade_rate:.1f}%），"
                 f"批次错误 {total_batch_errors} 次"
             )
 
@@ -524,7 +565,7 @@ def chapter_analyze(
     _merge_chapters(novel_dir)
 
     # 质量检查
-    logger.info("执行章级分析质量校验...")
+    logger.info(f"[{material_id}] 执行章级分析质量校验...")
     if not run_quality_check(material_id, start_ch=start_ch, end_ch=end_ch):
         update_meta_status(material_id, "failed")
         raise ValueError(f"章级分析质量校验未通过：{material_id}")

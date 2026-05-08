@@ -43,7 +43,7 @@ def generate_worldbuilding(material_id, provider: str | None = None) -> bool:
     """
     novel_dir = NOVELS_DIR / material_id
     if not novel_dir.exists():
-        logger.error(f"小说目录不存在: {novel_dir}")
+        logger.error(f"[{material_id}] 小说目录不存在: {novel_dir}")
         return False
 
     config = load_config(provider)
@@ -68,11 +68,12 @@ def generate_worldbuilding(material_id, provider: str | None = None) -> bool:
             chapter_count = len(chapter_index)
 
     # 输出小说基本信息
-    logger.info(f"小说: {title} | {chapter_count} 章 | {word_count} 字 | 状态: {status}")
+    logger.info(f"[{material_id}] 小说: {title} | {chapter_count} 章 | {word_count} 字 | 状态: {status}")
 
     # 构建分析上下文（章级摘要池 > 原文片段）
     context_text, context_label = _build_context(novel_dir, config)
-    logger.info(f"使用 {context_label} 作为分析基础")
+    context_chars = len(context_text)
+    logger.info(f"[{material_id}] 输入: {context_chars} 字符 | {context_label}")
 
     system_prompt = """你是专业的小说世界观分析师。请根据提供的内容提取以下世界观设定，返回 JSON 格式：
 {
@@ -169,11 +170,13 @@ def generate_worldbuilding(material_id, provider: str | None = None) -> bool:
         with open(wb_dir / "lore.yaml", "w", encoding="utf-8") as f:
             yaml.dump(result["lore"], f, allow_unicode=True, default_flow_style=False)
 
-    logger.info(f"世界观提取完成:\n"
-                f"  力量体系: {wb_index['power_system_levels']} 个等级\n"
-                f"  地理区域: {wb_index['region_count']} 个\n"
-                f"  势力: {wb_index['faction_count']} 个\n"
-                f"  历史事件: {wb_index['lore_items']} 个")
+    logger.info(
+        f"[{material_id}] 世界观提取完成:\n"
+        f"  力量体系: {wb_index['power_system_levels']} 个等级\n"
+        f"  地理区域: {wb_index['region_count']} 个\n"
+        f"  势力: {wb_index['faction_count']} 个\n"
+        f"  历史事件: {wb_index['lore_items']} 个"
+    )
 
     return True
 

@@ -19,7 +19,7 @@ def refine_outline(material_id, chapters_data):
     outline_index_file = outline_dir / "_index.yaml"
 
     if not outline_index_file.exists():
-        logger.info("跳过大纲精调：outline/_index.yaml 不存在")
+        logger.info(f"[{material_id}] 跳过大纲精调：outline/_index.yaml 不存在")
         return False
 
     with open(outline_index_file, "r", encoding="utf-8") as f:
@@ -47,7 +47,7 @@ def refine_outline(material_id, chapters_data):
     with open(outline_index_file, "w", encoding="utf-8") as f:
         yaml.dump(outline_index, f, allow_unicode=True, default_flow_style=False)
 
-    logger.info(f"大纲精调完成: {hooks_count} 个钩子, 平均张力 {tension_avg:.2f}")
+    logger.info(f"[{material_id}] 大纲精调完成: {hooks_count} 个钩子, 平均张力 {tension_avg:.2f}")
     return True
 
 
@@ -59,7 +59,7 @@ def refine_characters(material_id, chapters_data):
     char_index_file = char_dir / "_index.yaml"
 
     if not char_index_file.exists():
-        logger.info("跳过人物精调：characters/_index.yaml 不存在")
+        logger.info(f"[{material_id}] 跳过人物精调：characters/_index.yaml 不存在")
         return False
 
     with open(char_index_file, "r", encoding="utf-8") as f:
@@ -95,7 +95,7 @@ def refine_characters(material_id, chapters_data):
     with open(char_index_file, "w", encoding="utf-8") as f:
         yaml.dump(char_index, f, allow_unicode=True, default_flow_style=False)
 
-    logger.info(f"人物精调完成: 更新了 {len(appearance_counts)} 个人物的出场统计")
+    logger.info(f"[{material_id}] 人物精调完成: 更新了 {len(appearance_counts)} 个人物的出场统计")
     return True
 
 
@@ -105,7 +105,7 @@ def refine_tags(material_id, chapters_data):
     tags_file = novel_dir / "tags.yaml"
 
     if not tags_file.exists():
-        logger.info("跳过标签精调：tags.yaml 不存在")
+        logger.info(f"[{material_id}] 跳过标签精调：tags.yaml 不存在")
         return False
 
     with open(tags_file, "r", encoding="utf-8") as f:
@@ -123,7 +123,7 @@ def refine_tags(material_id, chapters_data):
     with open(tags_file, "w", encoding="utf-8") as f:
         yaml.dump(tags, f, allow_unicode=True, default_flow_style=False)
 
-    logger.info(f"标签精调完成: 更新了章节功能分布")
+    logger.info(f"[{material_id}] 标签精调完成: 更新了章节功能分布")
     return True
 
 
@@ -139,12 +139,12 @@ def refine(material_id) -> bool:
     """
     novel_dir = NOVELS_DIR / material_id
     if not novel_dir.exists():
-        logger.error(f"小说目录不存在: {novel_dir}")
+        logger.error(f"[{material_id}] 小说目录不存在: {novel_dir}")
         return False
 
     chapters_file = novel_dir / "chapters.yaml"
     if not chapters_file.exists():
-        logger.error("错误: chapters.yaml 不存在，无法精调")
+        logger.error(f"[{material_id}] 错误: chapters.yaml 不存在，无法精调")
         return False
 
     # 加载小说基本信息
@@ -168,9 +168,8 @@ def refine(material_id) -> bool:
         chapters_data = yaml.safe_load(f) or []
 
     # 输出小说基本信息
-    logger.info(f"小说: {title} | {chapter_count} 章 | {word_count} 字 | 状态: {status}")
-    logger.info(f"开始精调: {material_id} ({len(chapters_data)} 章)")
-    logger.info("=" * 60)
+    logger.info(f"[{material_id}] 小说: {title} | {chapter_count} 章 | {word_count} 字 | 状态: {status}")
+    logger.info(f"[{material_id}] 输入: {len(chapters_data)} 章章级分析数据")
 
     refined = {
         "outline": refine_outline(material_id, chapters_data),
@@ -187,8 +186,7 @@ def refine(material_id) -> bool:
     with open(meta_file, "w", encoding="utf-8") as f:
         yaml.dump(meta, f, allow_unicode=True, default_flow_style=False)
 
-    logger.info("=" * 60)
-    logger.info("精调完成")
+    logger.info(f"[{material_id}] 精调完成")
     for module, success in refined.items():
         status = "已精调" if success else "跳过"
         logger.info(f"  {module}: {status}")
