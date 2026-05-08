@@ -1,5 +1,5 @@
 # 多服务商配置文件
-# 只配置服务商差异化的部分（name, api_key_env, base_url, model）
+# 只配置服务商差异化的部分（name, api_key_env, base_url, model, thinking_format）
 # 其他公共参数（超时、温度、max_tokens等）统一使用 config/settings.yaml 配置
 
 providers:
@@ -7,6 +7,8 @@ providers:
     api_key_env: LLM_API_KEY_ALIYUN
     base_url: https://coding.dashscope.aliyuncs.com/v1
     model: qwen3.6-plus
+    # thinking 格式：dashscope（阿里云）或 openai（标准 OpenAI）
+    thinking_format: dashscope
 
 # 默认服务商（未指定 --provider 时使用）
 # 若此文件不存在或不指定 default_provider，则使用 settings.yaml 配置

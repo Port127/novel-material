@@ -22,7 +22,7 @@ from pathlib import Path
 from collections.abc import Callable
 
 from novel_material.infra.config import NOVELS_DIR, update_meta_status, get_settings
-from novel_material.infra.llm import load_config, load_provider_config, call_llm, truncate_to_tokens, get_last_call_finish_reason
+from novel_material.infra.llm import load_config, call_llm, truncate_to_tokens, get_last_call_finish_reason
 from novel_material.validation.quality import run_quality_check
 from novel_material.infra.progress import get_pipeline_logger
 
@@ -338,7 +338,7 @@ def chapter_analyze(
         logger.error(f"小说目录不存在: {novel_dir}")
         return False
 
-    config = load_provider_config(provider) if provider else load_config()
+    config = load_config(provider)
 
     # 加载小说基本信息
     meta_file = novel_dir / "meta.yaml"

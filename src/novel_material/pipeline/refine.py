@@ -127,12 +127,13 @@ def refine_tags(material_id, chapters_data):
     return True
 
 
-def refine(material_id, provider: str | None = None) -> bool:
+def refine(material_id) -> bool:
     """主精调函数：调整 outline/characters/tags。
+
+    注意：精调阶段不调用 LLM，仅基于章级分析数据进行统计聚合。
 
     参数：
         material_id: 素材 ID
-        provider: 服务商名称（可选，不指定则使用默认配置）
 
     返回 True 表示成功。
     """

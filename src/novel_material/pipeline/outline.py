@@ -18,7 +18,7 @@ from collections.abc import Callable
 from collections import Counter
 
 from novel_material.infra.config import NOVELS_DIR
-from novel_material.infra.llm import load_config, load_provider_config, call_llm, get_last_call_finish_reason
+from novel_material.infra.llm import load_config, call_llm, get_last_call_finish_reason
 from novel_material.pipeline.loader import load_chapters_data, build_summary_pool
 from novel_material.infra.progress import get_pipeline_logger
 
@@ -270,7 +270,7 @@ def generate_outline(material_id, progress_callback: Callable[[int, int, str], N
         logger.error(f"小说目录不存在: {novel_dir}")
         return False
 
-    config = load_provider_config(provider) if provider else load_config()
+    config = load_config(provider)
     model = config["llm"]["model"]
     outline_dir = novel_dir / "outline"
     outline_dir.mkdir(exist_ok=True)
