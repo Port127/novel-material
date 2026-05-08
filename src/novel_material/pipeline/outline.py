@@ -191,7 +191,7 @@ def _generate_beats_for_sequence(
         if tension >= 4:
             seq_high_tension.append(ch.get("chapter", 0))
 
-    seq_context = build_summary_pool(seq_chapters, config["llm"]["outline_seq_summary_tokens"], model) if seq_chapters else ""
+    seq_context = build_summary_pool(seq_chapters, config["llm"]["outline_seq_summary_tokens"], model, force_full=True) if seq_chapters else ""
 
     system_prompt = """你是专业的小说结构分析师。请为指定序列生成节拍（beats）列表。
 返回 JSON 格式：

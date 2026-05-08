@@ -39,13 +39,19 @@ def _extract_appearance_stats(chapters_data: list) -> dict:
     return dict(Counter(all_chars))
 
 
-def _build_context(novel_dir: Path, config: dict) -> tuple[str, str]:
+def _build_context(novel_dir: Path, config: dict, chapters_data: list | None = None) -> tuple[str, str]:
     """构建分析上下文，优先使用章级摘要池，兜底读原文片段。
 
     章数 > 200 时自动启用分层均匀采样，确保全书首尾及中间均有代表。
+
+    Args:
+        novel_dir: 小说目录
+        config: 配置字典
+        chapters_data: 可选的已加载章节数据（避免重复调用 load_chapters_data）
     """
     model = config["llm"]["model"]
-    chapters_data = load_chapters_data(novel_dir)
+    if chapters_data is None:
+        chapters_data = load_chapters_data(novel_dir)
     if chapters_data:
         pool = build_summary_pool(chapters_data, config["llm"]["characters_summary_tokens"], model)
         return pool, f"章级摘要池（共 {len(chapters_data)} 章）"
@@ -235,8 +241,8 @@ def generate_characters(material_id, progress_callback: Callable[[int, int, str]
     appearance_stats = _extract_appearance_stats(chapters_data) if chapters_data else {}
     logger.info(f"[{material_id}] 出场人物统计: {len(appearance_stats)} 个不同人物")
 
-    # 构建分析上下文
-    context_text, context_label = _build_context(novel_dir, config)
+    # 构建分析上下文（传递已加载的 chapters_data，避免重复调用）
+    context_text, context_label = _build_context(novel_dir, config, chapters_data)
     context_chars = len(context_text)
     logger.info(f"[{material_id}] 输入: {context_chars} 字符 | {context_label}")
 
