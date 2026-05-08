@@ -5,12 +5,17 @@
 规模适配：
 - 摘要池采用分层均匀采样（> 200 章时），确保全书首尾及中间均有代表
 - beats 生成拆分为 per-sequence 循环：每个序列独立调用 LLM，避免一次性输出 1000+ 条被截断
+
+统计驱动：
+- 张力分布：识别高潮章节，指导序列划分
+- 悬念分布：识别钩子节点，指导节奏控制
 """
 import sys
 import yaml
 import time
 from pathlib import Path
 from collections.abc import Callable
+from collections import Counter
 
 from novel_material.infra.config import NOVELS_DIR
 from novel_material.infra.llm import load_config, load_provider_config, call_llm
@@ -20,11 +25,56 @@ from novel_material.infra.progress import get_pipeline_logger
 logger = get_pipeline_logger()
 
 
+def _extract_outline_stats(chapters_data: list) -> dict:
+    """统计大纲相关数据：张力分布、悬念章节、章节功能。
+
+    返回：
+        dict: {
+            "tension_distribution": {张力等级: 章数},
+            "high_tension_chapters": [高张力章节号列表],
+            "suspense_chapters": [悬念章节号列表],
+            "function_distribution": {功能: 章数}
+        }
+    """
+    tension_counts = Counter()
+    high_tension_chapters = []  # 张力 >= 4
+    suspense_chapters = []  # 有"悬念"功能的章节
+    function_counts = Counter()
+
+    for ch in chapters_data:
+        ch_num = ch.get("chapter", 0)
+        tension = ch.get("tension_level", 0)
+        functions = ch.get("chapter_functions", [])
+
+        tension_counts[tension] += 1
+
+        if tension >= 4:
+            high_tension_chapters.append(ch_num)
+
+        if any("悬念" in f for f in functions):
+            suspense_chapters.append(ch_num)
+
+        function_counts.update(functions)
+
+    return {
+        "tension_distribution": dict(sorted(tension_counts.items())),
+        "high_tension_chapters": sorted(high_tension_chapters),
+        "suspense_chapters": sorted(suspense_chapters),
+        "function_distribution": dict(function_counts.most_common(20))
+    }
+
+
 # ============================================================
 # 第一阶段：生成幕 + 序列（不含 beats）
 # ============================================================
 
-def _generate_acts_sequences(chapter_count: int, meta: dict, context_text: str, config: dict) -> list:
+def _generate_acts_sequences(
+    chapter_count: int,
+    meta: dict,
+    context_text: str,
+    outline_stats: dict,
+    config: dict
+) -> list:
     """生成完整的幕/序列划分（章节范围，不含 beats）。
 
     仅生成幕和序列的章节范围与描述，beats 在第二阶段逐序列生成，
@@ -56,7 +106,30 @@ def _generate_acts_sequences(chapter_count: int, meta: dict, context_text: str, 
 1. 总幕数根据结构类型决定（三幕式=3幕，英雄之旅=4幕）
 2. 每幕包含 2-5 个序列
 3. 所有章节必须被覆盖，不要遗漏
-4. 不需要包含 beats（节拍将在后续步骤单独生成）"""
+4. 不需要包含 beats（节拍将在后续步骤单独生成）
+5. 序列划分应考虑高潮章节分布，将高张力章节作为序列转折点"""
+
+    # 构建统计信息文本
+    tension_dist = outline_stats.get("tension_distribution", {})
+    high_tension = outline_stats.get("high_tension_chapters", [])
+    suspense = outline_stats.get("suspense_chapters", [])
+
+    tension_lines = [f"  张力{k}: {v} 章" for k, v in tension_dist.items()]
+    tension_text = "\n".join(tension_lines)
+
+    # 高张力章节分组（避免列表太长）
+    if len(high_tension) > 50:
+        # 分组展示
+        groups = []
+        step = 20
+        for i in range(0, len(high_tension), step):
+            group = high_tension[i:i+step]
+            groups.append(f"  {group[0]}-{group[-1]}: {group}")
+        high_tension_text = "\n".join(groups[:5])  # 只展示前5组
+    else:
+        high_tension_text = ", ".join(map(str, high_tension[:50]))
+
+    suspense_text = ", ".join(map(str, suspense[:50])) if suspense else "无"
 
     user_prompt = f"""小说信息：
 - 类型：{meta.get('theme', ['未知'])}
@@ -64,10 +137,20 @@ def _generate_acts_sequences(chapter_count: int, meta: dict, context_text: str, 
 - 总章节数：{chapter_count}
 - 结构类型：{meta.get('structure_type', '三幕式')}
 
+【张力分布】：
+{tension_text}
+
+【高张力章节】（张力≥4，高潮节点）：
+{high_tension_text}
+
+【悬念章节】（钩子节点）：
+{suspense_text}
+
 全书摘要参考：
 {context_text}
 
-请生成完整的幕/序列划分（仅需章节范围和描述，不需要 beats）。"""
+请生成完整的幕/序列划分（仅需章节范围和描述，不需要 beats）。
+序列划分应让高潮章节（高张力章节）成为序列的转折点或结尾。"""
 
     result = call_llm(system_prompt, user_prompt, config, max_tokens_override=4000, timeout_override=config["llm"]["outline_timeout"], context="幕序列划分")
     return result.get("acts", [])
@@ -98,6 +181,15 @@ def _generate_beats_for_sequence(
         if isinstance(ch.get("chapter"), int) and seq_start <= ch["chapter"] <= seq_end
     ]
 
+    # 统计序列内张力分布
+    seq_tension = {}
+    seq_high_tension = []
+    for ch in seq_chapters:
+        tension = ch.get("tension_level", 0)
+        seq_tension[tension] = seq_tension.get(tension, 0) + 1
+        if tension >= 4:
+            seq_high_tension.append(ch.get("chapter", 0))
+
     seq_context = build_summary_pool(seq_chapters, config["llm"]["outline_seq_summary_tokens"], model) if seq_chapters else ""
 
     system_prompt = """你是专业的小说结构分析师。请为指定序列生成节拍（beats）列表。
@@ -116,9 +208,14 @@ def _generate_beats_for_sequence(
 
 注意：
 1. 每个序列生成 3-10 个节拍（根据序列长度决定）
-2. 节拍 tension 从 1-5
+2. 节拍 tension 从 1-5，应与该章节的实际张力一致
 3. chapter 填写该节拍对应的最关键章节号
-4. 节拍应覆盖序列的开头、中间和结尾"""
+4. 节拍应覆盖序列的开头、中间和结尾
+5. 高张力章节（张力≥4）应是序列内的关键转折点"""
+
+    # 构建序列内统计文本
+    seq_tension_text = ", ".join([f"张力{k}:{v}章" for k, v in sorted(seq_tension.items())])
+    seq_high_text = ", ".join(map(str, seq_high_tension[:20])) if seq_high_tension else "无"
 
     chapter_range = f"第 {seq_start}-{seq_end} 章（共 {seq_end - seq_start + 1} 章）"
     user_prompt = f"""序列信息：
@@ -127,10 +224,17 @@ def _generate_beats_for_sequence(
 - 章节范围：{chapter_range}
 - 序列描述：{seq.get('description', '')}
 
+【序列内张力分布】：
+{seq_tension_text}
+
+【序列内高张力章节】（张力≥4）：
+{seq_high_text}
+
 本序列章节摘要：
 {seq_context if seq_context else '（摘要暂缺，请根据序列描述推断）'}
 
-请为此序列生成节拍列表。"""
+请为此序列生成节拍列表。
+节拍的 tension 值应与章节实际张力一致，高张力章节应是关键节拍。"""
 
     result = call_llm(system_prompt, user_prompt, config, max_tokens_override=2000, timeout_override=config["llm"]["outline_timeout"], context=f"beats#{seq.get('sequence_number', '?')}")
     return result.get("beats", [])
@@ -193,6 +297,12 @@ def generate_outline(material_id, progress_callback: Callable[[int, int, str], N
 
     # 加载章节数据（优先从 chapters/ 目录，兜底 chapters.yaml）
     chapters_data = load_chapters_data(novel_dir)
+
+    # 统计大纲相关数据
+    outline_stats = _extract_outline_stats(chapters_data) if chapters_data else {}
+    high_tension_count = len(outline_stats.get("high_tension_chapters", []))
+    suspense_count = len(outline_stats.get("suspense_chapters", []))
+    logger.info(f"大纲统计: {high_tension_count} 个高张力章节, {suspense_count} 个悬念章节")
 
     if chapters_data:
         context_text = build_summary_pool(chapters_data, config["llm"]["outline_summary_tokens"], model)
@@ -257,7 +367,7 @@ def generate_outline(material_id, progress_callback: Callable[[int, int, str], N
     logger.info(f"生成幕/序列结构（共 {chapter_count} 章）...")
     acts = []
     try:
-        acts = _generate_acts_sequences(chapter_count, meta, context_text, config)
+        acts = _generate_acts_sequences(chapter_count, meta, context_text, outline_stats, config)
         time.sleep(rate_limit)
         # 检查返回是否有效（空列表或无序列视为失败）
         if not acts or not any(act.get("sequences") for act in acts):

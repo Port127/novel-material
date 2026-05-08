@@ -1,8 +1,9 @@
 """人物提取：分层提取人物体系（核心人物 + 次要人物）。
 
 分层策略：
-1. 第一轮：提取主角/反派/重要配角（完整档案：心理分析、弧线、关键事件）
-2. 第二轮：补充次要人物（精简档案：基础信息 + 关系）
+1. 统计章节出场人物频率，生成候选名单
+2. 第一轮：提取主角/反派/重要配角（完整档案：心理分析、弧线、关键事件）
+3. 第二轮：补充次要人物（精简档案：基础信息 + 关系）
 
 注意：此脚本在 analyze 完成后运行，需要 chapters.yaml 作为全书视角输入。
 """
@@ -10,6 +11,7 @@ import sys
 import yaml
 import time
 from pathlib import Path
+from collections import Counter
 
 from novel_material.infra.config import NOVELS_DIR
 from novel_material.infra.llm import load_config, load_provider_config, call_llm
@@ -17,6 +19,19 @@ from novel_material.pipeline.loader import load_chapters_data, build_summary_poo
 from novel_material.infra.progress import get_pipeline_logger
 
 logger = get_pipeline_logger()
+
+
+def _extract_appearance_stats(chapters_data: list) -> dict:
+    """统计章节出场人物频率。
+
+    返回：
+        dict: {人物名: 出场章数}
+    """
+    all_chars = []
+    for ch in chapters_data:
+        chars = ch.get("characters_appear", [])
+        all_chars.extend(chars)
+    return dict(Counter(all_chars))
 
 
 def _build_context(novel_dir: Path, config: dict) -> tuple[str, str]:
@@ -35,7 +50,13 @@ def _build_context(novel_dir: Path, config: dict) -> tuple[str, str]:
         return f.read()[:8000], "原文摘录（前 8000 字）"
 
 
-def _extract_core_characters(context_text: str, context_label: str, meta: dict, config: dict) -> list:
+def _extract_core_characters(
+    context_text: str,
+    context_label: str,
+    meta: dict,
+    appearance_stats: dict,
+    config: dict
+) -> list:
     """第一轮：提取核心人物（主角/反派/重要配角），完整档案。"""
     system_prompt = """你是专业的小说人物分析师。请提取有完整角色弧线的核心人物，返回 JSON 格式：
 {
@@ -71,14 +92,25 @@ def _extract_core_characters(context_text: str, context_label: str, meta: dict, 
 3. key_events 只记录关键节点（≤10个）
 4. 关系描述用中文"""
 
+    # 构建出场统计文本（高频人物优先）
+    sorted_chars = sorted(appearance_stats.items(), key=lambda x: -x[1])
+    stats_lines = []
+    for name, count in sorted_chars[:100]:  # 只展示前 100 个高频人物
+        stats_lines.append(f"  {name}: {count} 章")
+    stats_text = "\n".join(stats_lines)
+
     user_prompt = f"""请分析以下小说的核心人物：
 
 类型：{meta.get('theme', ['未知'])}
 
+【出场人物统计】（按出场频率排序，前100名）：
+{stats_text}
+
 {context_label}：
 {context_text}
 
-请返回 JSON 格式如上，只提取有完整弧线的重要角色。"""
+请返回 JSON 格式如上，只提取有完整弧线的重要角色。
+优先关注出场频率高的人物，但也要考虑其剧情重要性而非仅看数量。"""
 
     logger.info("第一轮：提取核心人物...")
     result = call_llm(system_prompt, user_prompt, config, max_tokens_override=8000, timeout_override=config["llm"]["characters_timeout"], context="人物#核心")
@@ -90,6 +122,7 @@ def _extract_minor_characters(
     context_label: str,
     meta: dict,
     core_names: list,
+    appearance_stats: dict,
     config: dict
 ) -> list:
     """第二轮：补充次要人物（精简档案）。"""
@@ -115,6 +148,17 @@ def _extract_minor_characters(
 3. 档案精简，不需要 psychology/arc_summary/archetype 等深层分析
 4. 关系描述用中文"""
 
+    # 构建出场统计文本（排除已提取的核心人物）
+    remaining_chars = {
+        name: count for name, count in appearance_stats.items()
+        if name not in core_names
+    }
+    sorted_remaining = sorted(remaining_chars.items(), key=lambda x: -x[1])
+    stats_lines = []
+    for name, count in sorted_remaining[:100]:
+        stats_lines.append(f"  {name}: {count} 章")
+    stats_text = "\n".join(stats_lines)
+
     user_prompt = f"""请补充以下小说的次要人物：
 
 类型：{meta.get('theme', ['未知'])}
@@ -122,10 +166,14 @@ def _extract_minor_characters(
 已有核心人物名单（不要重复提取）：
 {', '.join(core_names)}
 
+【剩余出场人物统计】（按出场频率排序，前100名）：
+{stats_text}
+
 {context_label}：
 {context_text}
 
-请返回 JSON 格式如上，补充其他有剧情作用的次要角色。"""
+请返回 JSON 格式如上，补充其他有剧情作用的次要角色。
+优先关注出场频率较高（≥5章）的人物，但也要判断其是否有实际剧情作用。"""
 
     logger.info("第二轮：补充次要人物...")
     result = call_llm(system_prompt, user_prompt, config, max_tokens_override=8000, timeout_override=config["llm"]["characters_timeout"], context="人物#次要")
@@ -172,6 +220,11 @@ def generate_characters(material_id, provider: str | None = None) -> bool:
     # 输出小说基本信息
     logger.info(f"小说: {title} | {chapter_count} 章 | {word_count} 字 | 状态: {status}")
 
+    # 加载章节数据并统计出场人物
+    chapters_data = load_chapters_data(novel_dir)
+    appearance_stats = _extract_appearance_stats(chapters_data) if chapters_data else {}
+    logger.info(f"出场人物统计: {len(appearance_stats)} 个不同人物")
+
     # 构建分析上下文
     context_text, context_label = _build_context(novel_dir, config)
     logger.info(f"使用 {context_label} 作为分析基础")
@@ -181,7 +234,7 @@ def generate_characters(material_id, provider: str | None = None) -> bool:
     # ── 第一轮：核心人物（容错）──
     core_characters = []
     try:
-        core_characters = _extract_core_characters(context_text, context_label, meta, config)
+        core_characters = _extract_core_characters(context_text, context_label, meta, appearance_stats, config)
         time.sleep(rate_limit)
         logger.info(f"  提取核心人物: {len(core_characters)} 人")
     except Exception as e:
@@ -194,7 +247,7 @@ def generate_characters(material_id, provider: str | None = None) -> bool:
     # ── 第二轮：次要人物（容错）──
     minor_characters = []
     try:
-        minor_characters = _extract_minor_characters(context_text, context_label, meta, core_names, config)
+        minor_characters = _extract_minor_characters(context_text, context_label, meta, core_names, appearance_stats, config)
         time.sleep(rate_limit)
         logger.info(f"  补充次要人物: {len(minor_characters)} 人")
     except Exception as e:

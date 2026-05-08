@@ -14,7 +14,11 @@ from novel_material.tags.validate import validate_tag, validate_tags_batch
 # 常量
 _MATERIAL_ID_PATTERN = re.compile(r"^nm_[a-z]+_\d{8}_[a-z0-9]{4}$")
 _VALID_STATUSES = set(VALID_STATUSES)
-_VALID_PACING = {"快", "慢", "喘息", "加速", "中", "平稳"}
+_VALID_PACING = {
+    "快", "慢", "喘息", "加速", "中", "平稳",
+    # LLM 输出变体（兼容）
+    "极快", "平缓", "中慢", "缓", "适中", "中快", "慢转快",
+}
 
 
 # Pydantic 模型
@@ -66,7 +70,7 @@ class ChapterEntryModel(BaseModel):
     """chapters.yaml 单章条目的字段约束。"""
     chapter: int = Field(..., ge=1)
     title: str
-    summary: str = Field(..., min_length=20, max_length=500)
+    summary: str = Field(..., min_length=15, max_length=500)  # 放宽最小长度，兼容标题页占位章节
     tension_level: int = Field(..., ge=1, le=5)
     characters_appear: list = Field(default_factory=list)
     chapter_functions: Optional[list] = None
@@ -93,7 +97,7 @@ class NovelTagsModel(BaseModel):
     """tags.yaml（小说级标签）的最小字段约束。"""
     material_id: str
     channel: Optional[str] = None
-    genre_primary: Optional[str] = None
+    genre_primary: Optional[list[str]] = None  # 支持多主题材
     genre_secondary: Optional[Any] = None
     elements: Optional[Any] = None
     style: Optional[Any] = None
