@@ -13,16 +13,15 @@
 特性：
 - 断点续传：已分析的章节自动跳过，从中断处继续
 - 批量处理：可一次分析多章，减少 API 调用次数
-- Token 截断：每章内容限制在 LLM_MAX_CHAPTER_TOKENS 内（默认 5000）
+- Token 截断：每章内容限制在 LLM_MAX_CHAPTER_TOKENS 内（settings.yaml 默认 5000）
 """
 import sys
-import os
 import yaml
 import time
 from pathlib import Path
 from collections.abc import Callable
 
-from novel_material.infra.config import NOVELS_DIR, update_meta_status
+from novel_material.infra.config import NOVELS_DIR, update_meta_status, get_settings
 from novel_material.infra.llm import load_config, load_provider_config, call_llm, truncate_to_tokens, get_last_call_finish_reason
 from novel_material.validation.quality import run_quality_check
 from novel_material.infra.progress import get_pipeline_logger
@@ -33,7 +32,7 @@ logger = get_pipeline_logger()
 def _get_max_chapter_tokens() -> int:
     """读取单章输入截断上限配置。"""
     try:
-        return int(os.getenv("LLM_MAX_CHAPTER_TOKENS", "5000"))
+        return int(get_settings().get("LLM_MAX_CHAPTER_TOKENS", 5000))
     except (TypeError, ValueError):
         return 5000
 

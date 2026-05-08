@@ -13,6 +13,7 @@ import yaml
 load_dotenv()
 
 from .progress import get_pipeline_logger
+from .config import get_settings
 logger = get_pipeline_logger()
 
 # 多服务商配置文件路径
@@ -64,36 +65,37 @@ def get_last_call_finish_reason() -> str:
 
 
 def load_config():
-    """从 .env 文件加载 LLM 配置。"""
+    """从 settings.yaml + 环境变量加载 LLM 配置。"""
+    s = get_settings()
     return {
         "llm": {
-            "provider": os.getenv("LLM_PROVIDER", "openai"),
-            "model": os.getenv("LLM_MODEL", "qwen3.6-plus"),
-            "api_key": os.getenv("LLM_API_KEY", ""),
-            "base_url": os.getenv("LLM_BASE_URL"),
-            "max_tokens": int(os.getenv("LLM_MAX_TOKENS", "8000")),
-            "temperature": float(os.getenv("LLM_TEMPERATURE", "0.3")),
-            "rate_limit_seconds": int(os.getenv("LLM_RATE_LIMIT_SECONDS", "60")),
+            "provider": s.get("LLM_PROVIDER", "openai"),
+            "model": s.get("LLM_MODEL", "qwen3.6-plus"),
+            "api_key": s.get("LLM_API_KEY", ""),
+            "base_url": s.get("LLM_BASE_URL"),
+            "max_tokens": int(s.get("LLM_MAX_TOKENS", 8000)),
+            "temperature": float(s.get("LLM_TEMPERATURE", 0.3)),
+            "rate_limit_seconds": int(s.get("LLM_RATE_LIMIT_SECONDS", 60)),
             # 章级分析：原文输入，耗时长
-            "analyze_timeout": int(os.getenv("LLM_ANALYZE_TIMEOUT", "180")),
+            "analyze_timeout": int(s.get("LLM_ANALYZE_TIMEOUT", 180)),
             # 大纲生成：6000 tokens 摘要池
-            "outline_timeout": int(os.getenv("LLM_OUTLINE_TIMEOUT", "300")),
+            "outline_timeout": int(s.get("LLM_OUTLINE_TIMEOUT", 300)),
             # 世界观提取：5000 tokens 摘要池
-            "worldbuilding_timeout": int(os.getenv("LLM_WORLDBUILDING_TIMEOUT", "300")),
+            "worldbuilding_timeout": int(s.get("LLM_WORLDBUILDING_TIMEOUT", 300)),
             # 人物提取：5000 tokens 摘要池，两轮调用
-            "characters_timeout": int(os.getenv("LLM_CHARACTERS_TIMEOUT", "300")),
+            "characters_timeout": int(s.get("LLM_CHARACTERS_TIMEOUT", 300)),
             # 其他小任务（默认兜底）
-            "other_timeout": int(os.getenv("LLM_OTHER_TIMEOUT", "120")),
+            "other_timeout": int(s.get("LLM_OTHER_TIMEOUT", 120)),
             # 摘要池 Token 上限（各阶段输入量）
-            "outline_summary_tokens": int(os.getenv("LLM_OUTLINE_SUMMARY_TOKENS", "20000")),
-            "outline_seq_summary_tokens": int(os.getenv("LLM_OUTLINE_SEQ_SUMMARY_TOKENS", "5000")),
-            "worldbuilding_summary_tokens": int(os.getenv("LLM_WORLDBUILDING_SUMMARY_TOKENS", "15000")),
-            "characters_summary_tokens": int(os.getenv("LLM_CHARACTERS_SUMMARY_TOKENS", "15000")),
-            "chapter_batch_size": int(os.getenv("LLM_CHAPTER_BATCH_SIZE", "5")),
+            "outline_summary_tokens": int(s.get("LLM_OUTLINE_SUMMARY_TOKENS", 20000)),
+            "outline_seq_summary_tokens": int(s.get("LLM_OUTLINE_SEQ_SUMMARY_TOKENS", 5000)),
+            "worldbuilding_summary_tokens": int(s.get("LLM_WORLDBUILDING_SUMMARY_TOKENS", 15000)),
+            "characters_summary_tokens": int(s.get("LLM_CHARACTERS_SUMMARY_TOKENS", 15000)),
+            "chapter_batch_size": int(s.get("LLM_CHAPTER_BATCH_SIZE", 5)),
             # 定价配置（用于成本估算，默认 qwen 价格）
             "pricing": {
-                "input_per_1k": float(os.getenv("LLM_PRICE_INPUT_1K", "0.0004")),
-                "output_per_1k": float(os.getenv("LLM_PRICE_OUTPUT_1K", "0.0012")),
+                "input_per_1k": float(s.get("LLM_PRICE_INPUT_1K", 0.0004)),
+                "output_per_1k": float(s.get("LLM_PRICE_OUTPUT_1K", 0.0012)),
             },
         }
     }
@@ -126,7 +128,7 @@ def load_provider_config(provider_name: str | None = None) -> dict:
     配置优先级：
     1. 指定的 provider_name
     2. providers.yaml 中的 default_provider
-    3. .env 文件配置（向后兼容）
+    3. settings.yaml 配置（向后兼容）
 
     参数：
         provider_name：服务商名称（可选，对应 providers.yaml 中的 name 字段）
@@ -139,7 +141,7 @@ def load_provider_config(provider_name: str | None = None) -> dict:
     """
     providers_yaml = _load_providers_yaml()
 
-    # 若 providers.yaml 不存在，使用 .env 配置
+    # 若 providers.yaml 不存在，使用 settings.yaml 配置
     if not providers_yaml:
         return load_config()
 
@@ -148,7 +150,7 @@ def load_provider_config(provider_name: str | None = None) -> dict:
     # 确定要使用的服务商
     target_name = provider_name or providers_yaml.get("default_provider")
 
-    # 若未指定且无 default_provider，使用 .env 配置
+    # 若未指定且无 default_provider，使用 settings.yaml 配置
     if not target_name:
         return load_config()
 
@@ -172,13 +174,13 @@ def load_provider_config(provider_name: str | None = None) -> dict:
     if not api_key:
         logger.warning(f"服务商 '{target_name}' 的 API Key 未配置（环境变量 {api_key_env}）")
 
-    # 从 .env 获取基础配置（公共参数）
+    # 从 settings.yaml 获取基础配置（公共参数）
     base_config = load_config()
 
     # 只覆盖服务商差异化参数
     return {
         "llm": {
-            **base_config["llm"],  # 复制 .env 的所有配置
+            **base_config["llm"],  # 复制 settings.yaml 的所有配置
             "provider": target_name,
             "model": provider_config.get("model", base_config["llm"]["model"]),
             "api_key": api_key,
