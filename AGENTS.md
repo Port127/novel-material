@@ -29,6 +29,8 @@ Agent 应使用 `nm` 命令，而非直接调用 Python 模块。
 | "分析 nm_xxx" | `nm pipeline analyze nm_xxx` | 直接调用 `pipeline/outline.py` |
 | "搜索修仙宗门" | `nm search world --type faction --genre 修仙` | 直接调用 `search/world.py` |
 | "查看标签统计" | `nm tags stats` | 查询数据库 |
+| "从断点继续" | `nm pipeline continue nm_xxx` | 手动检查进度 |
+| "同步数据库" | `nm storage sync nm_xxx` | 直接调用 `storage/sync.py` |
 
 ### 3. Skills 是上层入口
 
@@ -56,6 +58,74 @@ ingested → clean → analyzed → finalized
 Agent 不应：
 - 对 `analyzed` 状态执行 `analyze`（会覆盖）
 - 对 `clean` 状态执行 `refine`（无章级数据）
+
+## CLI 命令总览
+
+### Pipeline 命令
+
+```bash
+nm pipeline ingest <file>           # 入库：预处理 + 章节切分
+nm pipeline analyze <id>            # 章级分析（支持 --start/--end 范围）
+nm pipeline outline <id>            # 大纲生成
+nm pipeline worldbuilding <id>      # 世界观提取
+nm pipeline characters <id>         # 人物提取
+nm pipeline tags <id>               # 标签生成
+nm pipeline refine <id>             # 精调统计
+nm pipeline full <file>             # 完整流水线（入库→分析→骨架→精调）
+nm pipeline status <id>             # 查看进度
+nm pipeline continue <id>           # 自动从断点继续
+```
+
+### Search 命令
+
+```bash
+nm search chapter <keyword>         # 章节检索（向量语义）
+nm search outline [--query] [--genre]  # 大纲检索
+nm search character [--name] [--archetype]  # 人物检索
+nm search world <keyword> [--dimension]  # 世界观检索
+nm search event <query> [--setting] [--emotion]  # 事件检索
+```
+
+### Tags 命令
+
+```bash
+nm tags stats                       # 标签统计
+nm tags list [--dimension] [--domain]  # 标签列表
+nm tags add <dimension> <tag> <domain>  # 添加标签
+nm tags remove <dimension> <tag>    # 删除标签
+nm tags review [--auto]             # 审核待定标签
+nm tags move <dim> <tag> <new_domain>  # 移动标签领域
+nm tags set-synonym <dim> <tag> <standard>  # 设置同义词
+nm tags export                      # 导出 YAML 视图
+nm tags info <dimension> <tag>      # 标签详情
+```
+
+### Material 命令
+
+```bash
+nm material list                    # 素材列表
+nm material import <dir>            # 导入已分析素材
+nm material delete <id>             # 删除素材（危险）
+```
+
+### Storage 命令
+
+```bash
+nm storage init-db                  # 初始化表结构
+nm storage init-data                # 初始化基础数据
+nm storage init-tags                # 导入标签字典
+nm storage sync <id>                # 同步 YAML → PostgreSQL
+nm storage sync-all                 # 同步所有素材
+nm storage reset                    # 重置数据库（危险）
+```
+
+### Validate 命令
+
+```bash
+nm validate schema <id>             # Schema 结构校验
+nm validate quality <id>            # 内容质量校验
+nm validate all <id>                # 全量校验
+```
 
 ## 常用操作
 
@@ -86,6 +156,27 @@ Agent:
    nm pipeline tags nm_xxx
 ```
 
+### 部分章节分析
+
+```
+用户: "只分析 nm_xxx 第 100-200 章"
+
+Agent:
+nm pipeline analyze nm_xxx --start 100 --end 200
+
+注意：警告用户后续阶段基于不完整数据生成
+```
+
+### 从断点继续
+
+```
+用户: "继续 nm_xxx 的分析"
+
+Agent:
+1. nm pipeline status nm_xxx（查看进度）
+2. nm pipeline continue nm_xxx（自动执行未完成阶段）
+```
+
 ### 检索素材
 
 ```
@@ -112,6 +203,7 @@ nm storage sync nm_xxx
 | 对同一素材重复执行 `full` | 会覆盖已有分析结果 |
 | 在无 `LLM_API_KEY` 时执行分析 | 会立即失败 |
 | 手动编辑 `chapters/*.yaml` | 可能破坏断点续传机制 |
+| 跳过 `nm validate schema` 直接同步 | 可能写入非法数据 |
 
 ## 错误处理
 
@@ -121,10 +213,10 @@ nm storage sync nm_xxx
 
 1. 查看日志：`data/novels/{material_id}/pipeline.log`
 2. 检查错误类型：
-   - API Key 无效 → 修复 `.env`
+   - API Key 无效 → 修复 `.env` 或 `config/providers.yaml`
    - 网络错误 → 重试（有断点续传）
    - `context_length_exceeded` → 检查截断逻辑
-3. 修复后重新执行对应流水线
+3. 修复后执行 `nm pipeline continue`
 
 ### 标签校验失败
 
@@ -133,6 +225,11 @@ nm storage sync nm_xxx
 1. 添加新标签：`nm tags add element 新标签 xuanhuan --group 设定元素`
 2. 或等待频率自动批（出现 ≥3 次自动入库）
 
+### 数据库同步失败
+
+1. 先执行 `nm validate schema <id>`
+2. 修复错误后重新 `nm storage sync`
+
 ## 容错机制
 
 分析脚本已内置容错，Agent 无需额外处理：
@@ -140,6 +237,7 @@ nm storage sync nm_xxx
 - `context_length_exceeded` 会快速失败（不触发无效重试）
 - 每个分析步骤失败时使用默认值继续
 - 流程不会因单步失败而中断
+- 网络错误自动指数退避重试（最多 8 次）
 
 Agent 只需检查 `meta.yaml` 中的状态字段。
 
@@ -159,10 +257,31 @@ Agent 只需检查 `meta.yaml` 中的状态字段。
 
 | 配置项 | 值 | 说明 |
 |--------|-----|------|
-| `_MAX_CHAPTER_TOKENS` (.env) | 5000 | 单章输入截断上限（远低于 1M，保留核心内容） |
-| `LLM_MAX_TOKENS` (.env) | 8000 | 单章输出兜底上限（远低于 65K） |
-| 批量 max_tokens_override | `n * 1500` | 10 章批量 = 15000 tokens（远低于 65K） |
-| `thinking_budget` | 4000 | 批量分析启用思考模式（上限 81920） |
+| `_MAX_CHAPTER_TOKENS` (.env) | 5000 | 单章输入截断上限 |
+| `LLM_MAX_TOKENS` (.env) | 8000 | 单章输出兜底上限 |
+| 批量 max_tokens_override | `n * 1500` | 10 章批量 = 15000 tokens |
+| `thinking_budget` | 4000 | 批量分析启用思考模式 |
+
+### 多服务商配置
+
+支持通过 `config/providers.yaml` 配置多服务商：
+
+```yaml
+default_provider: deepseek
+providers:
+  - name: deepseek
+    model: deepseek-chat
+    base_url: https://api.deepseek.com/v1
+    api_key_env: DEEPSEEK_API_KEY
+    thinking_format: openai
+  - name: qwen
+    model: qwen3.6-plus
+    base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+    api_key_env: DASHSCOPE_API_KEY
+    thinking_format: dashscope
+```
+
+使用方式：`nm pipeline analyze nm_xxx --provider deepseek`
 
 ### 注意事项
 
