@@ -44,6 +44,34 @@ LLM_WORLDBUILDING_SUMMARY_TOKENS: 20000   # 世界观提取
 LLM_CHARACTERS_SUMMARY_TOKENS: 15000      # 人物提取（每轮）
 
 # ──────────────────────────────────────────────
+# LLM 多样性控制（解决后期敷衍问题）
+# ──────────────────────────────────────────────
+
+# 动态系统提示词开关（根据进度注入多样性提醒）
+LLM_DYNAMIC_PROMPT_ENABLED: true
+
+# 多样性唤醒间隔（每隔多少批次插入独立性提醒）
+LLM_DIVERSITY_REMINDER_INTERVAL: 10
+
+# 后期章节阈值（进度超过此比例时启用特殊策略）
+LLM_LATE_CHAPTER_THRESHOLD: 0.6
+
+# 后期温度增加值（基础温度 + 此值）
+LLM_LATE_TEMPERATURE_BOOST: 0.15
+
+# 温度上限（不超过此值）
+LLM_TEMPERATURE_MAX: 0.6
+
+# 动态温度开关（后期章节自动提高温度）
+LLM_DYNAMIC_TEMPERATURE_ENABLED: true
+
+# 相似度警告阈值（摘要相似度超过此值发出警告）
+LLM_SIMILARITY_WARNING_THRESHOLD: 0.7
+
+# 相似度采样窗口（最近多少章用于相似度比较）
+LLM_SIMILARITY_WINDOW: 10
+
+# ──────────────────────────────────────────────
 # LLM 定价（用于成本估算）
 # ──────────────────────────────────────────────
 

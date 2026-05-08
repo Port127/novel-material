@@ -86,8 +86,9 @@
 - ~~回退到单张的时候，没有打印任何信息~~
 - ~~我有预感，任务分割线会不那么好看~~
 - ~~张力是不是从1-10会好些？~~ -> 不做
-  
-- 能不能在运行的时候给个预估时间？
+
+
+- ~~为什么大模型处理到小说后期会越来越敷衍？~~ -> 加了动态调节，但只做了analyze，其他的也可以加
 - docs里面有一个RETREIVAL_IMPROVEMENT.md文件，我们来讨论一下
 
 
@@ -97,10 +98,10 @@
 - ~~更新文档：AGENTS.md、ARCHITECTURE.md、README.md、USER_MANUAL.md。更新：Makefile。更新：skills~~
 - ~~检查一下data/schemas，是否还合适？需不需要调整？~~
 - ~~chapter_index、chapters会非常大，怎么处理？~~
+- ~~能不能在运行的时候给个预估时间？~~
 
 - 是不是可以测试一下并发能里，我想知道我的这个服务商能同时处理多少本小说，速度又如何？
 - 流程有点死板，不同类型的小说，应该会有所不同，应该怎么做呢？
-- 钩子是残缺的
 - 如果缺章怎么处理？我觉得这里有坑。
 - 不同的小说题材，怎么办？使用同一套提示词来分析吗？感觉不太好。
 - 日志会打印两行，我希望可以合并掉，但是现在还没有很好的想法：
@@ -108,6 +109,7 @@
 21:26:54 [INFO] pipeline: 批次[91-100] 统计: 返回 10/10 章 | 摘要平均 64 字 | 张力范围 1-4 | finish=stop
 
 ### 章节分析
+- 钩子是残缺的
 - 章节分析的时候张力是怎么判断的？我想外挂，就像tags那样，但现在LLM似乎不能实现，唉
 - 章节分析是不是有点单薄，参考一下这个怎么样：https://github.com/Port127/novel-material/blob/v1/docs/schemas/event-unit.schema.yaml
 - 可以补充：
@@ -126,3 +128,13 @@
 - ~~embed_chapters.py中提到了“相比原来的 chapter_embeddings.yaml”，我不明白，现在还有这个东西吗？~~
 
 - 帮我仔细分析一下characters、outline的代码实现，我要学习一下
+
+
+# 常用文案
+- nm pipeline full "material/从水猴子开始成神.txt"
+- nm pipeline full "material/知轩藏书/仙草排行榜-前2000/0007_大王饶命.txt"
+- nm material delete --id=nm_novel_20260508_2j74
+- 仔细检查这个文件，从单个文件，从全局两个角度出发，仔细思考有没有什么缺陷、隐患、错误、优化点：
+  进行到：loader.py，接下来要进行：outline.py
+- 全面检查改动，仔细查看所有改动的上下游（调用者、被调用者），放在整个项目中考虑，是否存在缺陷、隐患、错误、优化点（只找不改）
+- 更新文档：AGENTS.md、ARCHITECTURE.md、README.md、USER_MANUAL.md，从全局出发深入到每一个模块内部，分别使用不同的视角更新这些文档

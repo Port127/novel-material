@@ -55,6 +55,121 @@ _SYSTEM_PROMPT = """你是专业的小说分析助手，负责对每章内容生
 3. 准确识别出场人物（仅写名字，不写描述）
 4. tension_level 1-5，根据紧张程度评估"""
 
+
+def _build_dynamic_system_prompt(
+    progress_ratio: float,
+    batch_index: int,
+    total_batches: int,
+    config: dict,
+) -> str:
+    """构建动态系统提示词，根据进度位置注入多样性提醒。
+
+    参数：
+        progress_ratio: 当前进度比例 (0.0-1.0)
+        batch_index: 当前批次索引 (0-based)
+        total_batches: 总批次数
+        config: LLM 配置
+
+    返回：
+        动态生成的系统提示词
+    """
+    dynamic_enabled = config["llm"].get("dynamic_prompt_enabled", True)
+    if not dynamic_enabled:
+        return _SYSTEM_PROMPT
+
+    base_prompt = _SYSTEM_PROMPT
+
+    # 进度阶段描述
+    progress_desc = ""
+    if progress_ratio < 0.2:
+        progress_desc = "\n【当前分析：开篇部分】请关注故事建立、人物登场、世界观铺垫。"
+    elif progress_ratio < 0.5:
+        progress_desc = "\n【当前分析：发展部分】请关注情节推进、冲突演变、人物成长。"
+    elif progress_ratio < 0.8:
+        progress_desc = "\n【当前分析：高潮部分】请关注张力峰值、关键转折、情感爆发。"
+    else:
+        progress_desc = "\n【当前分析：收尾部分】请关注结局走向、伏笔回收、人物命运。"
+
+    # 多样性唤醒：每隔 N 批次插入提醒
+    diversity_reminder = ""
+    interval = config["llm"].get("diversity_reminder_interval", 10)
+    if batch_index > 0 and batch_index % interval == 0:
+        diversity_reminder = f"""
+【独立性提醒 - 第{batch_index + 1}批次】
+- 本批次章节与之前已分析的章节是独立的故事片段，请重新聚焦
+- 摘要应突出本批次章节的独特事件，避免使用通用模板描述
+- 每章的 tension_level 应根据该章实际内容独立评估，不要因进度位置而预设
+- 出场人物识别需重新审视，不要仅依赖已建立的人物列表"""
+
+    # 后期章节特别提醒（防止"敷衍"趋势）
+    late_warning = ""
+    threshold = config["llm"].get("late_chapter_threshold", 0.6)
+    if progress_ratio > threshold:
+        late_warning = """
+【后期分析特别要求】
+- 后期章节同样需要详细分析，不要因接近结尾而简化输出
+- 每章摘要必须包含具体事件，禁用"继续推进剧情"等泛泛描述
+- tension_level 应反映该章真实张力，后期章节张力可能波动而非单调下降"""
+
+    return base_prompt + progress_desc + diversity_reminder + late_warning
+
+
+def _should_use_thinking_mode(
+    progress_ratio: float,
+    config: dict
+) -> int | None:
+    """判断是否使用 thinking 模式。
+
+    策略：前期章节使用 thinking 模式提升分析质量，
+    后期章节禁用 thinking 改用动态温度增加多样性。
+
+    参数：
+        progress_ratio: 当前进度比例
+        config: LLM 配置
+
+    返回：
+        thinking_budget 值（前期），或 None（后期禁用）
+    """
+    threshold = config["llm"].get("late_chapter_threshold", 0.6)
+    dynamic_temp_enabled = config["llm"].get("dynamic_temperature_enabled", True)
+
+    # 后期章节：如果启用动态温度，禁用 thinking 以让 temperature 生效
+    if progress_ratio > threshold and dynamic_temp_enabled:
+        return None
+
+    # 前期章节：使用 thinking 模式
+    return 12000
+
+
+def _calculate_dynamic_temperature(
+    progress_ratio: float,
+    config: dict
+) -> float | None:
+    """计算动态温度（后期章节适当提高）。
+
+    参数：
+        progress_ratio: 当前进度比例
+        config: LLM 配置
+
+    返回：
+        调整后的温度值，若不需要调整则返回 None
+    """
+    dynamic_enabled = config["llm"].get("dynamic_temperature_enabled", True)
+    if not dynamic_enabled:
+        return None
+
+    threshold = config["llm"].get("late_chapter_threshold", 0.6)
+    if progress_ratio <= threshold:
+        return None
+
+    boost = config["llm"].get("late_temperature_boost", 0.15)
+    base_temp = config["llm"].get("temperature", 0.3)
+    temp_max = config["llm"].get("temperature_max", 0.6)
+
+    adjusted = base_temp + boost
+    return min(adjusted, temp_max)
+
+
 # LLM 返回格式的示例（单章）
 _CHAPTER_JSON_SCHEMA = """{
   "chapter": 1,
@@ -78,13 +193,19 @@ _BATCH_JSON_SCHEMA = """{
 关键：chapter 字段必须是输入中的实际章节号（如 171、172），绝对不能用序号（如 1、2、3）"""
 
 
-def analyze_chapter(content: str, chapter_info: dict, config: dict) -> dict:
+def analyze_chapter(
+    content: str,
+    chapter_info: dict,
+    config: dict,
+    progress_ratio: float = 0.0,
+) -> dict:
     """分析单个章节，返回结构化数据。
 
     参数：
         content：章节原文
         chapter_info：章节信息（章节号、标题）
         config：LLM 配置
+        progress_ratio：进度比例（用于动态提示词和温度策略）
 
     返回：
         dict：包含 summary、characters_appear、tension_level 等字段
@@ -92,6 +213,13 @@ def analyze_chapter(content: str, chapter_info: dict, config: dict) -> dict:
     model = config["llm"]["model"]
     # 截断过长的章节内容
     truncated = truncate_to_tokens(content, _get_max_chapter_tokens(), model=model)
+
+    # 使用动态系统提示词
+    dynamic_prompt_enabled = config["llm"].get("dynamic_prompt_enabled", True)
+    if dynamic_prompt_enabled:
+        system_prompt = _build_dynamic_system_prompt(progress_ratio, 0, 1, config)
+    else:
+        system_prompt = _SYSTEM_PROMPT
 
     user_prompt = f"""请分析以下章节：
 
@@ -104,9 +232,18 @@ def analyze_chapter(content: str, chapter_info: dict, config: dict) -> dict:
 请返回 JSON 格式：
 {_CHAPTER_JSON_SCHEMA}"""
 
+    # 动态温度和 thinking 模式
+    thinking_budget = _should_use_thinking_mode(progress_ratio, config)
+    temperature_override = _calculate_dynamic_temperature(progress_ratio, config)
+
     timeout = config["llm"].get("analyze_timeout", 300)
     context = f"单章#{chapter_info.get('chapter', 'N/A')}"
-    return call_llm(_SYSTEM_PROMPT, user_prompt, config, timeout_override=timeout, context=context)
+    return call_llm(
+        system_prompt, user_prompt, config,
+        timeout_override=timeout, context=context,
+        thinking_budget=thinking_budget,
+        temperature_override=temperature_override,
+    )
 
 
 def analyze_chapters_batch(
@@ -114,6 +251,10 @@ def analyze_chapters_batch(
     lines: list[str],
     config: dict,
     material_id: str = "",
+    batch_index: int = 0,
+    total_batches: int = 1,
+    range_start_ch: int = 1,
+    range_end_ch: int = 0,  # 0 表示自动使用 batch_info 中最大章节号
 ) -> dict[int, dict]:
     """批量分析多个章节，一次 API 调用返回所有结果。
 
@@ -126,6 +267,10 @@ def analyze_chapters_batch(
         lines：原文所有行
         config：LLM 配置
         material_id：素材 ID（用于日志追踪）
+        batch_index：当前批次索引 (0-based)
+        total_batches：总批次数
+        range_start_ch：分析范围的起始章节号（用于计算进度比例）
+        range_end_ch：分析范围的结束章节号（0 表示自动推断）
 
     返回：
         dict：{章节号: 分析结果}，只包含 LLM 成功返回的章节
@@ -159,8 +304,17 @@ def analyze_chapters_batch(
 
     combined = ("\n\n" + "=" * 30 + "\n\n").join(blocks)
 
+    # 计算进度比例（基于范围内的相对位置）
+    min_ch = min(ch_info["chapter"] for ch_info in batch_info)
+    # 如果 range_end_ch 为 0，使用 batch_info 中最大章节号
+    effective_end_ch = range_end_ch if range_end_ch > 0 else max(ch_info["chapter"] for ch_info in batch_info)
+    range_total = effective_end_ch - range_start_ch + 1
+    progress_ratio = (min_ch - range_start_ch) / max(range_total, 1) if range_total > 0 else 0.0
+
+    # 使用动态系统提示词
+    dynamic_base = _build_dynamic_system_prompt(progress_ratio, batch_index, total_batches, config)
     system_prompt = (
-        _SYSTEM_PROMPT
+        dynamic_base
         + f"\n\n本次批量分析 {n} 章，返回 JSON 对象必须包含 chapters 数组，"
         f"每个元素对应一章，顺序与输入一致。"
     )
@@ -178,6 +332,10 @@ def analyze_chapters_batch(
 - 示例：如果输入是第 171 章，chapter 字段必须是 171，不是 1 或其他数字
 - 每个元素的 chapter 必须严格对应输入中的章节号，顺序一致"""
 
+    # 判断是否使用 thinking 模式（后期章节禁用，改用动态温度）
+    thinking_budget = _should_use_thinking_mode(progress_ratio, config)
+    temperature_override = _calculate_dynamic_temperature(progress_ratio, config)
+
     # API 调用计时
     api_start = time.monotonic()
     result = call_llm(
@@ -187,7 +345,8 @@ def analyze_chapters_batch(
         max_tokens_override=n * 1500,
         timeout_override=config["llm"].get("analyze_timeout"),
         context=f"章节分析#批次[{batch_range}]",
-        thinking_budget=12000,
+        thinking_budget=thinking_budget,
+        temperature_override=temperature_override,
     )
     api_elapsed = time.monotonic() - api_start
 
@@ -403,11 +562,13 @@ def chapter_analyze(
 
     chapter_count = len(chapter_index)
 
+    # 计算分析范围的起止章节号（用于进度比例计算）
+    range_start = start_ch or 1
+    range_end = end_ch or chapter_count
+
     # 输出小说基本信息和范围信息
     range_info = ""
     if start_ch is not None or end_ch is not None:
-        range_start = start_ch or 1
-        range_end = end_ch or chapter_count
         range_info = f" | 分析范围: 第 {range_start}-{range_end} 章"
     logger.info(f"[{material_id}] 小说: {title} | {chapter_count} 章 | {word_count} 字 | 状态: {status}{range_info}")
 
@@ -493,7 +654,13 @@ def chapter_analyze(
         use_batch_mode = batch_size > 1 and len(batch) > 1
         if use_batch_mode:
             try:
-                batch_results = analyze_chapters_batch(batch, lines, config, material_id)
+                batch_results = analyze_chapters_batch(
+                    batch, lines, config, material_id,
+                    batch_index=batch_idx,
+                    total_batches=n_batches,
+                    range_start_ch=range_start,
+                    range_end_ch=range_end,
+                )
                 batch_api_calls += 1
                 # 检查章节号是否匹配（不只是数量）
                 expected_chapters = set(ch["chapter"] for ch in batch)
@@ -517,8 +684,10 @@ def chapter_analyze(
                 if not progress_callback:
                     logger.info(f"[{material_id}] [降级单章] 第 {ch_num} 章: {ch_info['title']}（批量返回缺失）")
                 chapter_text = "\n".join(lines[ch_info["start_line"] - 1:ch_info["end_line"]])
+                # 计算单章的进度比例
+                ch_progress_ratio = (ch_num - range_start) / max(range_end - range_start + 1, 1)
                 try:
-                    result = analyze_chapter(chapter_text, ch_info, config)
+                    result = analyze_chapter(chapter_text, ch_info, config, progress_ratio=ch_progress_ratio)
                     batch_api_calls += 1
                 except Exception as e:
                     logger.error(f"[{material_id}] 第 {ch_num} 章分析失败（已重试耗尽）: {e}")

@@ -105,6 +105,15 @@ def load_config(provider: str | None = None) -> dict:
                 "input_per_1k": float(s.get("LLM_PRICE_INPUT_1K", 0.0004)),
                 "output_per_1k": float(s.get("LLM_PRICE_OUTPUT_1K", 0.0012)),
             },
+            # 多样性控制配置（解决后期敷衍问题）
+            "dynamic_prompt_enabled": s.get("LLM_DYNAMIC_PROMPT_ENABLED", True),
+            "diversity_reminder_interval": int(s.get("LLM_DIVERSITY_REMINDER_INTERVAL", 10)),
+            "late_chapter_threshold": float(s.get("LLM_LATE_CHAPTER_THRESHOLD", 0.6)),
+            "late_temperature_boost": float(s.get("LLM_LATE_TEMPERATURE_BOOST", 0.15)),
+            "temperature_max": float(s.get("LLM_TEMPERATURE_MAX", 0.6)),
+            "dynamic_temperature_enabled": s.get("LLM_DYNAMIC_TEMPERATURE_ENABLED", True),
+            "similarity_window": int(s.get("LLM_SIMILARITY_WINDOW", 10)),
+            "similarity_threshold": float(s.get("LLM_SIMILARITY_WARNING_THRESHOLD", 0.7)),
         }
     }
 
@@ -262,6 +271,7 @@ def call_llm(
     timeout_override: int | None = None,
     context: str | None = None,
     thinking_budget: int | None = None,
+    temperature_override: float | None = None,
 ) -> dict:
     """调用 LLM API，返回 JSON 结果。
 
@@ -273,6 +283,7 @@ def call_llm(
         timeout_override: 超时时间覆盖
         context: 上下文标签（如 "章节分析#批次53"），用于日志区分
         thinking_budget: 思考模式预算 tokens（可选，设为 0 表示启用思考模式）
+        temperature_override: 温度覆盖（可选，用于动态调整输出多样性）
     """
     from openai import OpenAI, APIStatusError, APIConnectionError, APITimeoutError, BadRequestError
     from tenacity import (
@@ -338,7 +349,16 @@ def call_llm(
                 # 标准 OpenAI 格式
                 create_kwargs["thinking"] = {"type": "enabled", "budget_tokens": thinking_budget}
         else:
-            create_kwargs["temperature"] = config["llm"].get("temperature", 0.3)
+            # 温度处理：优先使用 override，否则使用配置默认值
+            if temperature_override is not None:
+                effective_temp = temperature_override
+            else:
+                effective_temp = config["llm"].get("temperature", 0.3)
+            # 确保 temperature_max 上限（仅在 override 时应用）
+            temp_max = config["llm"].get("temperature_max", 1.0)
+            if temperature_override is not None:
+                effective_temp = min(effective_temp, temp_max)
+            create_kwargs["temperature"] = effective_temp
 
         response = client.chat.completions.create(**create_kwargs)
         elapsed = time.monotonic() - call_start
