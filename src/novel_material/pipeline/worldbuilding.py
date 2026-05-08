@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 
 from novel_material.infra.config import NOVELS_DIR
-from novel_material.infra.llm import load_config, load_provider_config, call_llm
+from novel_material.infra.llm import load_config, load_provider_config, call_llm, get_last_call_finish_reason
 from novel_material.pipeline.loader import load_chapters_data, build_summary_pool
 from novel_material.infra.progress import get_pipeline_logger
 
@@ -124,6 +124,7 @@ def generate_worldbuilding(material_id, provider: str | None = None) -> bool:
     result = {}
     try:
         result = call_llm(system_prompt, user_prompt, config, timeout_override=config["llm"]["worldbuilding_timeout"], context="世界观提取")
+        logger.info(f"世界观提取完成: finish={get_last_call_finish_reason()}")
         time.sleep(rate_limit)
     except Exception as e:
         logger.error(f"世界观提取失败: {e}")

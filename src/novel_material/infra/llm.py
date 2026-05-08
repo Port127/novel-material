@@ -56,6 +56,13 @@ def get_last_call_tokens() -> tuple[int, int]:
     return 0, 0
 
 
+def get_last_call_finish_reason() -> str:
+    """获取最近一次调用的 finish_reason（供调试使用）。"""
+    if _call_details:
+        return _call_details[-1].get("finish_reason", "")
+    return ""
+
+
 def load_config():
     """从 .env 文件加载 LLM 配置。"""
     return {
@@ -64,7 +71,7 @@ def load_config():
             "model": os.getenv("LLM_MODEL", "qwen3.6-plus"),
             "api_key": os.getenv("LLM_API_KEY", ""),
             "base_url": os.getenv("LLM_BASE_URL"),
-            "max_tokens": int(os.getenv("LLM_MAX_TOKENS", "2000")),
+            "max_tokens": int(os.getenv("LLM_MAX_TOKENS", "8000")),
             "temperature": float(os.getenv("LLM_TEMPERATURE", "0.3")),
             "rate_limit_seconds": int(os.getenv("LLM_RATE_LIMIT_SECONDS", "60")),
             # 章级分析：原文输入，耗时长
@@ -240,6 +247,7 @@ def call_llm(
     max_tokens_override: int | None = None,
     timeout_override: int | None = None,
     context: str | None = None,
+    thinking_budget: int | None = None,
 ) -> dict:
     """调用 LLM API，返回 JSON 结果。
 
@@ -250,6 +258,7 @@ def call_llm(
         max_tokens_override: 最大 tokens 覆盖
         timeout_override: 超时时间覆盖
         context: 上下文标签（如 "章节分析#批次53"），用于日志区分
+        thinking_budget: 思考模式预算 tokens（可选，设为 0 表示启用思考模式）
     """
     from openai import OpenAI, APIStatusError, APIConnectionError, APITimeoutError, BadRequestError
     from tenacity import (
@@ -291,20 +300,29 @@ def call_llm(
             max_retries=0,
         )
         sdk_timeout = min(total_timeout * 0.8, 300)
-        response = client.chat.completions.create(
-            model=config["llm"]["model"],
-            messages=[
+
+        # 构建 create 参数
+        create_kwargs: dict = {
+            "model": config["llm"]["model"],
+            "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
-            temperature=config["llm"].get("temperature", 0.3),
-            max_tokens=effective_max_tokens,
-            timeout=sdk_timeout,
-            response_format={"type": "json_object"},
-        )
+            "max_tokens": effective_max_tokens,
+            "timeout": sdk_timeout,
+            "response_format": {"type": "json_object"},
+        }
+
+        if thinking_budget is not None:
+            create_kwargs["thinking"] = {"type": "enabled", "budget_tokens": thinking_budget}
+        else:
+            create_kwargs["temperature"] = config["llm"].get("temperature", 0.3)
+
+        response = client.chat.completions.create(**create_kwargs)
         elapsed = time.monotonic() - call_start
 
         usage = response.usage
+        finish_reason = response.choices[0].finish_reason if response.choices else None
         _api_stats["calls"] += 1
 
         # 记录调用详情（无论 usage 是否存在）
@@ -313,8 +331,10 @@ def call_llm(
             "input_tokens": 0,
             "output_tokens": 0,
             "total_tokens": 0,
+            "thinking_tokens": 0,
             "model": config["llm"]["model"],
             "timestamp": time.strftime("%H:%M:%S"),
+            "finish_reason": finish_reason,
         }
 
         prefix = f"[{context}] " if context else ""
@@ -323,25 +343,56 @@ def call_llm(
             detail["input_tokens"] = usage.prompt_tokens
             detail["output_tokens"] = usage.completion_tokens
             detail["total_tokens"] = usage.total_tokens
+            # thinking tokens（如果 API 返回）
+            comp_details = getattr(usage, "completion_tokens_details", None)
+            if comp_details:
+                thinking = getattr(comp_details, "reasoning_tokens", 0)
+                if thinking:
+                    detail["thinking_tokens"] = thinking
 
             # INFO 级别日志：每次调用详情
-            logger.info(
-                f"{prefix}API: {elapsed:.1f}s | "
-                f"in={usage.prompt_tokens} out={usage.completion_tokens} "
-                f"total={usage.total_tokens}"
-            )
+            log_parts = [
+                f"{prefix}API: {elapsed:.1f}s",
+                f"in={usage.prompt_tokens} out={usage.completion_tokens} total={usage.total_tokens}",
+            ]
+            if detail["thinking_tokens"]:
+                log_parts.append(f"thinking={detail['thinking_tokens']}")
+            log_parts.append(f"finish={finish_reason}")
+
+            logger.info(" | ".join(log_parts))
         else:
             # usage 为 None 时仍记录调用
-            logger.warning(f"{prefix}API: {elapsed:.1f}s | usage=None（无法获取 tokens）")
+            logger.warning(f"{prefix}API: {elapsed:.1f}s | usage=None（无法获取 tokens） | finish={finish_reason}")
 
         _call_details.append(detail)
+        # 限制列表长度，防止无界增长（只需最后一条供 get_last_call_* 使用）
+        if len(_call_details) > 100:
+            _call_details.pop(0)
         return json.loads(response.choices[0].message.content)
 
-    try:
-        return _call()
-    except Exception as e:
-        _api_stats["errors"] += 1
-        elapsed = time.monotonic() - _outer_start
-        prefix = f"[{context}] " if context else ""
-        logger.error(f"{prefix}API 失败 ({elapsed:.1f}s): {type(e).__name__}: {e}")
-        raise
+    # JSON 解析失败时自动加大 max_tokens 重试（最多 2 次）
+    max_json_retries = 2
+    for attempt in range(max_json_retries + 1):
+        try:
+            return _call()
+        except json.JSONDecodeError as e:
+            if attempt < max_json_retries:
+                new_max = min(effective_max_tokens * 2, 65536)
+                prefix = f"[{context}] " if context else ""
+                logger.warning(
+                    f"{prefix}JSON 解析失败（max_tokens={effective_max_tokens}），"
+                    f"加大到 {new_max}，重试 {attempt+1}/{max_json_retries}"
+                )
+                effective_max_tokens = new_max
+            else:
+                _api_stats["errors"] += 1
+                elapsed = time.monotonic() - _outer_start
+                prefix = f"[{context}] " if context else ""
+                logger.error(f"{prefix}JSON 解析最终失败 ({elapsed:.1f}s): {e}")
+                raise
+        except Exception as e:
+            _api_stats["errors"] += 1
+            elapsed = time.monotonic() - _outer_start
+            prefix = f"[{context}] " if context else ""
+            logger.error(f"{prefix}API 失败 ({elapsed:.1f}s): {type(e).__name__}: {e}")
+            raise

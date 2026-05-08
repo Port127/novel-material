@@ -18,7 +18,7 @@ from collections.abc import Callable
 from collections import Counter
 
 from novel_material.infra.config import NOVELS_DIR
-from novel_material.infra.llm import load_config, load_provider_config, call_llm
+from novel_material.infra.llm import load_config, load_provider_config, call_llm, get_last_call_finish_reason
 from novel_material.pipeline.loader import load_chapters_data, build_summary_pool
 from novel_material.infra.progress import get_pipeline_logger
 
@@ -153,6 +153,7 @@ def _generate_acts_sequences(
 序列划分应让高潮章节（高张力章节）成为序列的转折点或结尾。"""
 
     result = call_llm(system_prompt, user_prompt, config, max_tokens_override=4000, timeout_override=config["llm"]["outline_timeout"], context="幕序列划分")
+    logger.info(f"幕序列划分完成: finish={get_last_call_finish_reason()}")
     return result.get("acts", [])
 
 
@@ -237,6 +238,7 @@ def _generate_beats_for_sequence(
 节拍的 tension 值应与章节实际张力一致，高张力章节应是关键节拍。"""
 
     result = call_llm(system_prompt, user_prompt, config, max_tokens_override=2000, timeout_override=config["llm"]["outline_timeout"], context=f"beats#{seq.get('sequence_number', '?')}")
+    logger.debug(f"beats#{seq.get('sequence_number', '?')}: finish={get_last_call_finish_reason()}")
     return result.get("beats", [])
 
 
@@ -336,6 +338,7 @@ def generate_outline(material_id, progress_callback: Callable[[int, int, str], N
     result = {}
     try:
         result = call_llm(system_prompt_premise, user_prompt_premise, config, timeout_override=config["llm"]["outline_timeout"], context="前提提炼")
+        logger.info(f"前提提炼完成: finish={get_last_call_finish_reason()}")
     except Exception as e:
         logger.error(f"前提提炼失败: {e}")
         logger.warning("使用默认值继续，不中断流程")
@@ -435,6 +438,16 @@ def generate_outline(material_id, progress_callback: Callable[[int, int, str], N
 
     if failed_sequences > 0:
         logger.warning(f"共有 {failed_sequences} 个序列 beats 生成失败")
+
+    # Beats 质量统计
+    if beats_data:
+        tension_vals = [b.get("tension", 0) for b in beats_data if b.get("tension")]
+        beats_per_seq = len(beats_data) / max(total_sequences, 1)
+        logger.info(
+            f"Beats 统计: {len(beats_data)} 个节拍 | "
+            f"每序列平均 {beats_per_seq:.1f} 个 | "
+            f"张力范围 {min(tension_vals)}-{max(tension_vals)}"
+        )
 
     # ── 写入输出文件 ──
 

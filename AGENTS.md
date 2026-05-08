@@ -142,3 +142,30 @@ nm storage sync nm_xxx
 - 流程不会因单步失败而中断
 
 Agent 只需检查 `meta.yaml` 中的状态字段。
+
+## 模型基准：qwen3.6-plus
+
+本项目以 **qwen3.6-plus** 为基准模型，所有参数设计应以此为参照。
+
+### 模型能力
+
+| 参数 | 数值 | 说明 |
+|------|------|------|
+| 最大上下文 (context) | 1,000,000 tokens | 输入+输出总上限 |
+| 最大输出 (max_tokens) | 65,536 tokens | 单次响应输出上限 |
+| 思考预算 (thinking_budget) | 81,920 tokens | 深度思考模式上限 |
+
+### 本项目实际配置
+
+| 配置项 | 值 | 说明 |
+|--------|-----|------|
+| `_MAX_CHAPTER_TOKENS` (.env) | 5000 | 单章输入截断上限（远低于 1M，保留核心内容） |
+| `LLM_MAX_TOKENS` (.env) | 8000 | 单章输出兜底上限（远低于 65K） |
+| 批量 max_tokens_override | `n * 1500` | 10 章批量 = 15000 tokens（远低于 65K） |
+| `thinking_budget` | 4000 | 批量分析启用思考模式（上限 81920） |
+
+### 注意事项
+
+- 批量分析已启用 `thinking_budget=4000`，启用 thinking 时不应传 `temperature`
+- JSON 解析失败时自动翻倍 `max_tokens` 重试（最多 2 次，上限 65536）
+- 单章分析降级后使用 `LLM_MAX_TOKENS` 作为输出上限

@@ -13,7 +13,7 @@ import psycopg2
 from pathlib import Path
 
 from novel_material.infra.config import NOVELS_DIR
-from novel_material.infra.llm import load_config, load_provider_config, call_llm
+from novel_material.infra.llm import load_config, load_provider_config, call_llm, get_last_call_finish_reason
 from novel_material.tags.load import load_tags_for_genre, format_tags_for_prompt, get_all_genres
 from novel_material.tags.validate import validate_tag, validate_tags_batch
 from novel_material.tags.scheduled import auto_approve_by_frequency
@@ -111,6 +111,7 @@ def generate_tags(material_id, provider: str | None = None) -> bool:
     result = {}
     try:
         result = call_llm(system_prompt, user_prompt, config, context="标签生成")
+        logger.info(f"标签生成完成: finish={get_last_call_finish_reason()}")
         time.sleep(rate_limit)
     except Exception as e:
         logger.error(f"标签生成失败: {e}")

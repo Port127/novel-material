@@ -14,7 +14,7 @@ from pathlib import Path
 from collections import Counter
 
 from novel_material.infra.config import NOVELS_DIR
-from novel_material.infra.llm import load_config, load_provider_config, call_llm
+from novel_material.infra.llm import load_config, load_provider_config, call_llm, get_last_call_finish_reason
 from novel_material.pipeline.loader import load_chapters_data, build_summary_pool
 from novel_material.infra.progress import get_pipeline_logger
 
@@ -114,7 +114,9 @@ def _extract_core_characters(
 
     logger.info("第一轮：提取核心人物...")
     result = call_llm(system_prompt, user_prompt, config, max_tokens_override=8000, timeout_override=config["llm"]["characters_timeout"], context="人物#核心")
-    return result.get("characters", [])
+    characters = result.get("characters", [])
+    logger.info(f"核心人物提取完成: {len(characters)} 人 | finish={get_last_call_finish_reason()}")
+    return characters
 
 
 def _extract_minor_characters(
@@ -177,7 +179,9 @@ def _extract_minor_characters(
 
     logger.info("第二轮：补充次要人物...")
     result = call_llm(system_prompt, user_prompt, config, max_tokens_override=8000, timeout_override=config["llm"]["characters_timeout"], context="人物#次要")
-    return result.get("characters", [])
+    characters = result.get("characters", [])
+    logger.info(f"次要人物提取完成: {len(characters)} 人 | finish={get_last_call_finish_reason()}")
+    return characters
 
 
 def generate_characters(material_id, provider: str | None = None) -> bool:
