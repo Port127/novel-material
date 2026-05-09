@@ -4,6 +4,8 @@ from .preprocess import preprocess, preprocess_text
 from .loader import load_chapters_data, build_summary_pool
 from .ingest import ingest_file, generate_material_id
 from .analyze import chapter_analyze
+from .infer import infer_key_plot_points
+from novel_material.infra.constants import KEY_PLOT_POINT_VALUES
 from .refine import refine, refine_outline, refine_characters, refine_tags
 from .outline import generate_outline, generate_simple_acts
 from .worldbuilding import generate_worldbuilding
@@ -19,6 +21,8 @@ __all__ = [
     "ingest_file",
     "generate_material_id",
     "chapter_analyze",
+    "infer_key_plot_points",
+    "KEY_PLOT_POINT_VALUES",
     "refine",
     "refine_outline",
     "refine_characters",

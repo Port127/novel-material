@@ -147,8 +147,37 @@ def _sync_chapters(conn, novel_dir, material_id):
                     cur.execute("""
                         INSERT INTO chapters (
                             material_id, chapter, title, type, summary, word_count,
-                            tension_level, pacing, setting, key_plot_point,
+                            tension_level, pacing, setting, key_plot_point, key_event,
                             chapter_functions, characters_appear, summary_embedding
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (material_id, chapter) DO UPDATE SET
+                            title = EXCLUDED.title,
+                            type = EXCLUDED.type,
+                            summary = EXCLUDED.summary,
+                            word_count = EXCLUDED.word_count,
+                            tension_level = EXCLUDED.tension_level,
+                            pacing = EXCLUDED.pacing,
+                            setting = EXCLUDED.setting,
+                            key_plot_point = EXCLUDED.key_plot_point,
+                            key_event = EXCLUDED.key_event,
+                            chapter_functions = EXCLUDED.chapter_functions,
+                            characters_appear = EXCLUDED.characters_appear,
+                            summary_embedding = EXCLUDED.summary_embedding
+                    """, (
+                        material_id, ch_num,
+                        ch.get("title"), ch_type, ch.get("summary"), ch.get("word_count"),
+                        ch.get("tension_level"), ch.get("pacing"),
+                        ch.get("setting", []), ch.get("key_plot_point"), ch.get("key_event"),
+                        ch.get("chapter_function", ch.get("chapter_functions", [])),
+                        ch.get("characters_appear", []),
+                        vec,
+                    ))
+                else:
+                    cur.execute("""
+                        INSERT INTO chapters (
+                            material_id, chapter, title, type, summary, word_count,
+                            tension_level, pacing, setting, key_plot_point, key_event,
+                            chapter_functions, characters_appear
                         ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         ON CONFLICT (material_id, chapter) DO UPDATE SET
                             title = EXCLUDED.title,
@@ -159,41 +188,14 @@ def _sync_chapters(conn, novel_dir, material_id):
                             pacing = EXCLUDED.pacing,
                             setting = EXCLUDED.setting,
                             key_plot_point = EXCLUDED.key_plot_point,
-                            chapter_functions = EXCLUDED.chapter_functions,
-                            characters_appear = EXCLUDED.characters_appear,
-                            summary_embedding = EXCLUDED.summary_embedding
-                    """, (
-                        material_id, ch_num,
-                        ch.get("title"), ch_type, ch.get("summary"), ch.get("word_count"),
-                        ch.get("tension_level"), ch.get("pacing"),
-                        ch.get("setting", []), ch.get("key_plot_point"),
-                        ch.get("chapter_function", ch.get("chapter_functions", [])),
-                        ch.get("characters_appear", []),
-                        vec,
-                    ))
-                else:
-                    cur.execute("""
-                        INSERT INTO chapters (
-                            material_id, chapter, title, type, summary, word_count,
-                            tension_level, pacing, setting, key_plot_point,
-                            chapter_functions, characters_appear
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                        ON CONFLICT (material_id, chapter) DO UPDATE SET
-                            title = EXCLUDED.title,
-                            type = EXCLUDED.type,
-                            summary = EXCLUDED.summary,
-                            word_count = EXCLUDED.word_count,
-                            tension_level = EXCLUDED.tension_level,
-                            pacing = EXCLUDED.pacing,
-                            setting = EXCLUDED.setting,
-                            key_plot_point = EXCLUDED.key_plot_point,
+                            key_event = EXCLUDED.key_event,
                             chapter_functions = EXCLUDED.chapter_functions,
                             characters_appear = EXCLUDED.characters_appear
                     """, (
                         material_id, ch_num,
                         ch.get("title"), ch_type, ch.get("summary"), ch.get("word_count"),
                         ch.get("tension_level"), ch.get("pacing"),
-                        ch.get("setting", []), ch.get("key_plot_point"),
+                        ch.get("setting", []), ch.get("key_plot_point"), ch.get("key_event"),
                         ch.get("chapter_function", ch.get("chapter_functions", [])),
                         ch.get("characters_appear", []),
                     ))

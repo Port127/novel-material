@@ -11,6 +11,7 @@ from pydantic import ValidationError as PydanticValidationError
 from novel_material.infra.config import NOVELS_DIR, VALID_STATUSES
 from novel_material.tags.validate import validate_tag, validate_tags_batch
 from novel_material.validation.pacing_normalize import PACING_CORE, normalize_pacing
+from novel_material.infra.constants import KEY_PLOT_POINT_VALUES
 
 # 常量
 _MATERIAL_ID_PATTERN = re.compile(r"^nm_[a-z]+_\d{8}_[a-z0-9]{4}$")
@@ -72,6 +73,8 @@ class ChapterEntryModel(BaseModel):
     characters_appear: list = Field(default_factory=list)
     chapter_functions: Optional[list] = None
     pacing: Optional[str] = None
+    key_plot_point: Optional[str] = None  # 结构角色标记（代码推断）
+    key_event: Optional[str] = Field(None, max_length=100)  # 关键事件描述（LLM生成）
 
     @field_validator("title")
     @classmethod
@@ -92,6 +95,17 @@ class ChapterEntryModel(BaseModel):
                 f"pacing 值 '{v}' 规范化后 '{normalized}' 仍不合法，合法值：{_VALID_PACING}"
             )
         return normalized  # 返回规范化后的值
+
+    @field_validator("key_plot_point")
+    @classmethod
+    def check_key_plot_point(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        if v not in KEY_PLOT_POINT_VALUES:
+            raise ValueError(
+                f"key_plot_point 值 '{v}' 不合法，合法值：{KEY_PLOT_POINT_VALUES}"
+            )
+        return v
 
 
 class NovelTagsModel(BaseModel):
@@ -170,6 +184,8 @@ def validate_chapters(material_id: str) -> list[str]:
                 characters_appear=entry.get("characters_appear", []),
                 chapter_functions=entry.get("chapter_functions", entry.get("chapter_function")),
                 pacing=entry.get("pacing"),
+                key_plot_point=entry.get("key_plot_point"),
+                key_event=entry.get("key_event"),
             )
         except PydanticValidationError as exc:
             for err in exc.errors():

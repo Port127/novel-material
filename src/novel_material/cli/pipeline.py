@@ -204,7 +204,10 @@ def cmd_refine(
         console=console,
     ) as progress:
         task = progress.add_task(f"精调数据: {material_id}", total=None)
-        refine(material_id)
+        if not refine(material_id):
+            progress.update(task, completed=True)
+            console.print("[red]精调失败[/red]")
+            raise typer.Exit(1)
         progress.update(task, completed=True)
 
     console.print("[green]精调完成[/green]")
@@ -324,7 +327,9 @@ def cmd_full(
         # 阶段 7: 精调
         task7 = progress.add_task("阶段 7/7: 数据精调", total=1)
         with silent_console():
-            refine(material_id)
+            if not refine(material_id):
+                console.print("[red]精调失败，终止流水线[/red]")
+                raise typer.Exit(1)
         progress.update(task7, completed=1)
         progress.remove_task(task7)
 
@@ -498,7 +503,9 @@ def cmd_continue(
         if not progress.get("refined"):
             task6 = progress_bar.add_task("阶段 6: 精调", total=1)
             with silent_console():
-                refine(material_id)
+                if not refine(material_id):
+                    console.print("[red]精调失败[/red]")
+                    raise typer.Exit(1)
             progress_bar.update(task6, completed=1)
             progress_bar.remove_task(task6)
 

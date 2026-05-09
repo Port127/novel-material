@@ -17,7 +17,7 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 logger = get_search_logger()
 
 
-def search_chapters(query, genre=None, chapter_function=None, chapter_num=None, tension_min=None, tension_max=None, element=None, style=None, limit=10, semantic=False):
+def search_chapters(query, genre=None, chapter_function=None, chapter_num=None, tension_min=None, tension_max=None, element=None, style=None, plot_point=None, limit=10, semantic=False):
     """检索章节，支持向量语义搜索。"""
     conn = psycopg2.connect(require_database_url(DATABASE_URL))
     conn.autocommit = True
@@ -35,7 +35,7 @@ def search_chapters(query, genre=None, chapter_function=None, chapter_num=None, 
             sql = """
                 SELECT c.material_id, c.chapter, c.title, c.summary,
                        c.tension_level, c.pacing, c.chapter_functions,
-                       c.characters_appear, c.key_plot_point,
+                       c.characters_appear, c.key_plot_point, c.key_event,
                        n.name as novel_name, n.genre, n.tags,
                        c.summary_embedding <=> %s::vector as distance
                 FROM chapters c
@@ -62,6 +62,10 @@ def search_chapters(query, genre=None, chapter_function=None, chapter_num=None, 
                 sql += " AND c.tension_level <= %s"
                 params.append(tension_max)
 
+            if plot_point:
+                sql += " AND c.key_plot_point = %s"
+                params.append(plot_point)
+
             sql += " ORDER BY distance ASC LIMIT %s"
             params.append(limit)
 
@@ -70,7 +74,7 @@ def search_chapters(query, genre=None, chapter_function=None, chapter_num=None, 
             sql = """
                 SELECT c.material_id, c.chapter, c.title, c.summary,
                        c.tension_level, c.pacing, c.chapter_functions,
-                       c.characters_appear, c.key_plot_point,
+                       c.characters_appear, c.key_plot_point, c.key_event,
                        n.name as novel_name, n.genre, n.tags
                 FROM chapters c
                 JOIN novels n ON c.material_id = n.material_id
@@ -87,7 +91,7 @@ def search_chapters(query, genre=None, chapter_function=None, chapter_num=None, 
                         """(
                             c.title ILIKE %s
                             OR c.summary ILIKE %s
-                            OR COALESCE(c.key_plot_point, '') ILIKE %s
+                            OR COALESCE(c.key_event, '') ILIKE %s
                             OR array_to_string(c.chapter_functions, ' ') ILIKE %s
                         )"""
                     )
@@ -140,6 +144,10 @@ def search_chapters(query, genre=None, chapter_function=None, chapter_num=None, 
                 sql += " AND n.tags->'style' @> %s::jsonb"
                 params.append(json.dumps([style]))
 
+            if plot_point:
+                sql += " AND c.key_plot_point = %s"
+                params.append(plot_point)
+
             sql += " ORDER BY c.tension_level DESC NULLS LAST, c.chapter ASC LIMIT %s"
             params.append(limit)
 
@@ -163,6 +171,10 @@ def search_chapters(query, genre=None, chapter_function=None, chapter_num=None, 
             # 余弦距离转换为相似度：similarity = 1 - distance
             similarity = 1 - r['distance']
             print(f"相似度: {similarity:.2%}")
+        if r.get('key_event'):
+            print(f"关键事件: {r['key_event']}")
+        if r.get('key_plot_point'):
+            print(f"结构角色: {r['key_plot_point']}")
         print(f"张力: {r['tension_level']}/5 | 节奏: {r['pacing']}")
         print(f"功能: {r['chapter_functions']}")
         print(f"人物: {r['characters_appear']}")
@@ -178,10 +190,11 @@ def search_chapters(query, genre=None, chapter_function=None, chapter_num=None, 
 @click.option("--tension-max", default=None, type=int, help="张力最大值（1-5）")
 @click.option("--element", default=None, help="元素标签过滤（如：重生、系统）")
 @click.option("--style", default=None, help="风格标签过滤（如：热血、治愈）")
+@click.option("--plot-point", default=None, help="结构角色过滤（如：inciting_incident、climax）")
 @click.option("--limit", default=10, help="返回结果数")
 @click.option("--semantic", is_flag=True, help="启用向量语义搜索（更精准的语义匹配）")
-def main(query, genre, chapter_function, chapter_num, tension_min, tension_max, element, style, limit, semantic):
-    search_chapters(query=query, genre=genre, chapter_function=chapter_function, chapter_num=chapter_num, tension_min=tension_min, tension_max=tension_max, element=element, style=style, limit=limit, semantic=semantic)
+def main(query, genre, chapter_function, chapter_num, tension_min, tension_max, element, style, plot_point, limit, semantic):
+    search_chapters(query=query, genre=genre, chapter_function=chapter_function, chapter_num=chapter_num, tension_min=tension_min, tension_max=tension_max, element=element, style=style, plot_point=plot_point, limit=limit, semantic=semantic)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
-"""精调工具：基于章级分析数据调整 outline/characters/tags。
+"""精调工具：基于章级分析数据调整 outline/characters/tags，并推断结构角色。
 
-注意：精调阶段不调用 LLM，仅基于章级分析数据进行统计聚合。
+注意：精调阶段不调用 LLM，仅基于章级分析数据进行统计聚合和推断。
 """
 import sys
 import yaml
@@ -8,6 +8,7 @@ import time
 
 from novel_material.infra.config import NOVELS_DIR
 from novel_material.infra.progress import get_pipeline_logger
+from novel_material.pipeline.infer import infer_key_plot_points
 
 logger = get_pipeline_logger()
 
@@ -128,9 +129,9 @@ def refine_tags(material_id, chapters_data):
 
 
 def refine(material_id) -> bool:
-    """主精调函数：调整 outline/characters/tags。
+    """主精调函数：推断结构角色 + 调整 outline/characters/tags。
 
-    注意：精调阶段不调用 LLM，仅基于章级分析数据进行统计聚合。
+    注意：精调阶段不调用 LLM，仅基于章级分析数据进行统计聚合和推断。
     特殊类型章节（afterword/author_note）不参与统计。
 
     参数：
@@ -141,6 +142,12 @@ def refine(material_id) -> bool:
     novel_dir = NOVELS_DIR / material_id
     if not novel_dir.exists():
         logger.error(f"[{material_id}] 小说目录不存在: {novel_dir}")
+        return False
+
+    # 新增：先推断结构角色 key_plot_point
+    logger.info(f"[{material_id}] 开始推断结构角色...")
+    if not infer_key_plot_points(material_id):
+        logger.error(f"[{material_id}] 结构角色推断失败，中止精调")
         return False
 
     chapters_file = novel_dir / "chapters.yaml"

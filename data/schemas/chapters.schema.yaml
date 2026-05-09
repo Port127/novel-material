@@ -44,10 +44,13 @@
     - 监牢
     - 衙门
 
-  key_plot_point: inciting_incident              # O | 关键节点标记（留空则表示普通章节）
+  key_plot_point: inciting_incident              # O | 结构角色标记（代码推断，refine 阶段填充）
                                                  #     合法值：inciting_incident / first_turning_point /
                                                  #             midpoint / second_turning_point /
                                                  #             climax / resolution
+                                                 #     留空表示普通章节
+
+  key_event: "主角入狱，面临流放"                 # O | 关键事件描述（LLM 生成，10-30字精炼描述）
 
 # ====================================================================
 # 约束规则

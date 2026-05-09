@@ -54,7 +54,8 @@ _SYSTEM_PROMPT = """你是专业的小说分析助手，负责对每章内容生
 1. 摘要 50-100 字，包含关键事件、情感基调、人物互动
 2. chapter_functions 从标签字典的章节功能标签中选取
 3. 准确识别出场人物（仅写名字，不写描述）
-4. tension_level 1-5，根据紧张程度评估"""
+4. tension_level 1-5，根据紧张程度评估
+5. key_event 是本章核心事件的精炼描述（10-30字），如"主角突破境界"、"恋人雨中告别"、"击杀仇敌"""
 
 
 def _build_dynamic_system_prompt(
@@ -180,14 +181,14 @@ _CHAPTER_JSON_SCHEMA = """{
   "tension_level": 3,
   "pacing": "快",
   "setting": ["室内", "学校"],
-  "key_plot_point": ""
+  "key_event": "本章关键事件，10-30字精炼描述"
 }"""
 
 # LLM 返回格式的示例（批量）
 # 注意：示例中用占位符，避免 LLM 误解为序号
 _BATCH_JSON_SCHEMA = """{
   "chapters": [
-    {"chapter": 章节号, "summary": "摘要内容", "characters_appear": ["人物名"], "chapter_functions": ["标签"], "tension_level": 3, "pacing": "快", "setting": ["场景"], "key_plot_point": ""}
+    {"chapter": 章节号, "summary": "摘要内容", "characters_appear": ["人物名"], "chapter_functions": ["标签"], "tension_level": 3, "pacing": "快", "setting": ["场景"], "key_event": "关键事件描述"}
   ]
 }
 
