@@ -148,8 +148,11 @@ def _sync_chapters(conn, novel_dir, material_id):
                         INSERT INTO chapters (
                             material_id, chapter, title, type, summary, word_count,
                             tension_level, pacing, setting, key_plot_point, key_event,
-                            chapter_functions, characters_appear, summary_embedding
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            tension_change, emotion_transition, plot_progress,
+                            chapter_functions, characters_appear,
+                            emotional_tone, scene_type, technique, hook_type,
+                            summary_embedding
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         ON CONFLICT (material_id, chapter) DO UPDATE SET
                             title = EXCLUDED.title,
                             type = EXCLUDED.type,
@@ -160,16 +163,28 @@ def _sync_chapters(conn, novel_dir, material_id):
                             setting = EXCLUDED.setting,
                             key_plot_point = EXCLUDED.key_plot_point,
                             key_event = EXCLUDED.key_event,
+                            tension_change = EXCLUDED.tension_change,
+                            emotion_transition = EXCLUDED.emotion_transition,
+                            plot_progress = EXCLUDED.plot_progress,
                             chapter_functions = EXCLUDED.chapter_functions,
                             characters_appear = EXCLUDED.characters_appear,
+                            emotional_tone = EXCLUDED.emotional_tone,
+                            scene_type = EXCLUDED.scene_type,
+                            technique = EXCLUDED.technique,
+                            hook_type = EXCLUDED.hook_type,
                             summary_embedding = EXCLUDED.summary_embedding
                     """, (
                         material_id, ch_num,
                         ch.get("title"), ch_type, ch.get("summary"), ch.get("word_count"),
                         ch.get("tension_level"), ch.get("pacing"),
                         ch.get("setting", []), ch.get("key_plot_point"), ch.get("key_event"),
+                        ch.get("tension_change"), ch.get("emotion_transition"), ch.get("plot_progress"),
                         ch.get("chapter_function", ch.get("chapter_functions", [])),
                         ch.get("characters_appear", []),
+                        ch.get("emotional_tone", []),
+                        ch.get("scene_type", []),
+                        ch.get("technique", []),
+                        ch.get("hook_type"),
                         vec,
                     ))
                 else:
@@ -177,8 +192,10 @@ def _sync_chapters(conn, novel_dir, material_id):
                         INSERT INTO chapters (
                             material_id, chapter, title, type, summary, word_count,
                             tension_level, pacing, setting, key_plot_point, key_event,
-                            chapter_functions, characters_appear
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            tension_change, emotion_transition, plot_progress,
+                            chapter_functions, characters_appear,
+                            emotional_tone, scene_type, technique, hook_type
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         ON CONFLICT (material_id, chapter) DO UPDATE SET
                             title = EXCLUDED.title,
                             type = EXCLUDED.type,
@@ -189,15 +206,27 @@ def _sync_chapters(conn, novel_dir, material_id):
                             setting = EXCLUDED.setting,
                             key_plot_point = EXCLUDED.key_plot_point,
                             key_event = EXCLUDED.key_event,
+                            tension_change = EXCLUDED.tension_change,
+                            emotion_transition = EXCLUDED.emotion_transition,
+                            plot_progress = EXCLUDED.plot_progress,
                             chapter_functions = EXCLUDED.chapter_functions,
-                            characters_appear = EXCLUDED.characters_appear
+                            characters_appear = EXCLUDED.characters_appear,
+                            emotional_tone = EXCLUDED.emotional_tone,
+                            scene_type = EXCLUDED.scene_type,
+                            technique = EXCLUDED.technique,
+                            hook_type = EXCLUDED.hook_type
                     """, (
                         material_id, ch_num,
                         ch.get("title"), ch_type, ch.get("summary"), ch.get("word_count"),
                         ch.get("tension_level"), ch.get("pacing"),
                         ch.get("setting", []), ch.get("key_plot_point"), ch.get("key_event"),
+                        ch.get("tension_change"), ch.get("emotion_transition"), ch.get("plot_progress"),
                         ch.get("chapter_function", ch.get("chapter_functions", [])),
                         ch.get("characters_appear", []),
+                        ch.get("emotional_tone", []),
+                        ch.get("scene_type", []),
+                        ch.get("technique", []),
+                        ch.get("hook_type"),
                     ))
         synced += len(batch)
         logger.info(f"已同步章节 {synced}/{len(chapters)}")

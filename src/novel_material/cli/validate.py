@@ -57,9 +57,19 @@ def validate(
 @app.command("quality")
 def cmd_quality(
     material_id: str = typer.Argument(..., help="素材 ID"),
+    start: int = typer.Option(None, "--start", "-s", help="起始章节号"),
+    end: int = typer.Option(None, "--end", "-e", help="结束章节号"),
 ):
-    """质量检查。"""
-    result = run_quality_check(material_id)
+    """质量检查（支持指定章节范围）。"""
+    # 参数验证
+    if start is not None and start < 1:
+        console.print("[red]起始章节号必须 >= 1[/red]")
+        raise typer.Exit(1)
+    if start is not None and end is not None and end < start:
+        console.print("[red]结束章节号必须 >= 起始章节号[/red]")
+        raise typer.Exit(1)
+
+    result = run_quality_check(material_id, start_ch=start, end_ch=end)
 
     table = Table(title="质量检查结果")
     table.add_column("维度", style="cyan")

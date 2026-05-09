@@ -46,13 +46,23 @@ CREATE TABLE IF NOT EXISTS chapters (
     setting TEXT[],                      -- 场景类型数组
     key_plot_point TEXT,                 -- 结构角色标记（代码推断）：inciting_incident/midpoint/climax/resolution 等
     key_event TEXT,                      -- 关键事件描述（LLM生成）：10-30字精炼情节描述
+    -- 滑动窗口新增字段（阶段二）
+    tension_change TEXT,                 -- 张力变化方向：上升/持平/下降
+    emotion_transition TEXT,             -- 情感过渡描述（10-50字）
+    plot_progress TEXT,                  -- 情节进度描述（20-100字）
     chapter_functions TEXT[],            -- 章节功能标签数组
     characters_appear TEXT[],            -- 出场人物数组
+    -- 章节级标签（阶段四新增）
+    emotional_tone TEXT[],               -- 情感基调数组
+    scene_type TEXT[],                   -- 场景类型数组
+    technique TEXT[],                    -- 叙事技巧数组
+    hook_type TEXT,                      -- 章末钩子类型
     PRIMARY KEY (material_id, chapter),
     FOREIGN KEY (material_id) REFERENCES novels(material_id) ON DELETE CASCADE
 );
 
 -- key_plot_point 合法值：inciting_incident / first_turning_point / midpoint / second_turning_point / climax / resolution
+-- tension_change 合法值：上升 / 持平 / 下降
 
 -- ============================================================
 -- outline_sequences 表：大纲序列
@@ -149,6 +159,11 @@ CREATE INDEX IF NOT EXISTS idx_chapters_functions ON chapters USING GIN(chapter_
 CREATE INDEX IF NOT EXISTS idx_chapters_characters ON chapters USING GIN(characters_appear);
 CREATE INDEX IF NOT EXISTS idx_chapters_tension ON chapters(tension_level);
 CREATE INDEX IF NOT EXISTS idx_chapters_key_plot ON chapters(key_plot_point);
+-- 章节级标签索引（阶段四新增）
+CREATE INDEX IF NOT EXISTS idx_chapters_emotional_tone ON chapters USING GIN(emotional_tone);
+CREATE INDEX IF NOT EXISTS idx_chapters_scene_type ON chapters USING GIN(scene_type);
+CREATE INDEX IF NOT EXISTS idx_chapters_technique ON chapters USING GIN(technique);
+CREATE INDEX IF NOT EXISTS idx_chapters_hook_type ON chapters(hook_type);
 
 -- 人物检索索引
 CREATE INDEX IF NOT EXISTS idx_characters_material ON characters(material_id);

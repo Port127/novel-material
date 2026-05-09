@@ -233,7 +233,7 @@ def run_quality_check(material_id: str, start_ch: int | None = None, end_ch: int
 
     # Schema 结构校验
     print("\n[Schema 结构校验]")
-    schema_ok = validate_material(material_id, verbose=True)
+    schema_ok = validate_material(material_id, verbose=True, start_ch=start_ch, end_ch=end_ch)
 
     # 内容质量校验
     print("\n[内容质量校验]")

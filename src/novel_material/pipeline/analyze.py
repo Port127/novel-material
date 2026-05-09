@@ -14,6 +14,7 @@
 - 断点续传：已分析的章节自动跳过，从中断处继续
 - 批量处理：可一次分析多章，减少 API 调用次数
 - Token 截断：每章内容限制在 LLM_MAX_CHAPTER_TOKENS 内（settings.yaml 默认 5000）
+- 滑动窗口（可选）：启用时提供前后章上下文，输出张力变化、情感过渡、情节进度
 """
 import sys
 import yaml
@@ -26,6 +27,9 @@ from novel_material.infra.llm import load_config, call_llm, truncate_to_tokens, 
 from novel_material.validation.quality import run_quality_check
 from novel_material.validation.pacing_normalize import normalize_pacing
 from novel_material.infra.progress import get_pipeline_logger
+from novel_material.infra.constants import TENSION_CHANGE_VALUES
+from novel_material.validation.schema import validate_chapter_tags_fields
+from novel_material.pipeline.evaluate import load_evaluation
 
 logger = get_pipeline_logger()
 
@@ -50,12 +54,24 @@ def _get_max_chapter_tokens() -> int:
         return 5000
 
 _SYSTEM_PROMPT = """你是专业的小说分析助手，负责对每章内容生成摘要和分析。
-要求：
-1. 摘要 50-100 字，包含关键事件、情感基调、人物互动
-2. chapter_functions 从标签字典的章节功能标签中选取
-3. 准确识别出场人物（仅写名字，不写描述）
-4. tension_level 1-5，根据紧张程度评估
-5. key_event 是本章核心事件的精炼描述（10-30字），如"主角突破境界"、"恋人雨中告别"、"击杀仇敌"""
+
+返回 JSON 必须包含以下所有字段：
+1. summary：章节摘要，50-100字
+2. characters_appear：出场人物列表（仅写名字）
+3. chapter_functions：章节功能标签（从字典选取）
+4. tension_level：紧张程度，1-5
+5. pacing：节奏，可选值：快/中/慢/喘息/加速
+6. setting：场景列表
+7. key_event：关键事件精炼描述，10-30字
+8. emotional_tone：情感基调标签数组（必填），如 ["压抑", "紧张", "燃"]
+9. scene_type：场景类型标签数组（必填），如 ["战斗", "突破", "告别"]
+10. technique：叙事技巧标签数组（必填），如 ["闪回", "独白"]，若无特殊技巧填 []
+11. hook_type：章末钩子类型（必填），可选：悬念钩子/反转钩子/情感钩子/信息钩子/危机钩子/无钩子
+
+滑动窗口字段（仅当提供了前章上下文时）：
+- tension_change：张力变化方向（上升/持平/下降）
+- emotion_transition：情感过渡描述（10-50字）
+- plot_progress：情节进度描述（20-100字）"""
 
 
 def _build_dynamic_system_prompt(
@@ -181,18 +197,166 @@ _CHAPTER_JSON_SCHEMA = """{
   "tension_level": 3,
   "pacing": "快",
   "setting": ["室内", "学校"],
-  "key_event": "本章关键事件，10-30字精炼描述"
+  "key_event": "本章关键事件，10-30字精炼描述",
+  "emotional_tone": ["压抑", "紧张"],
+  "scene_type": ["战斗", "突破"],
+  "technique": ["闪回", "独白"],
+  "hook_type": "悬念钩子"
+}"""
+
+# LLM 返回格式的示例（单章，滑动窗口模式）
+_CHAPTER_JSON_SCHEMA_WITH_WINDOW = """{
+  "chapter": 1,
+  "summary": "章节摘要，50-100字",
+  "characters_appear": ["人物名1", "人物名2"],
+  "chapter_functions": ["日常", "战斗"],
+  "tension_level": 3,
+  "pacing": "快",
+  "setting": ["室内", "学校"],
+  "key_event": "本章关键事件，10-30字精炼描述",
+  "tension_change": "上升",
+  "emotion_transition": "紧张→释然",
+  "plot_progress": "推进主线，揭示新线索",
+  "emotional_tone": ["压抑", "紧张"],
+  "scene_type": ["战斗", "突破"],
+  "technique": ["闪回", "独白"],
+  "hook_type": "悬念钩子"
 }"""
 
 # LLM 返回格式的示例（批量）
 # 注意：示例中用占位符，避免 LLM 误解为序号
 _BATCH_JSON_SCHEMA = """{
   "chapters": [
-    {"chapter": 章节号, "summary": "摘要内容", "characters_appear": ["人物名"], "chapter_functions": ["标签"], "tension_level": 3, "pacing": "快", "setting": ["场景"], "key_event": "关键事件描述"}
+    {"chapter": 章节号, "summary": "摘要内容", "characters_appear": ["人物名"],
+     "chapter_functions": ["标签"], "tension_level": 3, "pacing": "快",
+     "setting": ["场景"], "key_event": "关键事件描述",
+     "emotional_tone": ["压抑"], "scene_type": ["战斗"],
+     "technique": ["闪回"], "hook_type": "悬念钩子"}
   ]
 }
 
 关键：chapter 字段必须是输入中的实际章节号（如 171、172），绝对不能用序号（如 1、2、3）"""
+
+
+def build_sliding_window_context(
+    chapter_num: int,
+    chapters_data: dict[int, dict],
+    lines: list[str],
+    chapter_index: list[dict],
+    evaluation: dict | None,
+    next_preview_chars: int = 500,
+) -> dict:
+    """构建滑动窗口上下文。
+
+    参数：
+        chapter_num：当前章节号
+        chapters_data：已分析的章节数据 {章节号: 数据}
+        lines：原文行列表
+        chapter_index：章节索引列表
+        evaluation：总体评估结果（可选）
+        next_preview_chars：下章预览字符数（默认500）
+
+    返回：
+        dict：{
+            "evaluation_summary": "全局评估摘要",
+            "prev_chapter_summary": "前章摘要（None 表示第一章）",
+            "prev_tension_level": 前章张力值,
+            "current_chapter_text": "当前章原文",
+            "next_chapter_preview": "下章前N字（None 表示最后一章）"
+        }
+    """
+    # 构建全局评估摘要（100字提炼）
+    eval_summary = ""
+    if evaluation:
+        novel_type = evaluation.get("novel_type", [])
+        main_thread = evaluation.get("main_thread_summary", "")
+        core_chars = evaluation.get("core_characters_hint", [])
+        eval_summary = f"类型：{', '.join(novel_type)}\n主线：{main_thread[:100]}...\n核心人物：{', '.join(core_chars[:5])}"
+
+    # 前章摘要和张力
+    prev_summary = None
+    prev_tension = None
+    if chapter_num > 1:
+        prev_ch = chapters_data.get(chapter_num - 1)
+        if prev_ch:
+            prev_summary = prev_ch.get("summary", "")
+            prev_tension = prev_ch.get("tension_level", 0)
+
+    # 当前章原文（从 chapter_index 获取行范围）
+    current_text = ""
+    for ch_info in chapter_index:
+        if ch_info.get("chapter") == chapter_num:
+            start_line = ch_info.get("start_line", 1)
+            end_line = ch_info.get("end_line", len(lines))
+            current_text = "\n".join(lines[start_line - 1:end_line])
+            break
+
+    # 下章预览（前N字）
+    next_preview = None
+    for ch_info in chapter_index:
+        if ch_info.get("chapter") == chapter_num + 1:
+            start_line = ch_info.get("start_line", 1)
+            end_line = ch_info.get("end_line", len(lines))
+            next_text = "\n".join(lines[start_line - 1:end_line])
+            next_preview = next_text[:next_preview_chars]
+            break
+
+    return {
+        "evaluation_summary": eval_summary,
+        "prev_chapter_summary": prev_summary,
+        "prev_tension_level": prev_tension,
+        "current_chapter_text": current_text,
+        "next_chapter_preview": next_preview,
+    }
+
+
+def validate_window_fields(result: dict, prev_tension: int | None) -> list[str]:
+    """校验滑动窗口新增字段，返回错误列表。
+
+    参数：
+        result：LLM 返回结果
+        prev_tension：前章张力值（用于校验 tension_change）
+
+    返回：
+        list[str]：错误描述列表
+    """
+    errors = []
+
+    # tension_change 校验
+    tension_change = result.get("tension_change")
+    if tension_change:
+        if tension_change not in TENSION_CHANGE_VALUES:
+            errors.append(f"tension_change 值 '{tension_change}' 不合法")
+
+        # 检查与前章张力的一致性（如果有）
+        if prev_tension is not None:
+            current_tension = result.get("tension_level", 0)
+            if current_tension:
+                expected_change = None
+                if current_tension > prev_tension:
+                    expected_change = "上升"
+                elif current_tension < prev_tension:
+                    expected_change = "下降"
+                else:
+                    expected_change = "持平"
+
+                if tension_change != expected_change:
+                    errors.append(
+                        f"tension_change '{tension_change}' 与张力变化不一致 "
+                        f"(前章{prev_tension}→当前{current_tension}，期望'{expected_change}')"
+                    )
+
+    # emotion_transition 校验
+    emotion = result.get("emotion_transition")
+    if emotion and len(emotion) < 5:
+        errors.append(f"emotion_transition 过短 ({len(emotion)}字)")
+
+    # plot_progress 校验
+    progress = result.get("plot_progress")
+    if progress and len(progress) < 10:
+        errors.append(f"plot_progress 过短 ({len(progress)}字)")
+
+    return errors
 
 
 def analyze_chapter(
@@ -201,6 +365,7 @@ def analyze_chapter(
     config: dict,
     progress_ratio: float = 0.0,
     material_id: str = "",
+    window_context: dict | None = None,
 ) -> dict:
     """分析单个章节，返回结构化数据。
 
@@ -210,6 +375,7 @@ def analyze_chapter(
         config：LLM 配置
         progress_ratio：进度比例（用于动态提示词和温度策略）
         material_id：素材 ID（用于日志追踪）
+        window_context：滑动窗口上下文（可选），包含前章摘要、全局评估等
 
     返回：
         dict：包含 summary、characters_appear、tension_level 等字段
@@ -225,7 +391,39 @@ def analyze_chapter(
     else:
         system_prompt = _SYSTEM_PROMPT
 
-    user_prompt = f"""请分析以下章节：
+    # 构建用户提示词
+    if window_context:
+        # 滑动窗口模式：注入上下文
+        eval_summary = window_context.get("evaluation_summary", "")
+        prev_summary = window_context.get("prev_chapter_summary")
+        prev_tension = window_context.get("prev_tension_level")
+        next_preview = window_context.get("next_chapter_preview")
+
+        context_parts = []
+        if eval_summary:
+            context_parts.append(f"全局评估：\n{eval_summary}")
+        if prev_summary:
+            context_parts.append(f"前章摘要（张力={prev_tension}）：\n{prev_summary}")
+        else:
+            context_parts.append("前章摘要：（第一章，无前章）")
+        if next_preview:
+            context_parts.append(f"下章预览（前500字）：\n{next_preview}")
+        else:
+            context_parts.append("下章预览：（最后一章，无下章）")
+
+        user_prompt = f"""{chr(10).join(context_parts)}
+
+当前章节：
+章节号：{chapter_info.get('chapter', 'N/A')}
+标题：{chapter_info.get('title', 'N/A')}
+内容：
+{truncated}
+
+请分析当前章节，返回 JSON 格式：
+{_CHAPTER_JSON_SCHEMA_WITH_WINDOW}"""
+    else:
+        # 普通模式
+        user_prompt = f"""请分析以下章节：
 
 章节号：{chapter_info.get('chapter', 'N/A')}
 标题：{chapter_info.get('title', 'N/A')}
@@ -539,6 +737,7 @@ def chapter_analyze(
     start_ch: int | None = None,
     end_ch: int | None = None,
     provider: str | None = None,
+    use_window: bool = False,
 ) -> bool:
     """对指定小说进行章节分析（支持断点续传和范围指定）。
 
@@ -555,6 +754,8 @@ def chapter_analyze(
         start_ch：起始章节号（可选，不指定则从第一章开始）
         end_ch：结束章节号（可选，不指定则到最后一章）
         provider：服务商名称（可选，不指定则使用默认配置）
+        use_window：是否启用滑动窗口模式（可选，默认 False）
+                   启用时会加载 evaluation.yaml 和前章摘要作为上下文
 
     返回：
         True 表示成功，False 表示失败
@@ -590,12 +791,22 @@ def chapter_analyze(
     range_info = ""
     if start_ch is not None or end_ch is not None:
         range_info = f" | 分析范围: 第 {range_start}-{range_end} 章"
-    logger.info(f"[{material_id}] 小说: {title} | {chapter_count} 章 | {word_count} 字 | 状态: {status}{range_info}")
+    window_info = " | 滑动窗口模式" if use_window else ""
+    logger.info(f"[{material_id}] 小说: {title} | {chapter_count} 章 | {word_count} 字 | 状态: {status}{range_info}{window_info}")
 
     with open(novel_dir / "source.txt", "r", encoding="utf-8") as f:
         full_text = f.read()
 
     lines = full_text.split("\n")
+
+    # 滑动窗口模式：加载 evaluation.yaml
+    evaluation = None
+    if use_window:
+        evaluation = load_evaluation(material_id)
+        if evaluation:
+            logger.info(f"[{material_id}] 已加载总体评估：{evaluation.get('novel_type', [])}")
+        else:
+            logger.warning(f"[{material_id}] 滑动窗口模式但未找到 evaluation.yaml，将无全局上下文")
 
     # 计算范围内的章节总数
     chapters_in_range = [
@@ -606,6 +817,12 @@ def chapter_analyze(
     total = len(chapters_in_range)
     rate_limit = config["llm"].get("rate_limit_seconds", 1)
     batch_size = _get_batch_size(config)
+
+    # 滑动窗口模式：禁用批量处理（每章上下文不同）
+    if use_window and batch_size > 1:
+        logger.info(f"[{material_id}] 滑动窗口模式禁用批量处理，改为逐章分析")
+        batch_size = 1
+
     completed = 0
     skipped = 0
     total_downgrades = 0
@@ -697,6 +914,7 @@ def chapter_analyze(
         for ch_info in batch:
             ch_num = ch_info["chapter"]
             result = batch_results.get(ch_num)
+            window_context = None  # 显式初始化，避免作用域问题
 
             if result is None:
                 # 批量失败或缺漏，改用单章分析
@@ -706,8 +924,20 @@ def chapter_analyze(
                 chapter_text = "\n".join(lines[ch_info["start_line"] - 1:ch_info["end_line"]])
                 # 计算单章的进度比例
                 ch_progress_ratio = (ch_num - range_start) / max(range_end - range_start + 1, 1)
+
+                # 滑动窗口模式：构建窗口上下文
+                if use_window:
+                    window_context = build_sliding_window_context(
+                        ch_num, done, lines, chapter_index, evaluation
+                    )
+
                 try:
-                    result = analyze_chapter(chapter_text, ch_info, config, progress_ratio=ch_progress_ratio, material_id=material_id)
+                    result = analyze_chapter(
+                        chapter_text, ch_info, config,
+                        progress_ratio=ch_progress_ratio,
+                        material_id=material_id,
+                        window_context=window_context,
+                    )
                     batch_api_calls += 1
                 except Exception as e:
                     logger.error(f"[{material_id}] 第 {ch_num} 章分析失败（已重试耗尽）: {e}")
@@ -718,6 +948,19 @@ def chapter_analyze(
             errors = validate_chapter_analysis(result, ch_info)
             for err in errors:
                 logger.warning(f"[{material_id}] [质量] {err}")
+                batch_errors += 1
+
+            # 滑动窗口模式：校验窗口字段
+            if use_window and window_context:
+                window_errors = validate_window_fields(result, window_context.get("prev_tension_level"))
+                for err in window_errors:
+                    logger.warning(f"[{material_id}] [窗口] {err}")
+                    batch_errors += 1
+
+            # 章节级标签校验（阶段四新增）
+            tags_errors = validate_chapter_tags_fields(result)
+            for err in tags_errors:
+                logger.warning(f"[{material_id}] [标签] {err}")
                 batch_errors += 1
 
             result["chapter"] = ch_num
@@ -737,20 +980,23 @@ def chapter_analyze(
             _append_chapter(novel_dir, result)
             completed += 1
 
+            # 更新 done 字典（用于滑动窗口的下一章上下文）
+            done[ch_num] = result
+
             # 进度更新：在每章完成后更新（含 ETA 估算）
             if progress_callback:
-                done = skipped + completed
-                remaining = total - done
+                total_done = skipped + completed
+                remaining = total - total_done
                 desc = f"第 {first_ch}-{last_ch} 章 ({batch_idx + 1}/{n_batches})"
 
                 # ETA 估算：已耗时 × 剩余比例（至少完成 1 后才显示）
-                if eta_start_time and done > skipped and remaining > 0:
+                if eta_start_time and total_done > skipped and remaining > 0:
                     elapsed = time.monotonic() - eta_start_time
-                    new_done = done - skipped  # 本次运行实际完成的章数
+                    new_done = total_done - skipped  # 本次运行实际完成的章数
                     eta_sec = elapsed * remaining / new_done
                     desc += f" | ETA ~{_fmt_duration(eta_sec)}"
 
-                progress_callback(done, total, desc)
+                progress_callback(total_done, total, desc)
 
         # 批次耗时汇总
         batch_elapsed = time.monotonic() - batch_start_time

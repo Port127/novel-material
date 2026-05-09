@@ -12,6 +12,7 @@ from .worldbuilding import generate_worldbuilding
 from .characters import generate_characters
 from .tags import generate_tags
 from .progress import get_pipeline_progress, print_pipeline_status, get_next_pending_stage
+from .evaluate import run_evaluation
 
 __all__ = [
     "preprocess",
@@ -35,4 +36,5 @@ __all__ = [
     "get_pipeline_progress",
     "print_pipeline_status",
     "get_next_pending_stage",
+    "run_evaluation",
 ]

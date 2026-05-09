@@ -23,3 +23,4 @@ make db-init  # 或 nm storage init-db
 
 ## 迁移历史
 - 001_add_key_event.sql (2025-05-09): 添加章节关键事件字段
+- 002_add_chapter_tags.sql (2026-05-09): 添加章节级标签字段（情感基调/场景类型/叙事技巧/钩子类型）

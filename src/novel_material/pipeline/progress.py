@@ -66,6 +66,7 @@ def get_pipeline_progress(material_id: str) -> dict:
     return {
         "exists": True,
         "ingested": (novel_dir / "chapter_index.yaml").exists(),
+        "evaluation": (novel_dir / "meta" / "evaluation.yaml").exists(),
         "analyzed": analyzed,
         "outline": (novel_dir / "outline" / "_index.yaml").exists(),
         "worldbuilding": (novel_dir / "worldbuilding" / "_index.yaml").exists(),
@@ -96,6 +97,7 @@ def print_pipeline_status(progress: dict) -> None:
 
     stages = [
         ("入库", "ingested"),
+        ("总体评估", "evaluation"),  # 可选阶段
         ("章级分析", "analyzed"),
         ("大纲", "outline"),
         ("世界观", "worldbuilding"),
@@ -106,7 +108,11 @@ def print_pipeline_status(progress: dict) -> None:
     ]
 
     for name, key in stages:
-        status = "✓ 完成" if progress.get(key) else "○ 未完成"
+        # evaluation 是可选阶段，显示不同标记
+        if key == "evaluation":
+            status = "✓ 完成" if progress.get(key) else "- 未运行（可选）"
+        else:
+            status = "✓ 完成" if progress.get(key) else "○ 未完成"
         table.add_row(name, status)
 
     console.print(table)

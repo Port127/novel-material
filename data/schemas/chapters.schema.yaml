@@ -52,6 +52,34 @@
 
   key_event: "主角入狱，面临流放"                 # O | 关键事件描述（LLM 生成，10-30字精炼描述）
 
+  # ── 滑动窗口新增字段（阶段二）──
+
+  tension_change: 上升                           # O | 张力变化方向（上升/持平/下降）
+                                                 #     相对于前章 tension_level 的变化
+
+  emotion_transition: "紧张→释然"                 # O | 情感过渡描述（10-50字）
+                                                 #     描述本章情感基调与前章的过渡关系
+
+  plot_progress: "推进主线，揭示新线索"           # O | 情节进度描述（20-100字）
+                                                 #     描述本章在主线中的推进程度
+
+  # ── 章节级标签（阶段四）──
+
+  emotional_tone:                                # O | 情感基调标签数组（从 tags.yaml → chapter_function → 情感基调 选取）
+    - 压抑
+    - 紧张
+
+  scene_type:                                    # O | 场景类型标签数组（从 tags.yaml → chapter_function → 场景类型 选取）
+    - 战斗
+    - 突破
+
+  technique:                                     # O | 叙事技巧标签数组（从 tags.yaml → chapter_function → 叙事技巧 选取）
+    - 闪回
+    - 独白
+
+  hook_type: 悬念钩子                             # O | 章末钩子类型（单选）
+                                                 #     合法值：悬念钩子/反转钩子/情感钩子/信息钩子/危机钩子/无钩子
+
 # ====================================================================
 # 约束规则
 # ====================================================================
@@ -62,6 +90,8 @@
 # 4. chapter_function 中的值必须在 tags.yaml → chapter_function 字典中
 # 5. pacing 值域：快 / 慢 / 喘息 / 加速
 # 6. 章节号必须唯一，与 chapter_index.yaml 中的 chapter 字段一一对应
+# 7. emotional_tone/scene_type/technique 值应在 tags.yaml → chapter_function 对应分组中（警告级别）
+# 8. hook_type 必须在合法值集合中（错误级别）
 #
 # 校验脚本：scripts/utils/quality_check.py（pydantic ChapterEntryModel）
 # 校验时机：① chapter_analyze.py 全部完成后自动触发

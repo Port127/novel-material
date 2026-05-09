@@ -15,6 +15,7 @@ from novel_material.pipeline import (
     generate_characters,
     generate_tags,
     refine,
+    run_evaluation,
 )
 from novel_material.pipeline.progress import get_pipeline_progress, print_pipeline_status, get_next_pending_stage
 from novel_material.storage.sync import sync_novel
@@ -51,8 +52,15 @@ def cmd_analyze(
     start: int = typer.Option(None, "--start", "-s", help="起始章节号"),
     end: int = typer.Option(None, "--end", "-e", help="结束章节号（不指定则到结尾）"),
     provider: str = typer.Option(None, "--provider", "-p", help="服务商名称（如 deepseek）"),
+    use_window: bool = typer.Option(False, "--window", "-w", help="启用滑动窗口模式（需先运行 evaluate）"),
 ):
-    """章级分析：生成摘要、人物、标签。"""
+    """章级分析：生成摘要、人物、标签。
+
+    滑动窗口模式（--window）：
+    - 需要先运行 `nm pipeline evaluate` 生成总体评估
+    - 为每章提供前章摘要和全局评估作为上下文
+    - 输出新增字段：tension_change、emotion_transition、plot_progress
+    """
     # 验证参数
     if start is not None and start < 1:
         console.print("[red]起始章节号必须 >= 1[/red]")
@@ -74,6 +82,14 @@ def cmd_analyze(
         console.print(f"[red]结束章节号 {end} 超出总章数 {total_chapters}[/red]")
         raise typer.Exit(1)
 
+    # 滑动窗口模式：检查 evaluation.yaml 是否存在
+    if use_window:
+        eval_file = novel_dir / "meta" / "evaluation.yaml"
+        if not eval_file.exists():
+            console.print("[red]错误：滑动窗口模式需要先运行总体评估[/red]")
+            console.print("[red]请执行：nm pipeline evaluate {material_id}[/red]")
+            raise typer.Exit(1)
+
     # 计算范围内章节数
     chapters_in_range = [
         ch for ch in chapter_index
@@ -88,6 +104,7 @@ def cmd_analyze(
         range_start = start or 1
         range_end = end or total_chapters
         range_desc = f" (第 {range_start}-{range_end} 章)"
+    window_desc = " [滑动窗口]" if use_window else ""
 
     with Progress(
         SpinnerColumn(),
@@ -96,13 +113,20 @@ def cmd_analyze(
         TaskProgressColumn(),
         console=console,
     ) as progress:
-        task = progress.add_task(f"章级分析: {material_id}{range_desc}", total=range_total)
+        task = progress.add_task(f"章级分析: {material_id}{range_desc}{window_desc}", total=range_total)
 
         def update_progress(done: int, total: int, desc: str):
             progress.update(task, completed=done, description=f"章级分析: {desc}")
 
         with silent_console():
-            chapter_analyze(material_id, start_ch=start, end_ch=end, progress_callback=update_progress, provider=provider)
+            chapter_analyze(
+                material_id,
+                start_ch=start,
+                end_ch=end,
+                progress_callback=update_progress,
+                provider=provider,
+                use_window=use_window,
+            )
 
     console.print("[green]章级分析完成[/green]")
 
@@ -110,6 +134,34 @@ def cmd_analyze(
     if start is not None or end is not None:
         console.print("[yellow]警告：仅分析了部分章节，后续阶段（大纲、世界观等）将基于不完整的章级数据生成[/yellow]")
         console.print("[yellow]建议：分析全书后再执行后续阶段，或使用 nm pipeline continue --skip-sync 完成后续[/yellow]")
+
+
+@app.command("evaluate")
+def cmd_evaluate(
+    material_id: str = typer.Argument(..., help="素材 ID"),
+    provider: str = typer.Option(None, "--provider", "-p", help="服务商名称"),
+):
+    """总体评估：对小说做全局评估，生成类型、主线概要、阶段概要。"""
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        console=console,
+    ) as progress:
+        task = progress.add_task(f"总体评估: {material_id}", total=5)
+
+        def update_progress(done: int, total: int, desc: str):
+            progress.update(task, completed=done, description=f"总体评估: {desc}")
+
+        with silent_console():
+            success = run_evaluation(material_id, provider=provider, progress_callback=update_progress)
+
+    if success:
+        console.print("[green]总体评估完成[/green]")
+    else:
+        console.print("[red]总体评估失败[/red]")
+        raise typer.Exit(1)
 
 
 @app.command("outline")
@@ -374,6 +426,7 @@ def cmd_continue(
     start: int = typer.Option(None, "--start", "-s", help="起始章节号"),
     end: int = typer.Option(None, "--end", "-e", help="结束章节号（不指定则到结尾）"),
     provider: str = typer.Option(None, "--provider", "-p", help="服务商名称"),
+    use_window: bool = typer.Option(False, "--window", "-w", help="启用滑动窗口模式（需先运行 evaluate）"),
 ):
     """自动从断点继续流水线。
 
@@ -382,6 +435,10 @@ def cmd_continue(
     - 骨架分析（大纲、世界观、人物、标签）
     - 精调
     - 数据库同步
+
+    滑动窗口模式（--window）：
+    - 需要先运行 `nm pipeline evaluate` 生成总体评估
+    - 为每章提供前章摘要和全局评估作为上下文
     """
     # 验证参数
     if start is not None and start < 1:
@@ -390,6 +447,15 @@ def cmd_continue(
     if start is not None and end is not None and end < start:
         console.print("[red]结束章节号必须 >= 起始章节号[/red]")
         raise typer.Exit(1)
+
+    # 滑动窗口模式：检查 evaluation.yaml 是否存在
+    if use_window:
+        novel_dir = NOVELS_DIR / material_id
+        eval_file = novel_dir / "meta" / "evaluation.yaml"
+        if not eval_file.exists():
+            console.print("[red]错误：滑动窗口模式需要先运行总体评估[/red]")
+            console.print("[red]请执行：nm pipeline evaluate {material_id}[/red]")
+            raise typer.Exit(1)
 
     progress = get_pipeline_progress(material_id)
     print_pipeline_status(progress)
@@ -461,7 +527,14 @@ def cmd_continue(
                 progress_bar.update(task1, completed=done, description=f"阶段 1: {desc}")
 
             with silent_console():
-                chapter_analyze(material_id, start_ch=start, end_ch=end, progress_callback=update_progress, provider=provider)
+                chapter_analyze(
+                    material_id,
+                    start_ch=start,
+                    end_ch=end,
+                    progress_callback=update_progress,
+                    provider=provider,
+                    use_window=use_window,
+                )
             progress_bar.remove_task(task1)
 
         # 阶段 2: 大纲（不确定进度）
