@@ -125,7 +125,12 @@ def _extract_core_characters(
 
     logger.info("第一轮：提取核心人物...")
     result = call_llm(system_prompt, user_prompt, config, max_tokens_override=8000, timeout_override=config["llm"]["characters_timeout"], context="人物#核心")
-    characters = result.get("characters", [])
+    # 兼容 LLM 直接返回数组的情况
+    if isinstance(result, list):
+        logger.warning("人物提取返回裸数组，自动适配")
+        characters = result
+    else:
+        characters = result.get("characters", [])
     logger.info(f"核心人物提取完成: {len(characters)} 人 | finish={get_last_call_finish_reason()}")
     return characters
 
@@ -190,7 +195,12 @@ def _extract_minor_characters(
 
     logger.info("第二轮：补充次要人物...")
     result = call_llm(system_prompt, user_prompt, config, max_tokens_override=8000, timeout_override=config["llm"]["characters_timeout"], context="人物#次要")
-    characters = result.get("characters", [])
+    # 兼容 LLM 直接返回数组的情况
+    if isinstance(result, list):
+        logger.warning("次要人物提取返回裸数组，自动适配")
+        characters = result
+    else:
+        characters = result.get("characters", [])
     logger.info(f"次要人物提取完成: {len(characters)} 人 | finish={get_last_call_finish_reason()}")
     return characters
 

@@ -10,15 +10,12 @@ from pydantic import ValidationError as PydanticValidationError
 
 from novel_material.infra.config import NOVELS_DIR, VALID_STATUSES
 from novel_material.tags.validate import validate_tag, validate_tags_batch
+from novel_material.validation.pacing_normalize import PACING_CORE, normalize_pacing
 
 # 常量
 _MATERIAL_ID_PATTERN = re.compile(r"^nm_[a-z]+_\d{8}_[a-z0-9]{4}$")
 _VALID_STATUSES = set(VALID_STATUSES)
-_VALID_PACING = {
-    "快", "慢", "喘息", "加速", "中", "平稳",
-    # LLM 输出变体（兼容）
-    "极快", "平缓", "中慢", "缓", "适中", "中快", "慢转快",
-}
+_VALID_PACING = PACING_CORE  # 使用核心集合，变体已在前置规范化处理
 
 
 # Pydantic 模型
@@ -70,7 +67,7 @@ class ChapterEntryModel(BaseModel):
     """chapters.yaml 单章条目的字段约束。"""
     chapter: int = Field(..., ge=1)
     title: str
-    summary: str = Field(..., min_length=15, max_length=500)  # 放宽最小长度，兼容标题页占位章节
+    summary: str = Field(..., min_length=40, max_length=500)  # 与 quality.py 阈值统一
     tension_level: int = Field(..., ge=1, le=5)
     characters_appear: list = Field(default_factory=list)
     chapter_functions: Optional[list] = None
@@ -86,11 +83,15 @@ class ChapterEntryModel(BaseModel):
     @field_validator("pacing")
     @classmethod
     def check_pacing(cls, v: Optional[str]) -> Optional[str]:
-        if v is not None and v not in _VALID_PACING:
+        if v is None:
+            return None
+        # 先规范化再校验（兼容 LLM 输出变体）
+        normalized = normalize_pacing(v)
+        if normalized not in _VALID_PACING:
             raise ValueError(
-                f"pacing 值 '{v}' 不合法，合法值：{_VALID_PACING}"
+                f"pacing 值 '{v}' 规范化后 '{normalized}' 仍不合法，合法值：{_VALID_PACING}"
             )
-        return v
+        return normalized  # 返回规范化后的值
 
 
 class NovelTagsModel(BaseModel):

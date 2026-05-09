@@ -24,6 +24,7 @@ from collections.abc import Callable
 from novel_material.infra.config import NOVELS_DIR, update_meta_status, get_settings
 from novel_material.infra.llm import load_config, call_llm, truncate_to_tokens, get_last_call_finish_reason
 from novel_material.validation.quality import run_quality_check
+from novel_material.validation.pacing_normalize import normalize_pacing
 from novel_material.infra.progress import get_pipeline_logger
 
 logger = get_pipeline_logger()
@@ -353,14 +354,18 @@ def analyze_chapters_batch(
     # 解析计时
     parse_start = time.monotonic()
 
-    # 解析返回结果
-    chapters_list = result.get("chapters", [])
-    if not chapters_list:
-        logger.warning(f"{prefix}批量返回无 chapters 数组，实际返回键: {list(result.keys())}")
-        # 兼容：如果返回单个章节对象而非数组
-        if result.get("summary") and batch_info:
-            logger.warning(f"{prefix}检测到单章格式返回，尝试兼容解析")
-            return {batch_info[0]["chapter"]: result}
+    # 解析返回结果：兼容 LLM 直接返回数组的情况
+    if isinstance(result, list):
+        logger.warning(f"{prefix}批量返回为裸数组（非 {'chapters': [...]} 格式），自动适配")
+        chapters_list = result
+    else:
+        chapters_list = result.get("chapters", [])
+        if not chapters_list:
+            logger.warning(f"{prefix}批量返回无 chapters 数组，实际返回键: {list(result.keys())}")
+            # 兼容：如果返回单个章节对象而非数组
+            if result.get("summary") and batch_info:
+                logger.warning(f"{prefix}检测到单章格式返回，尝试兼容解析")
+                return {batch_info[0]["chapter"]: result}
 
     parsed = {}
     for item in chapters_list:
@@ -426,7 +431,7 @@ def validate_chapter_analysis(result: dict, chapter_info: dict) -> list[str]:
     errors = []
 
     summary = result.get("summary", "")
-    if len(summary) < 20:
+    if len(summary) < 40:
         errors.append(f"章节{chapter_info['chapter']}: 摘要过短({len(summary)}字)")
 
     tension = result.get("tension_level")
@@ -703,6 +708,14 @@ def chapter_analyze(
             result["chapter"] = ch_num
             result["title"] = ch_info["title"]
             result["word_count"] = ch_info.get("word_count", 0)  # 从索引中获取正确字数，防御性取值
+
+            # 规范化 pacing（LLM 输出变体 → 标准值）
+            if "pacing" in result:
+                original = result["pacing"]
+                normalized = normalize_pacing(original)
+                if normalized != original:
+                    logger.info(f"[{material_id}] pacing 规范化: '{original}' → '{normalized}'")
+                result["pacing"] = normalized
 
             # 立即保存（断点续传关键）
             _append_chapter(novel_dir, result)

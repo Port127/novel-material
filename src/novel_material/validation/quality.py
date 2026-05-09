@@ -139,8 +139,8 @@ def check_summary_quality(material_id: str, start_ch: int | None = None, end_ch:
             continue
 
         summary = ch.get("summary", "")
-        if len(summary) < 50:
-            errors.append(f"第{ch_num}章: 摘要过短（{len(summary)}字，要求 ≥50）")
+        if len(summary) < 40:
+            errors.append(f"第{ch_num}章: 摘要过短（{len(summary)}字，要求 ≥40）")
         if len(summary) > 200:
             warnings.append(f"第{ch_num}章: 摘要过长（{len(summary)}字，建议 ≤200）")
         funcs = ch.get("chapter_functions", ch.get("chapter_function", []))

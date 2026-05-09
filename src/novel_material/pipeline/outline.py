@@ -154,6 +154,10 @@ def _generate_acts_sequences(
 
     result = call_llm(system_prompt, user_prompt, config, max_tokens_override=4000, timeout_override=config["llm"]["outline_timeout"], context="幕序列划分")
     logger.info(f"幕序列划分完成: finish={get_last_call_finish_reason()}")
+    # 兼容 LLM 直接返回数组的情况
+    if isinstance(result, list):
+        logger.warning("幕序列划分返回裸数组，自动适配")
+        return result
     return result.get("acts", [])
 
 
@@ -239,6 +243,10 @@ def _generate_beats_for_sequence(
 
     result = call_llm(system_prompt, user_prompt, config, max_tokens_override=2000, timeout_override=config["llm"]["outline_timeout"], context=f"beats#{seq.get('sequence_number', '?')}")
     logger.debug(f"beats#{seq.get('sequence_number', '?')}: finish={get_last_call_finish_reason()}")
+    # 兼容 LLM 直接返回数组的情况
+    if isinstance(result, list):
+        logger.warning(f"beats#{seq.get('sequence_number', '?')} 返回裸数组，自动适配")
+        return result
     return result.get("beats", [])
 
 
