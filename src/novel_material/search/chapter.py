@@ -11,8 +11,10 @@ load_dotenv()
 from .common import build_like_terms, require_database_url
 from novel_material.infra.embedding import get_embedding, load_embedding_config
 from novel_material.tags.resolve import resolve_tag_domain, suggest_genre_for_tag
+from novel_material.infra.logging_config import get_search_logger
 
 DATABASE_URL = os.getenv("DATABASE_URL")
+logger = get_search_logger()
 
 
 def search_chapters(query, genre=None, chapter_function=None, chapter_num=None, tension_min=None, tension_max=None, element=None, style=None, limit=10, semantic=False):

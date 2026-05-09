@@ -9,8 +9,10 @@ load_dotenv()
 
 from .common import build_like_terms, require_database_url
 from novel_material.infra.embedding import get_embedding, load_embedding_config
+from novel_material.infra.logging_config import get_search_logger
 
 DATABASE_URL = os.getenv("DATABASE_URL")
+logger = get_search_logger()
 
 
 def search_events(query, setting=None, emotion=None, limit=10, keyword=False):

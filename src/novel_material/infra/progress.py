@@ -3,66 +3,17 @@ import sys
 import yaml
 import time
 import threading
-import logging
 from pathlib import Path
 from contextlib import contextmanager
 
-from .logging_config import get_effective_level, ensure_log_dir
+from .logging_config import (
+    get_pipeline_logger,
+    pause_console_logging,
+    resume_console_logging,
+)
 
-_CONSOLE_HANDLER: logging.StreamHandler | None = None
-
-
-def get_pipeline_logger() -> logging.Logger:
-    """获取 pipeline logger。"""
-    return _setup_logger()
-
-
-def _setup_logger() -> logging.Logger:
-    """配置日志记录器（使用全局配置）。
-
-    使用 _CONSOLE_HANDLER 作为初始化标志，确保 pause/resume 功能可用。
-    日志文件按天切分：pipeline_YYYY-MM-DD.log，同一天多次运行追加到同一文件。
-    """
-    global _CONSOLE_HANDLER
-    logger = logging.getLogger("pipeline")
-
-    # 已初始化则直接返回
-    if _CONSOLE_HANDLER is not None:
-        return logger
-
-    # 使用配置模块
-    logger.setLevel(get_effective_level())
-
-    # 确保目录存在
-    log_dir = ensure_log_dir()
-
-    # 按天切分：当天的日期作为文件名
-    today_file = log_dir / f"pipeline_{time.strftime('%Y-%m-%d')}.log"
-    file_handler = logging.FileHandler(today_file, encoding="utf-8", mode="a")
-    file_handler.setFormatter(
-        logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s", datefmt="%H:%M:%S")
-    )
-    file_handler.setLevel(logging.DEBUG)
-    logger.addHandler(file_handler)
-
-    _CONSOLE_HANDLER = logging.StreamHandler(sys.stdout)
-    _CONSOLE_HANDLER.setFormatter(logging.Formatter("%(message)s"))
-    _CONSOLE_HANDLER.setLevel(get_effective_level())
-    logger.addHandler(_CONSOLE_HANDLER)
-
-    return logger
-
-
-def pause_console_logging() -> None:
-    """暂停控制台日志输出。"""
-    if _CONSOLE_HANDLER:
-        _CONSOLE_HANDLER.setLevel(logging.CRITICAL + 1)
-
-
-def resume_console_logging() -> None:
-    """恢复控制台日志输出（恢复到配置的级别）。"""
-    if _CONSOLE_HANDLER:
-        _CONSOLE_HANDLER.setLevel(get_effective_level())
+# 重新导出，保持其他模块导入路径不变
+__all__ = ["get_pipeline_logger", "pause_console_logging", "resume_console_logging", "silent_console"]
 
 
 @contextmanager
@@ -181,7 +132,7 @@ class StageTracker:
         self._prev_completed = 0
         self._prev_time = time.monotonic()
         self._eta_seconds = 0
-        self._logger = _setup_logger()
+        self._logger = get_pipeline_logger()
         self._completed_stage_times: list[float] = []
         # Token 统计
         self._tokens_in = 0
@@ -374,7 +325,7 @@ class PipelineRunner:
         self._stage_times: list[tuple[str, float]] = []
         self._stage_details: list[dict] = []
         self._novel_dir = novel_dir
-        self._logger = _setup_logger()
+        self._logger = get_pipeline_logger()
         self._logger.info(f"=== 流水线启动: {name} ({total_stages} 个阶段) ===")
 
         if novel_info:

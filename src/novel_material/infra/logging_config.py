@@ -3,8 +3,14 @@
 所有日志行为通过环境变量控制：
 - LOG_LEVEL: 日志级别 (DEBUG/INFO/WARNING/ERROR/CRITICAL)
 - LOG_DIR: 日志目录
+
+日志文件命名（进程级隔离）：
+- pipeline: pipeline_{YYYY-MM-DD}_{PID}.log
+- search: search_{YYYY-MM-DD}_{PID}.log
 """
 import os
+import sys
+import time
 import logging
 from pathlib import Path
 from dotenv import load_dotenv
@@ -46,3 +52,96 @@ def ensure_log_dir() -> Path:
 def get_log_level_name() -> str:
     """获取日志级别名称（用于显示）。"""
     return LOG_LEVEL.upper()
+
+
+# ============================================================================
+# Pipeline 日志
+# ============================================================================
+
+_PIPELINE_HANDLER: logging.StreamHandler | None = None
+
+
+def get_pipeline_logger() -> logging.Logger:
+    """获取 pipeline logger（进程级隔离）。"""
+    return _setup_pipeline_logger()
+
+
+def _setup_pipeline_logger() -> logging.Logger:
+    """配置 pipeline 日志记录器。"""
+    global _PIPELINE_HANDLER
+    logger = logging.getLogger("pipeline")
+    if _PIPELINE_HANDLER is not None:
+        return logger
+
+    logger.setLevel(get_effective_level())
+    log_dir = ensure_log_dir()
+
+    # PID 隔离：每个进程独立日志文件
+    log_file = log_dir / f"pipeline_{time.strftime('%Y-%m-%d')}_{os.getpid()}.log"
+    file_handler = logging.FileHandler(log_file, encoding="utf-8", mode="a")
+    file_handler.setFormatter(
+        logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s", datefmt="%H:%M:%S")
+    )
+    file_handler.setLevel(logging.DEBUG)
+    logger.addHandler(file_handler)
+
+    _PIPELINE_HANDLER = logging.StreamHandler(sys.stdout)
+    _PIPELINE_HANDLER.setFormatter(logging.Formatter("%(message)s"))
+    _PIPELINE_HANDLER.setLevel(get_effective_level())
+    logger.addHandler(_PIPELINE_HANDLER)
+
+    return logger
+
+
+# ============================================================================
+# Search 日志
+# ============================================================================
+
+_SEARCH_HANDLER: logging.StreamHandler | None = None
+
+
+def get_search_logger() -> logging.Logger:
+    """获取 search logger（独立日志文件，进程级隔离）。"""
+    return _setup_search_logger()
+
+
+def _setup_search_logger() -> logging.Logger:
+    """配置 search 日志记录器。"""
+    global _SEARCH_HANDLER
+    logger = logging.getLogger("search")
+    if _SEARCH_HANDLER is not None:
+        return logger
+
+    logger.setLevel(get_effective_level())
+    log_dir = ensure_log_dir()
+
+    log_file = log_dir / f"search_{time.strftime('%Y-%m-%d')}_{os.getpid()}.log"
+    file_handler = logging.FileHandler(log_file, encoding="utf-8", mode="a")
+    file_handler.setFormatter(
+        logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s", datefmt="%H:%M:%S")
+    )
+    file_handler.setLevel(logging.DEBUG)
+    logger.addHandler(file_handler)
+
+    _SEARCH_HANDLER = logging.StreamHandler(sys.stdout)
+    _SEARCH_HANDLER.setFormatter(logging.Formatter("%(message)s"))
+    _SEARCH_HANDLER.setLevel(get_effective_level())
+    logger.addHandler(_SEARCH_HANDLER)
+
+    return logger
+
+
+# ============================================================================
+# 控制台日志控制
+# ============================================================================
+
+def pause_console_logging() -> None:
+    """暂停控制台日志输出（用于进度条显示期间）。"""
+    if _PIPELINE_HANDLER:
+        _PIPELINE_HANDLER.setLevel(logging.CRITICAL + 1)
+
+
+def resume_console_logging() -> None:
+    """恢复控制台日志输出。"""
+    if _PIPELINE_HANDLER:
+        _PIPELINE_HANDLER.setLevel(get_effective_level())
