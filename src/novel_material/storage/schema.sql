@@ -242,17 +242,3 @@ CREATE TABLE IF NOT EXISTS free_tags_stats (
 
 CREATE INDEX IF NOT EXISTS idx_free_tags_count ON free_tags_stats(occurrence_count DESC);
 
--- ============================================================
--- 数据库迁移：为已存在的表添加新字段
--- ============================================================
-
--- 已存在数据库需执行以下迁移语句
--- 新数据库初始化时 CREATE TABLE 已包含这些字段，无需执行
-
--- 添加 key_event 和 key_plot_point 字段（如不存在）
-ALTER TABLE chapters ADD COLUMN IF NOT EXISTS key_event TEXT;
-ALTER TABLE chapters ADD COLUMN IF NOT EXISTS key_plot_point TEXT;
-
--- 注释说明
-COMMENT ON COLUMN chapters.key_plot_point IS '结构角色标记（代码推断）：inciting_incident/midpoint/climax/resolution 等';
-COMMENT ON COLUMN chapters.key_event IS '关键事件描述（LLM生成）：10-30字精炼情节描述';
