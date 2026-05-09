@@ -19,12 +19,20 @@ def _build_context(novel_dir: Path, config: dict) -> tuple[str, str]:
     """构建分析上下文，优先使用章级摘要池，兜底读原文片段。
 
     章数 > 200 时自动启用分层均匀采样，确保全书首尾及中间均有代表。
+    特殊类型章节（afterword/author_note）不参与摘要池构建。
     """
     model = config["llm"]["model"]
     chapters_data = load_chapters_data(novel_dir)
     if chapters_data:
-        pool = build_summary_pool(chapters_data, config["llm"]["worldbuilding_summary_tokens"], model)
-        return pool, f"章级摘要池（共 {len(chapters_data)} 章）"
+        # 过滤特殊类型章节
+        filtered_chapters = [
+            ch for ch in chapters_data
+            if ch.get("type", "normal") in ("normal", "extra")
+        ]
+        skipped_count = len(chapters_data) - len(filtered_chapters)
+
+        pool = build_summary_pool(filtered_chapters, config["llm"]["worldbuilding_summary_tokens"], model)
+        return pool, f"章级摘要池（共 {len(filtered_chapters)} 章，跳过 {skipped_count} 章特殊类型）"
 
     logger.warning("章节数据不存在或为空，回退到原文前 10000 字（质量受限）")
     with open(novel_dir / "source.txt", "r", encoding="utf-8") as f:

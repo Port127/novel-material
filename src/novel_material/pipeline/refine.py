@@ -131,6 +131,7 @@ def refine(material_id) -> bool:
     """主精调函数：调整 outline/characters/tags。
 
     注意：精调阶段不调用 LLM，仅基于章级分析数据进行统计聚合。
+    特殊类型章节（afterword/author_note）不参与统计。
 
     参数：
         material_id: 素材 ID
@@ -156,25 +157,38 @@ def refine(material_id) -> bool:
     word_count = meta.get("word_count", "?")
     status = meta.get("status", "?")
 
-    # 读取章节索引获取章数
+    # 读取章节索引获取章数和类型映射
     chapter_index_file = novel_dir / "chapter_index.yaml"
     chapter_count = 0
+    chapter_types = {}  # {章节号: 类型}
     if chapter_index_file.exists():
         with open(chapter_index_file, "r", encoding="utf-8") as f:
             chapter_index = yaml.safe_load(f) or []
             chapter_count = len(chapter_index)
+            for ch in chapter_index:
+                ch_num = ch.get("chapter")
+                ch_type = ch.get("type", "normal")
+                if ch_num is not None:
+                    chapter_types[ch_num] = ch_type
 
     with open(chapters_file, "r", encoding="utf-8") as f:
         chapters_data = yaml.safe_load(f) or []
 
+    # 过滤特殊类型章节（不参与统计）
+    filtered_chapters = [
+        ch for ch in chapters_data
+        if chapter_types.get(ch.get("chapter"), "normal") in ("normal", "extra")
+    ]
+    skipped_count = len(chapters_data) - len(filtered_chapters)
+
     # 输出小说基本信息
     logger.info(f"[{material_id}] 小说: {title} | {chapter_count} 章 | {word_count} 字 | 状态: {status}")
-    logger.info(f"[{material_id}] 输入: {len(chapters_data)} 章章级分析数据")
+    logger.info(f"[{material_id}] 输入: {len(chapters_data)} 章章级分析数据（跳过 {skipped_count} 章特殊类型）")
 
     refined = {
-        "outline": refine_outline(material_id, chapters_data),
-        "characters": refine_characters(material_id, chapters_data),
-        "tags": refine_tags(material_id, chapters_data)
+        "outline": refine_outline(material_id, filtered_chapters),
+        "characters": refine_characters(material_id, filtered_chapters),
+        "tags": refine_tags(material_id, filtered_chapters)
     }
 
     meta_file = novel_dir / "meta.yaml"

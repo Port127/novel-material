@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS chapters (
     material_id TEXT NOT NULL,
     chapter INTEGER NOT NULL,
     title TEXT,
+    type TEXT DEFAULT 'normal',            -- normal/afterword/extra/author_note
     summary TEXT,                        -- 50-100字内容摘要
     summary_embedding vector(4096),      -- pgvector 向量
     word_count INTEGER,

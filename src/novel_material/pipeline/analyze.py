@@ -424,22 +424,36 @@ def validate_chapter_analysis(result: dict, chapter_info: dict) -> list[str]:
     """检查分析结果是否合格，返回问题列表。
 
     检查项：
-    - 摘要长度是否足够（至少 20 字）
-    - tension_level 是否在 1-5 范围内
+    - 摘要长度是否足够
+    - tension_level 是否在有效范围内
     - 是否识别到出场人物
+
+    特殊类型章节（afterword/author_note）放宽检查。
     """
     errors = []
+    ch_num = chapter_info.get("chapter", "?")
+    ch_type = chapter_info.get("type", "normal")
+
+    # 特殊类型：放宽检查
+    if ch_type in ("afterword", "author_note"):
+        summary = result.get("summary", "")
+        if len(summary) < 20:  # 降低阈值
+            errors.append(f"章节{ch_num}: 摘要过短({len(summary)}字)")
+        # 不检查人物和张力
+        return errors
+
+    # 正文/番外：完整检查
 
     summary = result.get("summary", "")
     if len(summary) < 40:
-        errors.append(f"章节{chapter_info['chapter']}: 摘要过短({len(summary)}字)")
+        errors.append(f"章节{ch_num}: 摘要过短({len(summary)}字)")
 
     tension = result.get("tension_level")
     if tension is not None and not (1 <= tension <= 5):
-        errors.append(f"章节{chapter_info['chapter']}: tension_level 不在 1-5 范围")
+        errors.append(f"章节{ch_num}: tension_level 不在 1-5 范围")
 
     if not result.get("characters_appear"):
-        errors.append(f"章节{chapter_info['chapter']}: 未识别到出场人物")
+        errors.append(f"章节{ch_num}: 未识别到出场人物")
 
     return errors
 
@@ -707,6 +721,7 @@ def chapter_analyze(
 
             result["chapter"] = ch_num
             result["title"] = ch_info["title"]
+            result["type"] = ch_info.get("type", "normal")  # 从索引中获取章节类型
             result["word_count"] = ch_info.get("word_count", 0)  # 从索引中获取正确字数，防御性取值
 
             # 规范化 pacing（LLM 输出变体 → 标准值）

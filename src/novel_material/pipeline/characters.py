@@ -29,11 +29,17 @@ VALID_ROLES = ("protagonist", "antagonist", "supporting", "minor")
 def _extract_appearance_stats(chapters_data: list) -> dict:
     """统计章节出场人物频率。
 
+    特殊类型章节（afterword/author_note）不参与统计。
+
     返回：
         dict: {人物名: 出场章数}
     """
     all_chars = []
     for ch in chapters_data:
+        ch_type = ch.get("type", "normal")
+        # 跳过特殊类型章节
+        if ch_type in ("afterword", "author_note"):
+            continue
         chars = ch.get("characters_appear", [])
         all_chars.extend(chars)
     return dict(Counter(all_chars))
@@ -43,6 +49,7 @@ def _build_context(novel_dir: Path, config: dict, chapters_data: list | None = N
     """构建分析上下文，优先使用章级摘要池，兜底读原文片段。
 
     章数 > 200 时自动启用分层均匀采样，确保全书首尾及中间均有代表。
+    特殊类型章节（afterword/author_note）不参与摘要池构建。
 
     Args:
         novel_dir: 小说目录
@@ -53,8 +60,15 @@ def _build_context(novel_dir: Path, config: dict, chapters_data: list | None = N
     if chapters_data is None:
         chapters_data = load_chapters_data(novel_dir)
     if chapters_data:
-        pool = build_summary_pool(chapters_data, config["llm"]["characters_summary_tokens"], model)
-        return pool, f"章级摘要池（共 {len(chapters_data)} 章）"
+        # 过滤特殊类型章节（afterword/author_note 不参与人物分析）
+        filtered_chapters = [
+            ch for ch in chapters_data
+            if ch.get("type", "normal") in ("normal", "extra")
+        ]
+        skipped_count = len(chapters_data) - len(filtered_chapters)
+
+        pool = build_summary_pool(filtered_chapters, config["llm"]["characters_summary_tokens"], model)
+        return pool, f"章级摘要池（共 {len(filtered_chapters)} 章，跳过 {skipped_count} 章特殊类型）"
 
     logger.warning("章节数据不存在或为空，回退到原文前 8000 字（质量受限）")
     with open(novel_dir / "source.txt", "r", encoding="utf-8") as f:

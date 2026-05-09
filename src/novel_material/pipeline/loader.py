@@ -37,11 +37,13 @@ def load_chapters_data(novel_dir: Path) -> list[dict]:
     1. chapters/ 目录下的分散 YAML 文件（章级分析默认输出格式）
     2. chapters.yaml 合并文件（旧格式或手动合并）
 
+    同时从 chapter_index.yaml 读取 type 字段并合入返回数据。
+
     Args:
         novel_dir: 小说素材目录路径（如 NOVELS_DIR/material_id）
 
     Returns:
-        章节数据列表，每项包含 chapter/title/summary/tension_level 等字段。
+        章节数据列表，每项包含 chapter/title/type/summary/tension_level 等字段。
         加载失败时返回空列表。
 
     Raises:
@@ -49,6 +51,21 @@ def load_chapters_data(novel_dir: Path) -> list[dict]:
     """
     chapters_dir = novel_dir / "chapters"
     chapters_file = novel_dir / "chapters.yaml"
+    chapter_index_file = novel_dir / "chapter_index.yaml"
+
+    # 加载章节索引获取 type 信息
+    chapter_types: dict[int, str] = {}
+    if chapter_index_file.exists():
+        try:
+            with open(chapter_index_file, "r", encoding="utf-8") as f:
+                chapter_index = yaml.safe_load(f) or []
+            for ch in chapter_index:
+                ch_num = ch.get("chapter")
+                ch_type = ch.get("type", "normal")
+                if ch_num is not None:
+                    chapter_types[ch_num] = ch_type
+        except (yaml.YAMLError, IOError) as e:
+            logger.warning(f"[{novel_dir.name}] chapter_index.yaml 加载失败: {e}")
 
     try:
         # 优先读取分散文件（章级分析的默认输出）
@@ -61,6 +78,12 @@ def load_chapters_data(novel_dir: Path) -> list[dict]:
                     try:
                         data = yaml.safe_load(f.read_text(encoding="utf-8"))
                         if isinstance(data, dict):
+                            # 合入 type 字段
+                            ch_num = data.get("chapter")
+                            if ch_num is not None and ch_num in chapter_types:
+                                data["type"] = chapter_types[ch_num]
+                            elif "type" not in data:
+                                data["type"] = "normal"
                             all_chapters.append(data)
                     except (yaml.YAMLError, IOError) as e:
                         logger.warning(f"[{novel_dir.name}] 跳过异常章节文件 {f.name}: {e}")
@@ -82,10 +105,16 @@ def load_chapters_data(novel_dir: Path) -> list[dict]:
                 data = yaml.safe_load(chapters_file.read_text(encoding="utf-8"))
                 if isinstance(data, list):
                     # 验证基本格式：必须是 dict 且有 chapter 和 summary 字段
-                    valid_chapters = [
-                        ch for ch in data
-                        if isinstance(ch, dict) and ch.get("chapter") is not None
-                    ]
+                    valid_chapters = []
+                    for ch in data:
+                        if isinstance(ch, dict) and ch.get("chapter") is not None:
+                            # 合入 type 字段
+                            ch_num = ch.get("chapter")
+                            if ch_num is not None and ch_num in chapter_types:
+                                ch["type"] = chapter_types[ch_num]
+                            elif "type" not in ch:
+                                ch["type"] = "normal"
+                            valid_chapters.append(ch)
                     invalid_count = len(data) - len(valid_chapters)
                     if invalid_count > 0:
                         logger.warning(f"[{novel_dir.name}] chapters.yaml 有 {invalid_count} 条无效数据")

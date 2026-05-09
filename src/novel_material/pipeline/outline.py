@@ -28,6 +28,8 @@ logger = get_pipeline_logger()
 def _extract_outline_stats(chapters_data: list) -> dict:
     """统计大纲相关数据：张力分布、悬念章节、章节功能。
 
+    特殊类型章节（afterword/author_note）不参与统计。
+
     返回：
         dict: {
             "tension_distribution": {张力等级: 章数},
@@ -42,6 +44,11 @@ def _extract_outline_stats(chapters_data: list) -> dict:
     function_counts = Counter()
 
     for ch in chapters_data:
+        # 跳过特殊类型章节
+        ch_type = ch.get("type", "normal")
+        if ch_type in ("afterword", "author_note"):
+            continue
+
         ch_num = ch.get("chapter", 0)
         tension = ch.get("tension_level", 0)
         functions = ch.get("chapter_functions", [])
@@ -308,19 +315,28 @@ def generate_outline(material_id, progress_callback: Callable[[int, int, str], N
     # 加载章节数据（优先从 chapters/ 目录，兜底 chapters.yaml）
     chapters_data = load_chapters_data(novel_dir)
 
-    # 统计大纲相关数据
-    outline_stats = _extract_outline_stats(chapters_data) if chapters_data else {}
+    # 过滤特殊类型章节（afterword/author_note 不参与大纲统计）
+    normal_chapters = [
+        ch for ch in chapters_data
+        if ch.get("type", "normal") not in ("afterword", "author_note")
+    ]
+    filtered_count = len(chapters_data) - len(normal_chapters)
+    if filtered_count > 0:
+        logger.info(f"[{material_id}] 跳过 {filtered_count} 个特殊类型章节")
+
+    # 统计大纲相关数据（使用过滤后的数据）
+    outline_stats = _extract_outline_stats(normal_chapters) if normal_chapters else {}
     high_tension_count = len(outline_stats.get("high_tension_chapters", []))
     suspense_count = len(outline_stats.get("suspense_chapters", []))
     logger.info(f"[{material_id}] 大纲统计: {high_tension_count} 个高张力章节, {suspense_count} 个悬念章节")
 
-    if chapters_data:
-        context_text = build_summary_pool(chapters_data, config["llm"]["outline_summary_tokens"], model)
+    if normal_chapters:
+        context_text = build_summary_pool(normal_chapters, config["llm"]["outline_summary_tokens"], model)
         context_chars = len(context_text)
-        context_label = f"章级摘要池（共 {len(chapters_data)} 章）"
+        context_label = f"章级摘要池（共 {len(normal_chapters)} 章）"
         logger.info(f"[{material_id}] 输入: {context_chars} 字符 | {context_label}")
     else:
-        logger.warning(f"[{material_id}] 章节数据不存在或为空，回退到原文前 5000 字（质量受限）")
+        logger.warning(f"[{material_id}] 正文章节数据不存在或为空，回退到原文前 5000 字（质量受限）")
         with open(novel_dir / "source.txt", "r", encoding="utf-8") as f:
             context_text = f.read()[:5000]
         context_chars = len(context_text)
@@ -418,7 +434,7 @@ def generate_outline(material_id, progress_callback: Callable[[int, int, str], N
                 beats = _generate_beats_for_sequence(
                     act_number=act["act_number"],
                     seq=seq,
-                    chapters_data=chapters_data,
+                    chapters_data=normal_chapters,
                     model=model,
                     config=config,
                 )

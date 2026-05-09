@@ -58,12 +58,13 @@ def check_summary_similarity(
 
     warnings: list[str] = []
 
-    # 范围过滤
+    # 范围过滤 + 类型过滤（排除 afterword/author_note，避免风格差异误报）
     filtered_chapters = [
         ch for ch in chapters
         if isinstance(ch, dict)
         and (start_ch is None or ch.get("chapter", 0) >= start_ch)
         and (end_ch is None or ch.get("chapter", 0) <= end_ch)
+        and ch.get("type", "normal") in ("normal", "extra")
     ]
 
     # 按章节号排序
@@ -138,9 +139,19 @@ def check_summary_quality(material_id: str, start_ch: int | None = None, end_ch:
         if end_ch is not None and isinstance(ch_num, int) and ch_num > end_ch:
             continue
 
+        # 章节类型：特殊类型放宽检查
+        ch_type = ch.get("type", "normal")
         summary = ch.get("summary", "")
-        if len(summary) < 40:
-            errors.append(f"第{ch_num}章: 摘要过短（{len(summary)}字，要求 ≥40）")
+
+        # 后记/作者说：摘要长度要求放宽（≥20字）
+        if ch_type in ("afterword", "author_note"):
+            if len(summary) < 20:
+                errors.append(f"第{ch_num}章({ch_type}): 摘要过短（{len(summary)}字，要求 ≥20）")
+        else:
+            # 正文/番外：标准检查（≥40字）
+            if len(summary) < 40:
+                errors.append(f"第{ch_num}章: 摘要过短（{len(summary)}字，要求 ≥40）")
+
         if len(summary) > 200:
             warnings.append(f"第{ch_num}章: 摘要过长（{len(summary)}字，建议 ≤200）")
         funcs = ch.get("chapter_functions", ch.get("chapter_function", []))

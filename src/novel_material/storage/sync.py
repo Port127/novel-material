@@ -140,17 +140,19 @@ def _sync_chapters(conn, novel_dir, material_id):
         with conn.cursor() as cur:
             for ch in batch:
                 ch_num = ch.get("chapter")
+                ch_type = ch.get("type", "normal")
                 vec = embeddings.get(ch_num)
 
                 if vec is not None:
                     cur.execute("""
                         INSERT INTO chapters (
-                            material_id, chapter, title, summary, word_count,
+                            material_id, chapter, title, type, summary, word_count,
                             tension_level, pacing, setting, key_plot_point,
                             chapter_functions, characters_appear, summary_embedding
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         ON CONFLICT (material_id, chapter) DO UPDATE SET
                             title = EXCLUDED.title,
+                            type = EXCLUDED.type,
                             summary = EXCLUDED.summary,
                             word_count = EXCLUDED.word_count,
                             tension_level = EXCLUDED.tension_level,
@@ -162,7 +164,7 @@ def _sync_chapters(conn, novel_dir, material_id):
                             summary_embedding = EXCLUDED.summary_embedding
                     """, (
                         material_id, ch_num,
-                        ch.get("title"), ch.get("summary"), ch.get("word_count"),
+                        ch.get("title"), ch_type, ch.get("summary"), ch.get("word_count"),
                         ch.get("tension_level"), ch.get("pacing"),
                         ch.get("setting", []), ch.get("key_plot_point"),
                         ch.get("chapter_function", ch.get("chapter_functions", [])),
@@ -172,12 +174,13 @@ def _sync_chapters(conn, novel_dir, material_id):
                 else:
                     cur.execute("""
                         INSERT INTO chapters (
-                            material_id, chapter, title, summary, word_count,
+                            material_id, chapter, title, type, summary, word_count,
                             tension_level, pacing, setting, key_plot_point,
                             chapter_functions, characters_appear
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         ON CONFLICT (material_id, chapter) DO UPDATE SET
                             title = EXCLUDED.title,
+                            type = EXCLUDED.type,
                             summary = EXCLUDED.summary,
                             word_count = EXCLUDED.word_count,
                             tension_level = EXCLUDED.tension_level,
@@ -188,7 +191,7 @@ def _sync_chapters(conn, novel_dir, material_id):
                             characters_appear = EXCLUDED.characters_appear
                     """, (
                         material_id, ch_num,
-                        ch.get("title"), ch.get("summary"), ch.get("word_count"),
+                        ch.get("title"), ch_type, ch.get("summary"), ch.get("word_count"),
                         ch.get("tension_level"), ch.get("pacing"),
                         ch.get("setting", []), ch.get("key_plot_point"),
                         ch.get("chapter_function", ch.get("chapter_functions", [])),
@@ -375,7 +378,10 @@ def _sync_characters(conn, novel_dir, material_id):
 
 
 def _sync_character_appearances(conn, novel_dir, material_id):
-    """从章节分析结果提取人物出场记录。"""
+    """从章节分析结果提取人物出场记录。
+
+    特殊类型章节（afterword/author_note）不参与人物出场统计。
+    """
     chapters_file = novel_dir / "chapters.yaml"
     if not chapters_file.exists():
         return
@@ -386,16 +392,24 @@ def _sync_character_appearances(conn, novel_dir, material_id):
     with conn.cursor() as cur:
         cur.execute("DELETE FROM character_appearances WHERE material_id = %s", (material_id,))
 
+        synced_count = 0
         for ch in chapters:
             ch_num = ch.get("chapter")
+            ch_type = ch.get("type", "normal")
+
+            # 跳过特殊类型章节
+            if ch_type in ("afterword", "author_note"):
+                continue
+
             for char_name in ch.get("characters_appear", []):
                 cur.execute("""
                     INSERT INTO character_appearances (
                         material_id, character_name, chapter, significance
                     ) VALUES (%s, %s, %s, %s)
                 """, (material_id, char_name, ch_num, "major"))
+                synced_count += 1
 
-    logger.info(f"已同步人物出场记录")
+    logger.info(f"已同步人物出场记录: {synced_count} 条")
 
 
 def _sync_worldbuilding(conn, novel_dir, material_id):

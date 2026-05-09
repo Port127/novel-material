@@ -39,6 +39,57 @@ def generate_material_id() -> str:
     return f"nm_novel_{date_str}_{random_str}"
 
 
+def _detect_chapter_type(title: str) -> str:
+    """识别章节类型。
+
+    返回：
+        'normal' - 正文章节
+        'afterword' - 后记/完本感言
+        'extra' - 番外/外传
+        'author_note' - 作者说/作者的话
+    """
+    # 后记模式（严格匹配，避免误判正文标题）
+    afterword_patterns = [
+        r"^后记$",           # 纯"后记"
+        r"完本感言",         # 完本感言
+        r"完本感想",         # 完本感想
+        r"完结感言",         # 完结感言
+        r"^完本$",           # 纯"完本"
+        r"^完结$",           # 纯"完结"
+        r"完本说",           # 完本说
+    ]
+
+    # 番外模式
+    extra_patterns = [
+        r"番外",
+        r"外传",
+        r"番外篇",
+        r"番篇",
+    ]
+
+    # 作者说模式
+    author_note_patterns = [
+        r"^作者说",
+        r"^作者的话",
+        r"^PS[:：]",
+        r"^ps[:：]",
+    ]
+
+    for pat in afterword_patterns:
+        if re.search(pat, title, re.IGNORECASE):
+            return "afterword"
+
+    for pat in extra_patterns:
+        if re.search(pat, title, re.IGNORECASE):
+            return "extra"
+
+    for pat in author_note_patterns:
+        if re.search(pat, title):
+            return "author_note"
+
+    return "normal"
+
+
 def detect_chapter_pattern(lines):
     """检测章节标题，返回章节所在行号列表。
 
@@ -48,8 +99,9 @@ def detect_chapter_pattern(lines):
     - 数字格式：1、标题 / 1 标题（数字后跟标题）
     """
     # 主模式：标准章节标题（含卷、部）
+    # 注意：排除 "第X节课" 这种课程表格式
     main_pattern = re.compile(
-        r"^\s*(?:第\s*\d+\s*[章节回篇卷部]|楔子|引子|序章|终章|尾声)\s*"
+        r"^\s*(?:第\s*\d+\s*[章回篇卷部]|第\s*\d+\s*节(?![课])|楔子|引子|序章|终章|尾声)\s*"
     )
 
     # 备选模式：数字+分隔符+标题（如 "1、重生"，"1 重生"）
@@ -83,6 +135,7 @@ def split_chapters(lines, chapter_lines):
     """按检测到的章节行切分文本。
 
     word_count 统计规则：去除空白后的纯字符数（含标点）。
+    type 字段：根据标题识别章节类型（normal/afterword/extra/author_note）。
     """
     chapters = []
     for idx, start_line in enumerate(chapter_lines):
@@ -93,8 +146,12 @@ def split_chapters(lines, chapter_lines):
         # word_count：去除空白后的纯字符数（含标点，不含空格/换行）
         word_count = len(re.sub(r'\s', '', chapter_text))
 
+        # 识别章节类型
+        ch_type = _detect_chapter_type(title)
+
         chapters.append({
             "title": title,
+            "type": ch_type,
             "start_line": start_line,
             "end_line": end_line - 1,
             "content": chapter_text,
@@ -197,6 +254,7 @@ def ingest_file(file_path, progress_callback: Callable[[int, int, str], None] | 
         chapter_index.append({
             "chapter": len(chapter_index) + 1,
             "title": ch["title"],
+            "type": ch["type"],
             "start_line": start_line,
             "end_line": end_line,
             "word_count": ch["word_count"]
@@ -208,8 +266,8 @@ def ingest_file(file_path, progress_callback: Callable[[int, int, str], None] | 
     with open(novel_dir / "chapter_index.yaml", "w", encoding="utf-8") as f:
         yaml.dump(chapter_index, f, allow_unicode=True, default_flow_style=False)
 
-    # 写入 source.txt
-    clean_content = "\n".join(source_lines)
+    # 写入 source.txt（章节之间保留空行分隔）
+    clean_content = "\n\n".join(source_lines)
     with open(novel_dir / "source.txt", "w", encoding="utf-8") as f:
         f.write(clean_content)
 
