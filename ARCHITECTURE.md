@@ -2,6 +2,13 @@
 
 本文档描述系统的真实架构、数据流向和模块边界。
 
+## 相关文档
+
+- [REQUIREMENTS.md](docs/REQUIREMENTS.md) — 业务边界与不做什么（为什么这样设计）
+- [USER_MANUAL.md](docs/USER_MANUAL.md) — 详细使用手册（如何使用）
+- [AGENTS.md](AGENTS.md) — Agent 操作规则
+- [README.md](README.md) — 项目入口与快速开始
+
 ## 整体架构
 
 ```
@@ -65,7 +72,7 @@ novel-material/
 │   │   ├── character.py          # 人物检索：原型/角色定位
 │   │   ├── world.py              # 世界观检索：维度筛选
 │   │   ├── event.py              # 事件检索：场景/情绪过滤
-│   │   ├── detail.py             # 细节检索
+│   │   ├── detail.py             # 细节检索（内部模块，未暴露 CLI 入口）
 │   │   └── common.py             # 共享工具：关键词提取/数据库连接
 │   ├── storage/                  # 数据库层
 │   │   ├── init_db.py            # 表结构初始化
@@ -134,12 +141,13 @@ novel-material/
 ### 入库阶段（无 LLM）
 
 ```
-原始文本 → 预处理 → 章节切分 → YAML 存储
-   │          │          │          │
-   │      NFC 归一化   正则匹配   meta.yaml
-   │      去广告水印   边界重建   chapter_index.yaml
-   │      数字转换     索引生成   source.txt
-   │                              status: clean
+原始文本 → 预处理 → 章节切分 → 类型识别 → YAML 存储
+   │          │          │          │          │
+   │      NFC 归一化   正则匹配   章节类型   meta.yaml
+   │      去广告水印   边界重建   normal/    chapter_index.yaml
+   │      数字转换     索引生成   afterword  source.txt
+   │                                extra      status: clean
+   │                                author_note
 ```
 
 ### 分析阶段（LLM 调用）
@@ -202,7 +210,7 @@ novel-material/
 | `ingest.py` | 入库 | 失败返回 None |
 | `preprocess.py` | 文本清洗 | 无 LLM，纯本地逻辑 |
 | `loader.py` | 数据加载 | 加载失败时返回空结构 |
-| `analyze.py` | 章级分析 | 断点续传 + 跳过失败章节 |
+| `analyze.py` | 章级分析 | 断点续传 + 跳过失败章节 + 特殊章节类型识别 |
 | `outline.py` | 大纲生成 | 3层容错 + `generate_simple_acts` 兜底 |
 | `worldbuilding.py` | 世界观提取 | 空结构兜底 |
 | `characters.py` | 人物提取 | 空列表兜底 |
@@ -219,7 +227,7 @@ novel-material/
 | `character.py` | 人物检索 | 原型/角色定位筛选 |
 | `world.py` | 世界观检索 | 维度筛选 + 关键词 |
 | `event.py` | 事件检索 | 向量语义 + 场景/情绪过滤 |
-| `detail.py` | 细节检索 | 向量语义 |
+| `detail.py` | 细节检索 | 内部模块，未暴露 CLI 入口 |
 | `common.py` | 共享工具 | 关键词提取/数据库连接 |
 
 ### Storage 层 (`storage/`)
@@ -291,6 +299,7 @@ chapters (
   material_id TEXT,
   chapter INTEGER,
   title TEXT,
+  chapter_type TEXT,        -- normal/afterword/extra/author_note
   summary TEXT,
   word_count INTEGER,
   tension_level INTEGER,

@@ -2,6 +2,12 @@
 
 本文档定义 LLM Agent（如 Claude Code）操作本项目的规则。
 
+## 相关文档
+
+- [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md) — 业务边界与不做什么
+- [ARCHITECTURE.md](ARCHITECTURE.md) — 系统架构与数据流
+- [docs/USER_MANUAL.md](docs/USER_MANUAL.md) — 详细使用手册（完整命令参考 + 场景指南）
+
 ## 项目定位
 
 Novel Material V2 是一个**小说素材管理系统**：
@@ -17,7 +23,9 @@ Novel Material V2 是一个**小说素材管理系统**：
 
 1. 用户当前请求
 2. 本文件（AGENTS.md）
-3. ARCHITECTURE.md
+3. [ARCHITECTURE.md](ARCHITECTURE.md) — 系统架构
+4. [docs/USER_MANUAL.md](docs/USER_MANUAL.md) — 完整命令参考
+5. [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md) — 业务边界
 
 ### 2. 使用 CLI 而非底层脚本
 
@@ -45,21 +53,30 @@ Skills（`.claude/skills/*/SKILL.md`）封装了 CLI 调用，提供更完整的
 ### 5. 状态流转
 
 ```
-ingested → clean → analyzed → finalized
+ingested/clean → analyzed → finalized
 ```
 
 | 状态 | 含义 | 可执行操作 |
 |------|------|-----------|
-| `ingested` | 已入库，未清洗 | 等待 |
+| `ingested` | 已入库（ingest 直接输出 clean，不经过独立 ingested 状态） | 等待 |
 | `clean` | 已清洗，待分析 | `nm pipeline analyze` |
 | `analyzed` | 已分析，待精调 | `nm pipeline refine` |
 | `finalized` | 已完成 | `nm storage sync` |
+| `failed` | 流水线执行失败 | 查看日志修复后执行 `nm pipeline continue` |
 
 Agent 不应：
 - 对 `analyzed` 状态执行 `analyze`（会覆盖）
 - 对 `clean` 状态执行 `refine`（无章级数据）
 
-## CLI 命令总览
+**`failed` 状态处理**：
+1. 查看日志：`data/novels/{material_id}/pipeline.log`
+2. 根据错误类型修复（API Key、网络、配置等）
+3. 修复后执行 `nm pipeline continue` 自动从断点继续
+4. 如需重新分析已完成章节，可手动修改 `meta.yaml` 状态为 `clean`
+
+## CLI 命令速览
+
+> 完整命令参数和示例见 [docs/USER_MANUAL.md](docs/USER_MANUAL.md)。
 
 ### Pipeline 命令
 
@@ -73,7 +90,7 @@ nm pipeline tags <id>               # 标签生成
 nm pipeline refine <id>             # 精调统计
 nm pipeline full <file>             # 完整流水线（入库→分析→骨架→精调）
 nm pipeline status <id>             # 查看进度
-nm pipeline continue <id>           # 自动从断点继续
+nm pipeline continue <id>           # 自动从断点继续（支持 --skip-sync）
 ```
 
 ### Search 命令
@@ -127,73 +144,37 @@ nm validate quality <id>            # 内容质量校验
 nm validate all <id>                # 全量校验
 ```
 
-## 常用操作
+## 常用操作流程
+
+> 完整场景示例见 [docs/USER_MANUAL.md](docs/USER_MANUAL.md) 第 14 章"常见场景"。
 
 ### 入库新小说
 
-```
-用户: "入库 ./my-novel.txt"
-
-Agent:
 1. 检查文件存在
-2. 调用 Skill: material-add 或执行 nm pipeline full ./my-novel.txt
+2. 调用 Skill: `material-add` 或执行 `nm pipeline full ./novel.txt`
 3. 等待完成（长篇可能数小时）
-4. 检查 nm material list 或 data/novels/{id}/meta.yaml
-```
+4. 检查 `nm material list` 或 `data/novels/{id}/meta.yaml`
 
 ### 分析已入库素材
 
-```
-用户: "分析 nm_novel_20260501_abcd"
-
-Agent:
-1. 检查 meta.yaml 状态是否为 clean
-2. 执行 nm pipeline analyze nm_novel_20260501_abcd
-3. 或分步执行：
-   nm pipeline outline nm_xxx
-   nm pipeline worldbuilding nm_xxx
-   nm pipeline characters nm_xxx
-   nm pipeline tags nm_xxx
-```
-
-### 部分章节分析
-
-```
-用户: "只分析 nm_xxx 第 100-200 章"
-
-Agent:
-nm pipeline analyze nm_xxx --start 100 --end 200
-
-注意：警告用户后续阶段基于不完整数据生成
-```
+1. 检查 `meta.yaml` 状态是否为 `clean`
+2. 执行 `nm pipeline analyze <id>`
+3. 或分步执行 outline/worldbuilding/characters/tags
 
 ### 从断点继续
 
-```
-用户: "继续 nm_xxx 的分析"
-
-Agent:
-1. nm pipeline status nm_xxx（查看进度）
-2. nm pipeline continue nm_xxx（自动执行未完成阶段）
-```
+1. `nm pipeline status <id>`（查看进度）
+2. `nm pipeline continue <id>`（自动执行未完成阶段）
 
 ### 检索素材
 
-```
-用户: "找修仙小说的宗门设定"
-
-Agent:
-nm search world --type faction --genre 修仙 --limit 10
-```
+使用 `nm search <type> <query>` 对应检索命令。
 
 ### 精调统计
 
-```
-用户: "精调 nm_xxx"
-
-Agent:
-nm pipeline refine nm_xxx
-nm storage sync nm_xxx
+```bash
+nm pipeline refine <id>
+nm storage sync <id>
 ```
 
 ## 禁止操作
@@ -288,3 +269,29 @@ providers:
 - 批量分析已启用 `thinking_budget=4000`，启用 thinking 时不应传 `temperature`
 - JSON 解析失败时自动翻倍 `max_tokens` 重试（最多 2 次，上限 65536）
 - 单章分析降级后使用 `LLM_MAX_TOKENS` 作为输出上限
+
+## 章节类型
+
+小说中存在非叙事性章节，系统在入库时自动识别类型：
+
+| 类型 | 说明 | 分析策略 |
+|------|------|---------|
+| `normal` | 正文章节 | 完整分析（摘要、张力、人物、功能） |
+| `afterword` | 后记/完本感言 | 放宽分析要求 |
+| `extra` | 番外 | 放宽分析要求 |
+| `author_note` | 作者说 | 放宽分析要求 |
+
+特殊章节不参与张力评估、人物识别等叙事分析，但在检索时可作为过滤维度。
+
+## LLM 分析质量动态调节
+
+LLM 在处理长篇小说后期可能出现输出质量下降（模式化、摘要变短）。系统采用以下机制：
+
+| 机制 | 说明 |
+|------|------|
+| 动态温度 | 随批次递增逐步提高 temperature，防止收敛到稳定输出模式 |
+| 动态提示词 | 每 10 批次唤醒独立性提醒 |
+| 相似度检测 | 检测 Jaccard 相似度，发现模式化输出时调整策略 |
+| Thinking 管理 | 前期使用 thinking 模式，后期关闭 thinking 启用动态温度 |
+
+Agent 无需干预这些机制，只需关注 `meta.yaml` 中的最终状态。

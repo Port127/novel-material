@@ -25,119 +25,57 @@
 
 ## 快速开始
 
+完整操作指南见 [docs/USER_MANUAL.md](docs/USER_MANUAL.md)。以下为骨架流程：
+
 ### 1. 安装
 
 ```bash
 pip install -e .
 ```
 
-### 2. 配置环境变量
+### 2. 配置
 
 ```bash
 cp .env.example .env
-# 必须填入：
-# - DATABASE_URL（PostgreSQL 连接）
-# - LLM_API_KEY（OpenAI 或兼容 API）
-# - EMBEDDING_API_KEY（向量化 API）
-```
-
-或使用多服务商配置：
-
-```bash
-# config/providers.yaml
-default_provider: deepseek
-providers:
-  - name: deepseek
-    model: deepseek-chat
-    base_url: https://api.deepseek.com/v1
-    api_key_env: DEEPSEEK_API_KEY
+# 必须填入 DATABASE_URL、LLM_API_KEY、EMBEDDING_API_KEY
 ```
 
 ### 3. 启动数据库
 
 ```bash
-make db-up      # 启动 PostgreSQL + pgAdmin
-make db-init    # 初始化表结构 + 基础数据
+make db-up && make db-init
 ```
-
-或手动启动 PostgreSQL（需安装 pgvector 扩展）。
 
 ### 4. 入库小说
 
 ```bash
-# 完整流程（推荐）
 nm pipeline full ./my-novel.txt
-
-# 分步执行
-nm pipeline ingest ./my-novel.txt    # 仅入库
-nm pipeline analyze nm_xxx           # 章级分析
-nm pipeline outline nm_xxx           # 大纲生成
-nm pipeline worldbuilding nm_xxx     # 世界观提取
-nm pipeline characters nm_xxx        # 人物提取
-nm pipeline tags nm_xxx              # 标签生成
-nm pipeline refine nm_xxx            # 精调
-
-# 指定服务商
-nm pipeline analyze nm_xxx --provider deepseek
-
-# 指定章节范围
-nm pipeline analyze nm_xxx --start 100 --end 200
 ```
 
 ### 5. 检索
 
 ```bash
-# 章节检索（向量语义）
 nm search chapter "开局困境" --limit 10
-
-# 大纲检索
-nm search outline --genre 玄幻 --query "废柴逆袭"
-
-# 人物检索
-nm search character --archetype 导师 --role 主角
-
-# 世界观检索
-nm search world "宗门" --dimension faction --limit 10
-
-# 事件检索
-nm search event "雨中告别" --setting 城市 --emotion 悲伤
-```
-
-### 6. 标签管理
-
-```bash
-nm tags stats                       # 标签统计
-nm tags list --dimension element    # 按维度列出
-nm tags add element 血脉 xuanhuan --group 设定元素  # 添加标签
-nm tags review --auto               # 自动审批高频标签
-```
-
-### 7. 从断点继续
-
-```bash
-nm pipeline status nm_xxx           # 查看进度
-nm pipeline continue nm_xxx         # 自动继续未完成阶段
 ```
 
 ## 文档导航
 
-按顺序阅读：
+| 文档 | 给谁看 | 解决什么问题 |
+|------|--------|-------------|
+| **[REQUIREMENTS.md](docs/REQUIREMENTS.md)** | 决策者 | 做什么、不做什么、为什么 |
+| **[ARCHITECTURE.md](ARCHITECTURE.md)** | 开发者 | 系统怎么构建的、数据流向 |
+| **[USER_MANUAL.md](docs/USER_MANUAL.md)** | 使用者 | 怎么用、命令参考、故障排查 |
+| **[AGENTS.md](AGENTS.md)** | AI Agent | 操作本项目的规则和约束 |
 
-1. **[README.md](README.md)** ← 你在这里
-2. **[AGENTS.md](AGENTS.md)**：Agent 操作规则（必读）
-3. **[ARCHITECTURE.md](ARCHITECTURE.md)**：系统架构与数据流
-4. **[USER_MANUAL.md](USER_MANUAL.md)**：详细使用手册
-5. **[docs/REQUIREMENTS.md](docs/REQUIREMENTS.md)**：业务边界与不做什么
-6. **[data/schemas/](data/schemas/)**：YAML Schema 定义
-7. **[data/tag-system/](data/tag-system/)**：标签分类学体系
+推荐阅读顺序：REQUIREMENTS → ARCHITECTURE → USER_MANUAL → AGENTS。
+
+其他：
+- **[data/schemas/](data/schemas/)**：YAML Schema 定义
+- **[data/tag-system/](data/tag-system/)**：标签分类学体系
 
 ## 容错特性
 
-- **断点续传**：章级分析崩溃后自动从断点继续，无需重做
-- **LLM 重试**：网络错误自动重试（指数退避，最多 8 次）
-- **默认值兜底**：单步失败不中断流程，使用默认值继续
-- **快速失败**：`context_length_exceeded` 不触发无用重试
-- **JSON 重试**：解析失败自动翻倍 `max_tokens` 重试
+内置断点续传、自动重试、默认值兜底。详见 [docs/USER_MANUAL.md](docs/USER_MANUAL.md) 第 16 章。
 
 ## 数据产物
 
@@ -183,28 +121,7 @@ make db-reset   # 重置数据库（危险）
 
 ## 多服务商支持
 
-支持配置多个 LLM 服务商：
-
-```yaml
-# config/providers.yaml
-default_provider: qwen
-providers:
-  - name: qwen
-    model: qwen3.6-plus
-    base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
-    api_key_env: DASHSCOPE_API_KEY
-    thinking_format: dashscope
-  - name: deepseek
-    model: deepseek-chat
-    base_url: https://api.deepseek.com/v1
-    api_key_env: DEEPSEEK_API_KEY
-    thinking_format: openai
-```
-
-使用时通过 `--provider` 参数切换：
-```bash
-nm pipeline analyze nm_xxx --provider deepseek
-```
+支持配置多个 LLM 服务商。详见 `config/providers.yaml`。使用时通过 `--provider` 参数切换。
 
 ## 测试
 
