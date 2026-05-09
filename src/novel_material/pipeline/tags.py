@@ -110,12 +110,12 @@ def generate_tags(material_id, provider: str | None = None) -> bool:
     # ── 容错调用 ──
     result = {}
     try:
-        result = call_llm(system_prompt, user_prompt, config, context="标签生成")
-        logger.info(f"标签生成完成: finish={get_last_call_finish_reason()}")
+        result = call_llm(system_prompt, user_prompt, config, context=f"{material_id} 标签生成")
+        logger.info(f"[{material_id}] 标签生成完成: finish={get_last_call_finish_reason()}")
         time.sleep(rate_limit)
     except Exception as e:
-        logger.error(f"标签生成失败: {e}")
-        logger.warning("使用默认标签继续，不中断流程")
+        logger.error(f"[{material_id}] 标签生成失败: {e}")
+        logger.warning(f"[{material_id}] 使用默认标签继续，不中断流程")
         result = {
             "genre_primary": [genre_primary],
             "genre_secondary": [],

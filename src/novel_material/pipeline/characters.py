@@ -45,7 +45,7 @@ def _extract_appearance_stats(chapters_data: list) -> dict:
     return dict(Counter(all_chars))
 
 
-def _build_context(novel_dir: Path, config: dict, chapters_data: list | None = None) -> tuple[str, str]:
+def _build_context(novel_dir: Path, config: dict, chapters_data: list | None = None, material_id: str = "") -> tuple[str, str]:
     """构建分析上下文，优先使用章级摘要池，兜底读原文片段。
 
     章数 > 200 时自动启用分层均匀采样，确保全书首尾及中间均有代表。
@@ -70,7 +70,8 @@ def _build_context(novel_dir: Path, config: dict, chapters_data: list | None = N
         pool = build_summary_pool(filtered_chapters, config["llm"]["characters_summary_tokens"], model)
         return pool, f"章级摘要池（共 {len(filtered_chapters)} 章，跳过 {skipped_count} 章特殊类型）"
 
-    logger.warning("章节数据不存在或为空，回退到原文前 8000 字（质量受限）")
+    prefix = f"[{material_id}] " if material_id else ""
+    logger.warning(f"{prefix}章节数据不存在或为空，回退到原文前 8000 字（质量受限）")
     with open(novel_dir / "source.txt", "r", encoding="utf-8") as f:
         return f.read()[:8000], "原文摘录（前 8000 字）"
 
@@ -80,9 +81,11 @@ def _extract_core_characters(
     context_label: str,
     meta: dict,
     appearance_stats: dict,
-    config: dict
+    config: dict,
+    material_id: str = "",
 ) -> list:
     """第一轮：提取核心人物（主角/反派/重要配角），完整档案。"""
+    prefix = f"[{material_id}] " if material_id else ""
     system_prompt = """你是专业的小说人物分析师。请提取有完整角色弧线的核心人物，返回 JSON 格式：
 {
   "characters": [
@@ -137,15 +140,15 @@ def _extract_core_characters(
 请返回 JSON 格式如上，只提取有完整弧线的重要角色。
 优先关注出场频率高的人物，但也要考虑其剧情重要性而非仅看数量。"""
 
-    logger.info("第一轮：提取核心人物...")
-    result = call_llm(system_prompt, user_prompt, config, max_tokens_override=8000, timeout_override=config["llm"]["characters_timeout"], context="人物#核心")
+    logger.info(f"{prefix}第一轮：提取核心人物...")
+    result = call_llm(system_prompt, user_prompt, config, max_tokens_override=8000, timeout_override=config["llm"]["characters_timeout"], context=f"{material_id} 人物#核心")
     # 兼容 LLM 直接返回数组的情况
     if isinstance(result, list):
-        logger.warning("人物提取返回裸数组，自动适配")
+        logger.warning(f"{prefix}人物提取返回裸数组，自动适配")
         characters = result
     else:
         characters = result.get("characters", [])
-    logger.info(f"核心人物提取完成: {len(characters)} 人 | finish={get_last_call_finish_reason()}")
+    logger.info(f"{prefix}核心人物提取完成: {len(characters)} 人 | finish={get_last_call_finish_reason()}")
     return characters
 
 
@@ -155,9 +158,11 @@ def _extract_minor_characters(
     meta: dict,
     core_names: list,
     appearance_stats: dict,
-    config: dict
+    config: dict,
+    material_id: str = "",
 ) -> list:
     """第二轮：补充次要人物（精简档案）。"""
+    prefix = f"[{material_id}] " if material_id else ""
     system_prompt = """你是专业的小说人物分析师。请补充其他有名字且有剧情作用的次要人物，返回 JSON 格式：
 {
   "characters": [
@@ -207,15 +212,15 @@ def _extract_minor_characters(
 请返回 JSON 格式如上，补充其他有剧情作用的次要角色。
 优先关注出场频率较高（≥5章）的人物，但也要判断其是否有实际剧情作用。"""
 
-    logger.info("第二轮：补充次要人物...")
-    result = call_llm(system_prompt, user_prompt, config, max_tokens_override=8000, timeout_override=config["llm"]["characters_timeout"], context="人物#次要")
+    logger.info(f"{prefix}第二轮：补充次要人物...")
+    result = call_llm(system_prompt, user_prompt, config, max_tokens_override=8000, timeout_override=config["llm"]["characters_timeout"], context=f"{material_id} 人物#次要")
     # 兼容 LLM 直接返回数组的情况
     if isinstance(result, list):
-        logger.warning("次要人物提取返回裸数组，自动适配")
+        logger.warning(f"{prefix}次要人物提取返回裸数组，自动适配")
         characters = result
     else:
         characters = result.get("characters", [])
-    logger.info(f"次要人物提取完成: {len(characters)} 人 | finish={get_last_call_finish_reason()}")
+    logger.info(f"{prefix}次要人物提取完成: {len(characters)} 人 | finish={get_last_call_finish_reason()}")
     return characters
 
 
@@ -266,7 +271,7 @@ def generate_characters(material_id, progress_callback: Callable[[int, int, str]
     logger.info(f"[{material_id}] 出场人物统计: {len(appearance_stats)} 个不同人物")
 
     # 构建分析上下文（传递已加载的 chapters_data，避免重复调用）
-    context_text, context_label = _build_context(novel_dir, config, chapters_data)
+    context_text, context_label = _build_context(novel_dir, config, chapters_data, material_id=material_id)
     context_chars = len(context_text)
     logger.info(f"[{material_id}] 输入: {context_chars} 字符 | {context_label}")
 
@@ -275,14 +280,14 @@ def generate_characters(material_id, progress_callback: Callable[[int, int, str]
     try:
         if progress_callback:
             progress_callback(0, 2, "提取核心人物")
-        core_characters = _extract_core_characters(context_text, context_label, meta, appearance_stats, config)
+        core_characters = _extract_core_characters(context_text, context_label, meta, appearance_stats, config, material_id=material_id)
         if progress_callback:
             progress_callback(1, 2, f"核心人物: {len(core_characters)} 人")
         else:
-            logger.info(f"  提取核心人物: {len(core_characters)} 人")
+            logger.info(f"[{material_id}] 提取核心人物: {len(core_characters)} 人")
     except Exception as e:
-        logger.error(f"核心人物提取失败: {e}")
-        logger.warning("使用空列表继续，不中断流程")
+        logger.error(f"[{material_id}] 核心人物提取失败: {e}")
+        logger.warning(f"[{material_id}] 使用空列表继续，不中断流程")
         core_characters = []
 
     core_names = [ch.get("name") for ch in core_characters if ch.get("name")]
@@ -292,14 +297,14 @@ def generate_characters(material_id, progress_callback: Callable[[int, int, str]
     try:
         if progress_callback:
             progress_callback(1, 2, "补充次要人物")
-        minor_characters = _extract_minor_characters(context_text, context_label, meta, core_names, appearance_stats, config)
+        minor_characters = _extract_minor_characters(context_text, context_label, meta, core_names, appearance_stats, config, material_id=material_id)
         if progress_callback:
             progress_callback(2, 2, f"次要人物: {len(minor_characters)} 人")
         else:
-            logger.info(f"  补充次要人物: {len(minor_characters)} 人")
+            logger.info(f"[{material_id}] 补充次要人物: {len(minor_characters)} 人")
     except Exception as e:
-        logger.error(f"次要人物提取失败: {e}")
-        logger.warning("使用空列表继续，不中断流程")
+        logger.error(f"[{material_id}] 次要人物提取失败: {e}")
+        logger.warning(f"[{material_id}] 使用空列表继续，不中断流程")
         minor_characters = []
 
     # 合并
@@ -313,7 +318,7 @@ def generate_characters(material_id, progress_callback: Callable[[int, int, str]
         # 验证 role 字段
         role = ch.get("role", "minor")
         if role not in VALID_ROLES:
-            logger.warning(f"无效 role '{role}'，默认为 minor")
+            logger.warning(f"[{material_id}] 无效 role '{role}'，默认为 minor")
             role = "minor"
 
         # 核心人物完整档案，次要人物精简档案

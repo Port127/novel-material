@@ -15,7 +15,7 @@ from novel_material.infra.progress import get_pipeline_logger
 logger = get_pipeline_logger()
 
 
-def _build_context(novel_dir: Path, config: dict) -> tuple[str, str]:
+def _build_context(novel_dir: Path, config: dict, material_id: str = "") -> tuple[str, str]:
     """构建分析上下文，优先使用章级摘要池，兜底读原文片段。
 
     章数 > 200 时自动启用分层均匀采样，确保全书首尾及中间均有代表。
@@ -34,7 +34,8 @@ def _build_context(novel_dir: Path, config: dict) -> tuple[str, str]:
         pool = build_summary_pool(filtered_chapters, config["llm"]["worldbuilding_summary_tokens"], model)
         return pool, f"章级摘要池（共 {len(filtered_chapters)} 章，跳过 {skipped_count} 章特殊类型）"
 
-    logger.warning("章节数据不存在或为空，回退到原文前 10000 字（质量受限）")
+    prefix = f"[{material_id}] " if material_id else ""
+    logger.warning(f"{prefix}章节数据不存在或为空，回退到原文前 10000 字（质量受限）")
     with open(novel_dir / "source.txt", "r", encoding="utf-8") as f:
         return f.read()[:10000], "原文摘录（前 10000 字）"
 
@@ -79,7 +80,7 @@ def generate_worldbuilding(material_id, provider: str | None = None) -> bool:
     logger.info(f"[{material_id}] 小说: {title} | {chapter_count} 章 | {word_count} 字 | 状态: {status}")
 
     # 构建分析上下文（章级摘要池 > 原文片段）
-    context_text, context_label = _build_context(novel_dir, config)
+    context_text, context_label = _build_context(novel_dir, config, material_id=material_id)
     context_chars = len(context_text)
     logger.info(f"[{material_id}] 输入: {context_chars} 字符 | {context_label}")
 
@@ -132,12 +133,12 @@ def generate_worldbuilding(material_id, provider: str | None = None) -> bool:
     # ── 容错调用 ──
     result = {}
     try:
-        result = call_llm(system_prompt, user_prompt, config, timeout_override=config["llm"]["worldbuilding_timeout"], context="世界观提取")
-        logger.info(f"世界观提取完成: finish={get_last_call_finish_reason()}")
+        result = call_llm(system_prompt, user_prompt, config, timeout_override=config["llm"]["worldbuilding_timeout"], context=f"{material_id} 世界观提取")
+        logger.info(f"[{material_id}] 世界观提取完成: finish={get_last_call_finish_reason()}")
         time.sleep(rate_limit)
     except Exception as e:
-        logger.error(f"世界观提取失败: {e}")
-        logger.warning("使用空结构继续，不中断流程")
+        logger.error(f"[{material_id}] 世界观提取失败: {e}")
+        logger.warning(f"[{material_id}] 使用空结构继续，不中断流程")
         result = {
             "power_system": {},
             "geography": {},

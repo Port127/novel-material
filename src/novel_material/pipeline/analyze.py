@@ -200,6 +200,7 @@ def analyze_chapter(
     chapter_info: dict,
     config: dict,
     progress_ratio: float = 0.0,
+    material_id: str = "",
 ) -> dict:
     """分析单个章节，返回结构化数据。
 
@@ -208,6 +209,7 @@ def analyze_chapter(
         chapter_info：章节信息（章节号、标题）
         config：LLM 配置
         progress_ratio：进度比例（用于动态提示词和温度策略）
+        material_id：素材 ID（用于日志追踪）
 
     返回：
         dict：包含 summary、characters_appear、tension_level 等字段
@@ -239,7 +241,8 @@ def analyze_chapter(
     temperature_override = _calculate_dynamic_temperature(progress_ratio, config)
 
     timeout = config["llm"].get("analyze_timeout", 300)
-    context = f"单章#{chapter_info.get('chapter', 'N/A')}"
+    prefix = f"[{material_id}] " if material_id else ""
+    context = f"{material_id} 单章#{chapter_info.get('chapter', 'N/A')}"
     return call_llm(
         system_prompt, user_prompt, config,
         timeout_override=timeout, context=context,
@@ -297,12 +300,9 @@ def analyze_chapters_batch(
     batch_nums = [ch_info["chapter"] for ch_info in batch_info]
     batch_range = f"{min(batch_nums)}-{max(batch_nums)}"
 
-    # 打印批次输入统计
+    # 打印批次输入统计（DEBUG 级别）
     prefix = f"[{material_id}] " if material_id else ""
-    logger.info(
-        f"{prefix}批次[{batch_range}] 输入: {total_chars} 字符 | "
-        f"平均 {avg_chars_per_ch} 字/章 | {n} 章"
-    )
+    logger.debug(f"{prefix}批次[{batch_range}] 开始: {total_chars} 字符 ×{n}章")
 
     combined = ("\n\n" + "=" * 30 + "\n\n").join(blocks)
 
@@ -346,7 +346,7 @@ def analyze_chapters_batch(
         config,
         max_tokens_override=n * 1500,
         timeout_override=config["llm"].get("analyze_timeout"),
-        context=f"章节分析#批次[{batch_range}]",
+        context=f"{material_id} 章节分析#批次[{batch_range}]",
         thinking_budget=thinking_budget,
         temperature_override=temperature_override,
     )
@@ -409,13 +409,12 @@ def analyze_chapters_batch(
         if tension:
             tension_values.append(tension)
 
-    # 输出批次质量摘要（含解析耗时）
+    # 输出批次质量摘要
+    tension_range = f"{min(tension_values)}-{max(tension_values)}" if tension_values else "?"
     logger.info(
-        f"{prefix}批次[{batch_range}] 统计: 返回 {returned_count}/{n} 章 | "
-        f"摘要平均 {avg_summary_len} 字 | "
-        f"张力范围 {min(tension_values) if tension_values else '?'}-{max(tension_values) if tension_values else '?'} | "
-        f"API {api_elapsed:.1f}s | 解析 {parse_elapsed:.2f}s | "
-        f"finish={get_last_call_finish_reason()}"
+        f"{prefix}批次[{batch_range}] 完成: 返回 {returned_count}/{n} 章 | "
+        f"摘要={avg_summary_len}字 | 张力={tension_range} | "
+        f"API {api_elapsed:.1f}s | 解析 {parse_elapsed:.2f}s"
     )
 
     return parsed
@@ -503,7 +502,7 @@ def _append_chapter(novel_dir: Path, chapter_data: dict) -> None:
         yaml.dump(chapter_data, f, allow_unicode=True, default_flow_style=False)
 
 
-def _merge_chapters(novel_dir: Path) -> None:
+def _merge_chapters(novel_dir: Path, material_id: str = "") -> None:
     """合并所有独立章节文件为 chapters.yaml。
 
     在分析完成后调用，生成一个完整快照供其他脚本使用。
@@ -520,7 +519,8 @@ def _merge_chapters(novel_dir: Path) -> None:
     chapters_file = novel_dir / "chapters.yaml"
     with open(chapters_file, "w", encoding="utf-8") as f:
         yaml.dump(all_chapters, f, allow_unicode=True, default_flow_style=False)
-    logger.info(f"已合并 {len(all_chapters)} 章 → chapters.yaml")
+    prefix = f"[{material_id}] " if material_id else ""
+    logger.info(f"{prefix}已合并 {len(all_chapters)} 章 → chapters.yaml")
 
 
 def _get_batch_size(config: dict) -> int:
@@ -707,7 +707,7 @@ def chapter_analyze(
                 # 计算单章的进度比例
                 ch_progress_ratio = (ch_num - range_start) / max(range_end - range_start + 1, 1)
                 try:
-                    result = analyze_chapter(chapter_text, ch_info, config, progress_ratio=ch_progress_ratio)
+                    result = analyze_chapter(chapter_text, ch_info, config, progress_ratio=ch_progress_ratio, material_id=material_id)
                     batch_api_calls += 1
                 except Exception as e:
                     logger.error(f"[{material_id}] 第 {ch_num} 章分析失败（已重试耗尽）: {e}")
@@ -782,7 +782,7 @@ def chapter_analyze(
             )
 
     # 合并所有章节文件
-    _merge_chapters(novel_dir)
+    _merge_chapters(novel_dir, material_id=material_id)
 
     # 质量检查
     logger.info(f"[{material_id}] 执行章级分析质量校验...")

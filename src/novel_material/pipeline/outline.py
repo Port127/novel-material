@@ -80,13 +80,15 @@ def _generate_acts_sequences(
     meta: dict,
     context_text: str,
     outline_stats: dict,
-    config: dict
+    config: dict,
+    material_id: str = "",
 ) -> list:
     """生成完整的幕/序列划分（章节范围，不含 beats）。
 
     仅生成幕和序列的章节范围与描述，beats 在第二阶段逐序列生成，
     避免一次输出 1000+ 条 beats JSON 导致必然截断的问题。
     """
+    prefix = f"[{material_id}] " if material_id else ""
     system_prompt = """你是专业的小说结构分析师。请根据章节总数和小说类型，生成合理的幕/序列划分。
 返回 JSON 格式：
 {
@@ -159,11 +161,11 @@ def _generate_acts_sequences(
 请生成完整的幕/序列划分（仅需章节范围和描述，不需要 beats）。
 序列划分应让高潮章节（高张力章节）成为序列的转折点或结尾。"""
 
-    result = call_llm(system_prompt, user_prompt, config, max_tokens_override=4000, timeout_override=config["llm"]["outline_timeout"], context="幕序列划分")
-    logger.info(f"幕序列划分完成: finish={get_last_call_finish_reason()}")
+    result = call_llm(system_prompt, user_prompt, config, max_tokens_override=4000, timeout_override=config["llm"]["outline_timeout"], context=f"{material_id} 幕序列划分")
+    logger.info(f"{prefix}幕序列划分完成: finish={get_last_call_finish_reason()}")
     # 兼容 LLM 直接返回数组的情况
     if isinstance(result, list):
-        logger.warning("幕序列划分返回裸数组，自动适配")
+        logger.warning(f"{prefix}幕序列划分返回裸数组，自动适配")
         return result
     return result.get("acts", [])
 
@@ -178,12 +180,14 @@ def _generate_beats_for_sequence(
     chapters_data: list,
     model: str,
     config: dict,
+    material_id: str = "",
 ) -> list:
     """为单个序列生成 beats（节拍）。
 
     每次只处理一个序列（通常 30-150 章），上下文聚焦，输出量可控（5-15 条 beats），
     彻底避免"要求 LLM 一次输出 1600 条 beats"的结构性截断问题。
     """
+    prefix = f"[{material_id}] " if material_id else ""
     seq_start = seq.get("chapter_start", 0)
     seq_end = seq.get("chapter_end", 0)
 
@@ -248,11 +252,11 @@ def _generate_beats_for_sequence(
 请为此序列生成节拍列表。
 节拍的 tension 值应与章节实际张力一致，高张力章节应是关键节拍。"""
 
-    result = call_llm(system_prompt, user_prompt, config, max_tokens_override=2000, timeout_override=config["llm"]["outline_timeout"], context=f"beats#{seq.get('sequence_number', '?')}")
-    logger.debug(f"beats#{seq.get('sequence_number', '?')}: finish={get_last_call_finish_reason()}")
+    result = call_llm(system_prompt, user_prompt, config, max_tokens_override=2000, timeout_override=config["llm"]["outline_timeout"], context=f"{material_id} beats#{seq.get('sequence_number', '?')}")
+    logger.debug(f"{prefix}beats#{seq.get('sequence_number', '?')}: finish={get_last_call_finish_reason()}")
     # 兼容 LLM 直接返回数组的情况
     if isinstance(result, list):
-        logger.warning(f"beats#{seq.get('sequence_number', '?')} 返回裸数组，自动适配")
+        logger.warning(f"{prefix}beats#{seq.get('sequence_number', '?')} 返回裸数组，自动适配")
         return result
     return result.get("beats", [])
 
@@ -364,11 +368,11 @@ def generate_outline(material_id, progress_callback: Callable[[int, int, str], N
 
     result = {}
     try:
-        result = call_llm(system_prompt_premise, user_prompt_premise, config, timeout_override=config["llm"]["outline_timeout"], context="前提提炼")
-        logger.info(f"前提提炼完成: finish={get_last_call_finish_reason()}")
+        result = call_llm(system_prompt_premise, user_prompt_premise, config, timeout_override=config["llm"]["outline_timeout"], context=f"{material_id} 前提提炼")
+        logger.info(f"[{material_id}] 前提提炼完成: finish={get_last_call_finish_reason()}")
     except Exception as e:
-        logger.error(f"前提提炼失败: {e}")
-        logger.warning("使用默认值继续，不中断流程")
+        logger.error(f"[{material_id}] 前提提炼失败: {e}")
+        logger.warning(f"[{material_id}] 使用默认值继续，不中断流程")
         result = {
             "premise": "未知",
             "structure_type": "三幕式",
@@ -390,22 +394,22 @@ def generate_outline(material_id, progress_callback: Callable[[int, int, str], N
     with open(meta_file, "w", encoding="utf-8") as f:
         yaml.dump(meta, f, allow_unicode=True, default_flow_style=False)
 
-    logger.info(f"已生成前提: {meta['premise']}")
+    logger.info(f"[{material_id}] 已生成前提: {meta['premise']}")
     time.sleep(rate_limit)
 
     # ── 第二轮：生成幕 + 序列（不含 beats）（容错）──
-    logger.info(f"生成幕/序列结构（共 {chapter_count} 章）...")
+    logger.info(f"[{material_id}] 生成幕/序列结构（共 {chapter_count} 章）...")
     acts = []
     try:
-        acts = _generate_acts_sequences(chapter_count, meta, context_text, outline_stats, config)
+        acts = _generate_acts_sequences(chapter_count, meta, context_text, outline_stats, config, material_id=material_id)
         time.sleep(rate_limit)
         # 检查返回是否有效（空列表或无序列视为失败）
         if not acts or not any(act.get("sequences") for act in acts):
-            logger.warning("LLM 返回空结构，使用简单划分")
+            logger.warning(f"[{material_id}] LLM 返回空结构，使用简单划分")
             acts = generate_simple_acts(chapter_count, result.get("structure_type", "三幕式"))
     except Exception as e:
-        logger.error(f"幕/序列生成失败: {e}")
-        logger.warning("使用简单划分继续，不中断流程")
+        logger.error(f"[{material_id}] 幕/序列生成失败: {e}")
+        logger.warning(f"[{material_id}] 使用简单划分继续，不中断流程")
         acts = generate_simple_acts(chapter_count, result.get("structure_type", "三幕式"))
 
     # ── 第三轮：逐序列生成 beats（每个序列容错）──
@@ -413,7 +417,7 @@ def generate_outline(material_id, progress_callback: Callable[[int, int, str], N
     if progress_callback:
         progress_callback(0, total_sequences, f"逐序列生成 beats（共 {total_sequences} 个）")
     else:
-        logger.info(f"逐序列生成 beats（共 {total_sequences} 个序列）...")
+        logger.info(f"[{material_id}] 逐序列生成 beats（共 {total_sequences} 个序列）...")
 
     beats_data = []
     seq_global = 0
@@ -426,7 +430,7 @@ def generate_outline(material_id, progress_callback: Callable[[int, int, str], N
 
             # 序列开始时的日志（非回调模式）
             if not progress_callback:
-                logger.info(f"  [{seq_global}/{total_sequences}] {act.get('name', '')} / {seq_title}")
+                logger.info(f"[{material_id}] [{seq_global}/{total_sequences}] {act.get('name', '')} / {seq_title}")
 
             # 每个序列独立容错
             beats = []
@@ -437,10 +441,11 @@ def generate_outline(material_id, progress_callback: Callable[[int, int, str], N
                     chapters_data=normal_chapters,
                     model=model,
                     config=config,
+                    material_id=material_id,
                 )
             except Exception as e:
-                logger.error(f"序列 {seq_global} beats 生成失败: {e}")
-                logger.warning("跳过该序列，继续下一个")
+                logger.error(f"[{material_id}] 序列 {seq_global} beats 生成失败: {e}")
+                logger.warning(f"[{material_id}] 跳过该序列，继续下一个")
                 failed_sequences += 1
 
             seq["beats"] = beats
@@ -464,14 +469,14 @@ def generate_outline(material_id, progress_callback: Callable[[int, int, str], N
                 time.sleep(rate_limit)
 
     if failed_sequences > 0:
-        logger.warning(f"共有 {failed_sequences} 个序列 beats 生成失败")
+        logger.warning(f"[{material_id}] 共有 {failed_sequences} 个序列 beats 生成失败")
 
     # Beats 质量统计
     if beats_data:
         tension_vals = [b.get("tension", 0) for b in beats_data if b.get("tension")]
         beats_per_seq = len(beats_data) / max(total_sequences, 1)
         logger.info(
-            f"Beats 统计: {len(beats_data)} 个节拍 | "
+            f"[{material_id}] Beats 统计: {len(beats_data)} 个节拍 | "
             f"每序列平均 {beats_per_seq:.1f} 个 | "
             f"张力范围 {min(tension_vals)}-{max(tension_vals)}"
         )
