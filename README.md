@@ -13,11 +13,12 @@
 | 功能 | 命令 | 说明 |
 |------|------|------|
 | 入库 | `nm pipeline ingest <file>` | 文本清洗 + 章节切分 |
-| 完整流水线 | `nm pipeline full <file>` | 入库 → 分析 → 骨架 → 精调 |
-| 章级分析 | `nm pipeline analyze <id>` | 摘要、张力、人物、功能（支持范围） |
+| 总体评估 | `nm pipeline evaluate <id>` | 类型/主线/阶段概要 |
+| 完整流水线 | `nm pipeline full <file>` | 入库 → 评估 → 分析 → 骨架 → 精调 |
+| 章级分析 | `nm pipeline analyze <id> [--window]` | 摘要、张力、人物、功能（支持滑动窗口） |
 | 骨架分析 | `nm pipeline outline/world/char/tags <id>` | 大纲、世界观、人物、标签 |
 | 断点续传 | `nm pipeline continue <id>` | 自动从上次进度继续 |
-| 精调 | `nm pipeline refine <id>` | 统计精调 + 数据库同步 |
+| 精调 | `nm pipeline refine <id>` | 统计精调 + 结构推断 + 数据库同步 |
 | 检索 | `nm search <type> <query>` | 章节/人物/世界观/大纲/事件 |
 | 标签管理 | `nm tags stats/list/add` | 查看/添加/审核标签 |
 | 素材管理 | `nm material list/import/delete` | 查看/导入/删除素材 |
@@ -38,6 +39,7 @@ pip install -e .
 ```bash
 cp .env.example .env
 # 必须填入 DATABASE_URL、LLM_API_KEY、EMBEDDING_API_KEY
+# 非敏感参数在 config/settings.yaml，多服务商配置在 config/providers.yaml
 ```
 
 ### 3. 启动数据库
@@ -86,6 +88,7 @@ data/novels/nm_novel_YYYYMMDD_xxxx/
 ├── source.txt           # 清洗后的原文
 ├── meta.yaml            # 元信息（状态、题材、字数）
 ├── chapter_index.yaml   # 章节索引
+├── evaluation.yaml      # 总体评估（类型/主线/阶段概要）
 ├── chapters.yaml        # 章级分析（摘要、张力、功能、人物）
 ├── chapter_embeddings.npz  # 向量缓存
 ├── outline/             # 大纲结构

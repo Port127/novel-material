@@ -59,12 +59,14 @@ novel-material/
 │   │   ├── ingest.py             # 入库：预处理 + 章节切分
 │   │   ├── preprocess.py         # 文本清洗：NFC归一化/去广告/数字转换
 │   │   ├── loader.py             # 章节数据加载 + 摘要池构建
+│   │   ├── evaluate.py           # 总体评估：5批次采样生成类型/主线/阶段概要
 │   │   ├── analyze.py            # 章级分析：摘要/张力/人物/功能
+│   │   ├── infer.py              # 结构角色推断：key_plot_point 标记
 │   │   ├── outline.py            # 大纲生成：三幕结构 + 序列节拍
 │   │   ├── worldbuilding.py      # 世界观提取：势力/地域/体系
 │   │   ├── characters.py         # 人物提取：原型/弧线/心理
 │   │   ├── tags.py               # 标签生成：element/style/structure
-│   │   ├── refine.py             # 统计精调：出场次数/钩子数
+│   │   ├── refine.py             # 统计精调：出场次数/钩子数 + 结构推断
 │   │   └── progress.py           # 进度跟踪 + 断点检测
 │   ├── search/                   # 检索逻辑
 │   │   ├── chapter.py            # 章节检索：向量语义搜索
@@ -88,11 +90,12 @@ novel-material/
 │   │   ├── export_view.py        # YAML 视图导出
 │   │   └── scheduled.py          # 批处理审核
 │   ├── infra/                    # 基础设施
-│   │   ├── config.py             # 配置加载（settings.yaml）
+│   │   ├── config.py             # 配置加载（settings.yaml + providers.yaml）
 │   │   ├── llm.py                # LLM 调用客户端（多服务商）
 │   │   ├── embedding.py          # Embedding API
-│   │   ├── progress.py           # 进度跟踪
-│   │   └── logging_config.py     # 日志配置
+│   │   ├── constants.py          # 公共常量：KEY_PLOT_POINT_VALUES/NOVEL_TYPE_VALUES
+│   │   ├── progress.py           # 进度跟踪（SilentConsole + PipelineLogger）
+│   │   └── logging_config.py     # 日志配置（PID隔离 + 统一前缀）
 │   ├── validation/               # 校验层
 │   │   ├── schema.py             # YAML Schema 校验（pydantic）
 │   │   ├── quality.py            # 内容质量校验
@@ -106,6 +109,8 @@ novel-material/
 │   │       ├── source.txt        # 清洗后原文
 │   │       ├── meta.yaml         # 元信息
 │   │       ├── chapter_index.yaml  # 章节索引
+│   │       ├── evaluation.yaml     # 总体评估结果（类型/主线/阶段概要）
+│   │       ├── _evaluation_progress.yaml  # 评估进度（断点续传）
 │   │       ├── chapters.yaml     # 章级分析合并
 │   │       ├── chapters/         # 章级分析（独立文件，断点续传）
 │   │       ├── outline/          # 大纲结构
@@ -150,6 +155,25 @@ novel-material/
    │                                author_note
 ```
 
+### 总体评估阶段（LLM 调用）
+
+```
+章节索引 → 采样章节 → 5批次LLM评估 → evaluation.yaml
+    │          │           │              │
+章节总数    分层采样     类型/主线      全局上下文
+    │       (15/50章)    阶段概要       (滑动窗口输入)
+    │                        │
+    └────────────────────────┴──→ 滑动窗口模式（--window）
+```
+
+**采样策略**：
+- 小体量（<200章）：15章分5批，每批3章
+- 大体量（≥200章）：50章分5批，每批10章
+
+**用途**：
+- 为滑动窗口模式提供全局上下文
+- 输出：novel_type、main_thread_summary、core_characters_hint、stage_summaries
+
 ### 分析阶段（LLM 调用）
 
 ```
@@ -158,11 +182,22 @@ novel-material/
     │      embedding  outline   统计     PostgreSQL
     │      (OpenAI)   world     出场次数  novels
     │                 characters 钩子数   chapters
-    │                 tags                characters
-    │                                     worldbuilding
+    │                 tags      结构推断  characters
+    │                 (infer)            worldbuilding
     │                                     outline_sequences
     │                                     outline_beats
 ```
+
+**滑动窗口模式**（--window）：
+- 需要先运行总体评估
+- 为每章注入前章摘要 + 全局评估作为上下文
+- 新增字段：tension_change、emotion_transition、plot_progress
+
+**章节级标签**（阶段四新增）：
+- emotional_tone：情感基调标签
+- scene_type：场景类型标签
+- technique：叙事技巧标签
+- hook_type：章末钩子类型
 
 ### 断点续传机制
 
@@ -183,12 +218,13 @@ novel-material/
 | 命令 | 功能 | 底层调用 |
 |------|------|---------|
 | `nm pipeline ingest` | 入库 | `pipeline/ingest.py` |
+| `nm pipeline evaluate` | 总体评估 | `pipeline/evaluate.py` |
 | `nm pipeline analyze` | 章级分析 | `pipeline/analyze.py` |
 | `nm pipeline outline` | 大纲生成 | `pipeline/outline.py` |
 | `nm pipeline worldbuilding` | 世界观提取 | `pipeline/worldbuilding.py` |
 | `nm pipeline characters` | 人物提取 | `pipeline/characters.py` |
 | `nm pipeline tags` | 标签生成 | `pipeline/tags.py` |
-| `nm pipeline refine` | 精调同步 | `pipeline/refine.py` + `storage/sync.py` |
+| `nm pipeline refine` | 精调同步 | `pipeline/refine.py` + `pipeline/infer.py` + `storage/sync.py` |
 | `nm pipeline full` | 完整流水线 | 组合调用 |
 | `nm pipeline continue` | 断点续传 | `pipeline/progress.py` + 组合调用 |
 | `nm search chapter` | 章节检索 | `search/chapter.py` |
@@ -210,12 +246,14 @@ novel-material/
 | `ingest.py` | 入库 | 失败返回 None |
 | `preprocess.py` | 文本清洗 | 无 LLM，纯本地逻辑 |
 | `loader.py` | 数据加载 | 加载失败时返回空结构 |
-| `analyze.py` | 章级分析 | 断点续传 + 跳过失败章节 + 特殊章节类型识别 |
+| `evaluate.py` | 总体评估 | 断点续传 + 5批次采样 |
+| `analyze.py` | 章级分析 | 断点续传 + 跳过失败章节 + 特殊章节类型识别 + 滑动窗口 |
+| `infer.py` | 结构角色推断 | 跳过特殊类型章节 |
 | `outline.py` | 大纲生成 | 3层容错 + `generate_simple_acts` 兜底 |
-| `worldbuilding.py` | 世界观提取 | 空结构兜底 |
-| `characters.py` | 人物提取 | 空列表兜底 |
+| `worldbuilding.py` | 世界观提取 | 空结构兜底 + 统计聚合 |
+| `characters.py` | 人物提取 | 三层分层处理 + 出场统计驱动 |
 | `tags.py` | 标签生成 | 默认标签兜底 |
-| `refine.py` | 统计精调 | 增量更新 |
+| `refine.py` | 统计精调 | 增量更新 + 调用 infer_key_plot_points |
 | `progress.py` | 进度跟踪 | 检测各阶段完成状态 |
 
 ### Search 层 (`search/`)
@@ -305,9 +343,17 @@ chapters (
   tension_level INTEGER,
   pacing TEXT,
   setting TEXT[],
-  key_plot_point TEXT,
+  key_event TEXT,           -- 关键事件描述（LLM生成，10-30字）
+  key_plot_point TEXT,      -- 结构角色标记（代码推断）
   chapter_functions TEXT[],
   characters_appear TEXT[],
+  emotional_tone TEXT[],    -- 情感基调标签
+  scene_type TEXT[],        -- 场景类型标签
+  technique TEXT[],         -- 叙事技巧标签
+  hook_type TEXT,           -- 章末钩子类型
+  tension_change TEXT,      -- 张力变化方向（滑动窗口）
+  emotion_transition TEXT,  -- 情感过渡描述（滑动窗口）
+  plot_progress TEXT,       -- 情节进度描述（滑动窗口）
   summary_embedding vector(4096),
   PRIMARY KEY (material_id, chapter)
 )
@@ -408,6 +454,21 @@ new_tag_candidates (
   status VARCHAR(20),       -- pending/approved/rejected
   created_at TIMESTAMP
 )
+
+-- LLM 执行历史（run_history）
+run_history (
+  id SERIAL,
+  material_id TEXT,
+  pipeline_name TEXT,       -- 总体评估/章级分析/大纲生成等
+  stage_name TEXT,          -- 批次1/批次2等
+  elapsed_sec FLOAT,        -- 耗时（秒）
+  tokens_in INTEGER,        -- 输入 tokens
+  tokens_out INTEGER,       -- 输出 tokens
+  api_calls INTEGER,        -- API 调用次数
+  api_errors INTEGER,       -- API 错误次数
+  status TEXT,              -- success/failed
+  timestamp TIMESTAMP
+)
 ```
 
 ## 容错机制
@@ -453,6 +514,24 @@ new_tag_candidates (
     ↓
 全部完成 → 合并为 chapters.yaml
 ```
+
+### 数据库同步自动修复
+
+```
+sync_novel 检测到 summary 长度不足时：
+    ↓
+抛出 QualityCheckError（包含短摘要章节列表）
+    ↓
+自动调用 repair_short_summaries 重分析
+    ↓
+修复成功 → 继续同步
+修复失败 → 返回 False（需人工干预）
+```
+
+**异常类型**：
+- `DatabaseConfigError`：DATABASE_URL 未设置
+- `QualityCheckError`：summary 长度不足（可修复）
+- `SchemaValidationError`：其他 Schema 问题（不可修复）
 
 ## 标签分级系统
 
@@ -506,9 +585,19 @@ resolve_tag_domain("element", "血脉")
 ### 配置优先级
 
 1. `config/providers.yaml`（多服务商配置）
-2. `config/settings.yaml`（主配置）
-3. `.env` 环境变量
+2. `config/settings.yaml`（非敏感参数，受版本控制）
+3. `.env` 环境变量（敏感信息：API Key、密码）
 4. 默认值
+
+### settings.yaml 结构
+
+包含 30+ 配置项：
+- **LLM 请求参数**：max_tokens、temperature、rate_limit_seconds
+- **LLM 批量处理**：batch_size、chapter_tokens
+- **LLM 超时配置**：各阶段超时（analyze/outline/worldbuilding/characters）
+- **摘要池 Token 上限**：各阶段输入量
+- **多样性控制**：动态温度、相似度检测阈值
+- **LLM 定价**：成本估算参数
 
 ### 多服务商支持
 
@@ -537,15 +626,19 @@ nm pipeline analyze nm_xxx --provider qwen
 
 ### 日志文件
 
-- `data/novels/{material_id}/pipeline.log`：流水线执行日志
-- 包含：API 调用详情、错误分类、重试状态
+- `data/novels/{material_id}/pipeline_{date}_{time}_{PID}.log`：流水线执行日志
+- 文件命名：`pipeline_{YYYY-MM-DD}_{HH-MM-SS}_{PID}.log`
+- **PID 隔离**：并发运行多个 pipeline 时日志写入不同文件，避免交叉
 
 ### 日志格式
 
 ```
-[章节分析#批次53] API: 12.3s | in=4521 out=823 total=5344 | thinking=1200 | finish=stop | req=abc123...
+[material_id] 批次完成: 返回 10/10章...
+[material_id 章节分析] API: 12.3s | in=4521 out=823 total=5344 | thinking=1200 | finish=stop | req=abc123...
 [RATE] 重试 3/8，等待 60s: RateLimitError
 ```
+
+**统一前缀**：所有日志添加 `[material_id]` 或 `[material_id 模块名]` 前缀便于追踪。
 
 ### 错误分类标签
 

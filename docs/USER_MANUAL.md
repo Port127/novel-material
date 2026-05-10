@@ -52,22 +52,25 @@ novel-material 是一个**小说写作参考检索库**。
 ### 1.3 数据生命周期
 
 ```
-原文文件 → 格式清洗 → 章节切分 → 章级分析(LLM) → 向量化 → 骨架分析(LLM) → 同步数据库
-    ↓          ↓           ↓            ↓            ↓           ↓            ↓
-source.txt  清洗后文本  chapter_index.yaml  chapters.yaml  embeddings  outline/...  PostgreSQL
+原文文件 → 格式清洗 → 章节切分 → 总体评估(LLM) → 章级分析(LLM) → 向量化 → 骨架分析(LLM) → 精调 → 同步数据库
+    ↓          ↓           ↓           ↓             ↓            ↓           ↓            ↓        ↓
+source.txt  清洗后文本  chapter_index  evaluation.yaml  chapters.yaml  embeddings  outline/...  infer  PostgreSQL
 ```
+
+**总体评估**（可选）：5批次采样生成类型/主线/阶段概要，为滑动窗口模式提供上下文。
 
 ### 1.4 核心数据表
 
 | 表名 | 说明 | 主要字段 |
 |------|------|---------|
 | `novels` | 小说元信息 | material_id, name, genre, premise |
-| `chapters` | 章节分析 | chapter, title, chapter_type, summary, tension_level, chapter_functions |
+| `chapters` | 章节分析 | chapter, title, chapter_type, summary, tension_level, key_event, key_plot_point, emotional_tone, hook_type |
 | `outline_sequences` | 大纲序列 | act, sequence, title, description |
 | `outline_beats` | 大纲节拍 | beat, chapter, description, tension |
 | `characters` | 人物档案 | name, role, archetype, arc_summary |
 | `character_appearances` | 人物出场记录 | character_name, chapter, significance |
 | `worldbuilding_entities` | 世界观实体 | entity_type, name, description, importance |
+| `run_history` | LLM执行统计 | pipeline_name, tokens_in, tokens_out, elapsed_sec |
 
 ### 1.5 章节类型
 
@@ -341,12 +344,38 @@ nm pipeline ingest <file_path>
 - `meta.yaml`（状态：`clean`）
 - `chapter_index.yaml`、`source.txt`
 
+### nm pipeline evaluate
+
+总体评估，采样生成小说类型、主线概要、阶段概要。
+
+```bash
+nm pipeline evaluate <material_id> [--provider NAME]
+```
+
+**参数**：
+- `material_id`：素材 ID
+- `--provider`：服务商名称（可选）
+
+**输出**：`evaluation.yaml`（位于 `data/novels/{material_id}/`）
+
+**采样策略**：
+- 小体量（<200章）：15章分5批，每批3章
+- 大体量（≥200章）：50章分5批，每批10章
+
+**用途**：
+- 为滑动窗口模式提供全局上下文
+- 输出：novel_type、main_thread_summary、core_characters_hint、stage_summaries
+
+**注意**：
+- 需要先入库（有 chapter_index.yaml）
+- 断点续传：使用 `_evaluation_progress.yaml`
+
 ### nm pipeline analyze
 
 章级分析，生成摘要、张力评级、人物出场、章节功能。
 
 ```bash
-nm pipeline analyze <material_id> [--start N] [--end N] [--provider NAME]
+nm pipeline analyze <material_id> [--start N] [--end N] [--provider NAME] [--window]
 ```
 
 **参数**：
@@ -354,6 +383,12 @@ nm pipeline analyze <material_id> [--start N] [--end N] [--provider NAME]
 - `--start`：起始章节号（可选）
 - `--end`：结束章节号（可选）
 - `--provider`：服务商名称（可选）
+- `--window`：启用滑动窗口模式（需先运行 evaluate）
+
+**滑动窗口模式**（--window）：
+- 需要先运行 `nm pipeline evaluate`
+- 为每章注入前章摘要 + 全局评估作为上下文
+- 新增字段：tension_change、emotion_transition、plot_progress
 
 **输出**：
 - `chapters.yaml` 或 `chapters/{n:04d}.yaml`
@@ -405,30 +440,36 @@ nm pipeline tags <material_id> [--provider NAME]
 
 ### nm pipeline refine
 
-统计精调，计算出场次数、钩子数等统计信息。
+统计精调，计算出场次数、钩子数等统计信息，并推断结构角色。
 
 ```bash
 nm pipeline refine <material_id>
 ```
 
-**输出**：更新 `outline/_index.yaml`、`characters/profiles/*.yaml`、`meta.yaml`（状态：`finalized`）
+**执行内容**：
+1. 统计精调（出场次数、钩子数）
+2. 结构角色推断（调用 infer_key_plot_points）
+3. 更新 `meta.yaml` 状态为 `finalized`
+
+**输出**：更新 `outline/_index.yaml`、`characters/profiles/*.yaml`、`meta.yaml`
 
 ### nm pipeline full
 
 完整流水线，从入库到精调一步完成。
 
 ```bash
-nm pipeline full <file_path> [--start N] [--end N] [--provider NAME]
+nm pipeline full <file_path> [--start N] [--end N] [--provider NAME] [--window]
 ```
 
 **执行阶段**：
 1. 入库（ingest）
-2. 章级分析（analyze）
-3. 大纲生成（outline）
-4. 世界观提取（worldbuilding）
-5. 人物提取（characters）
-6. 标签生成（tags）
-7. 精调（refine）
+2. 总体评估（evaluate）
+3. 章级分析（analyze）
+4. 大纲生成（outline）
+5. 世界观提取（worldbuilding）
+6. 人物提取（characters）
+7. 标签生成（tags）
+8. 精调（refine）
 
 **注意**：长篇小说可能耗时数小时，建议先用 `--start 1 --end 10` 测试。
 
@@ -445,8 +486,20 @@ nm pipeline status <material_id>
 自动从断点继续流水线。
 
 ```bash
-nm pipeline continue <material_id> [--skip-sync] [--start N] [--end N] [--provider NAME]
+nm pipeline continue <material_id> [--skip-sync] [--start N] [--end N] [--provider NAME] [--window]
 ```
+
+**参数**：
+- `material_id`：素材 ID
+- `--skip-sync`：跳过数据库同步
+- `--start/--end`：章级分析范围
+- `--provider`：服务商名称
+- `--window`：滑动窗口模式
+
+**行为**：
+- 检测各阶段完成状态
+- 自动执行未完成的阶段
+- 支持章级分析断点续传
 
 **行为**：
 - 检测各阶段完成状态
@@ -984,7 +1037,25 @@ docker compose up -d
 全部完成: 合并为 chapters.yaml
 ```
 
-### 16.3 API 重试策略
+### 16.3 数据库同步自动修复
+
+sync_novel 检测到 summary 长度不足时自动修复：
+
+```
+检测短摘要章节
+    ↓
+调用 repair_short_summaries 重分析
+    ↓
+修复成功 → 继续同步
+修复失败 → 需人工干预
+```
+
+手动触发修复：
+```bash
+nm storage sync nm_xxx  # 自动检测并修复
+```
+
+### 16.4 API 重试策略
 
 | 错误类型 | 重试策略 |
 |----------|---------|
@@ -1016,6 +1087,34 @@ LLM_API_KEY=your_api_key
 EMBEDDING_API_KEY=your_api_key
 ```
 
+### config/settings.yaml
+
+非敏感参数配置（受版本控制）：
+
+```yaml
+# LLM 请求参数
+LLM_MAX_TOKENS: 8000
+LLM_TEMPERATURE: 0.3
+LLM_RATE_LIMIT_SECONDS: 10
+
+# LLM 批量处理
+LLM_CHAPTER_BATCH_SIZE: 10
+LLM_MAX_CHAPTER_TOKENS: 5000
+
+# LLM 超时配置（秒）
+LLM_ANALYZE_TIMEOUT: 3000
+LLM_OUTLINE_TIMEOUT: 3000
+LLM_WORLDBUILDING_TIMEOUT: 1800
+LLM_CHARACTERS_TIMEOUT: 1800
+
+# 多样性控制
+LLM_DYNAMIC_TEMPERATURE_ENABLED: true
+LLM_LATE_CHAPTER_THRESHOLD: 0.6
+LLM_SIMILARITY_WARNING_THRESHOLD: 0.7
+```
+
+详见 `config/settings.yaml`。
+
 ### config/providers.yaml
 
 ```yaml
@@ -1039,12 +1138,15 @@ providers:
 
 ### 日志文件位置
 
-`data/novels/{material_id}/pipeline.log`
+`data/novels/{material_id}/pipeline_{date}_{time}_{PID}.log`
+
+**PID 隔离**：并发运行多个 pipeline 时日志写入不同文件。
 
 ### 日志格式
 
 ```
-[章节分析#批次53] API: 12.3s | in=4521 out=823 total=5344 | thinking=1200 | finish=stop
+[material_id] 批次完成: 返回 10/10章...
+[material_id 章节分析] API: 12.3s | in=4521 out=823 | finish=stop
 [RATE] 重试 3/8，等待 60s: RateLimitError
 [AUTH] API 失败: AuthenticationError
 ```

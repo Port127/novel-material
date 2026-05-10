@@ -53,23 +53,26 @@ Skills（`.claude/skills/*/SKILL.md`）封装了 CLI 调用，提供更完整的
 ### 5. 状态流转
 
 ```
-ingested/clean → analyzed → finalized
+ingested/clean → evaluated → analyzed → finalized
 ```
 
 | 状态 | 含义 | 可执行操作 |
 |------|------|-----------|
 | `ingested` | 已入库（ingest 直接输出 clean，不经过独立 ingested 状态） | 等待 |
-| `clean` | 已清洗，待分析 | `nm pipeline analyze` |
-| `analyzed` | 已分析，待精调 | `nm pipeline refine` |
+| `clean` | 已清洗，待评估 | `nm pipeline evaluate`（可选） |
+| `evaluated` | 已评估，待分析 | `nm pipeline analyze` |
+| `analyzed` | 已分析，待骨架 | `nm pipeline outline/world/char/tags` |
 | `finalized` | 已完成 | `nm storage sync` |
 | `failed` | 流水线执行失败 | 查看日志修复后执行 `nm pipeline continue` |
+
+**总体评估是可选步骤**：不强制要求，但为滑动窗口模式提供全局上下文。
 
 Agent 不应：
 - 对 `analyzed` 状态执行 `analyze`（会覆盖）
 - 对 `clean` 状态执行 `refine`（无章级数据）
 
 **`failed` 状态处理**：
-1. 查看日志：`data/novels/{material_id}/pipeline.log`
+1. 查看日志：`data/novels/{material_id}/pipeline_{date}_{PID}.log`
 2. 根据错误类型修复（API Key、网络、配置等）
 3. 修复后执行 `nm pipeline continue` 自动从断点继续
 4. 如需重新分析已完成章节，可手动修改 `meta.yaml` 状态为 `clean`
@@ -82,15 +85,16 @@ Agent 不应：
 
 ```bash
 nm pipeline ingest <file>           # 入库：预处理 + 章节切分
-nm pipeline analyze <id>            # 章级分析（支持 --start/--end 范围）
+nm pipeline evaluate <id>           # 总体评估：类型/主线/阶段概要
+nm pipeline analyze <id> [--window] # 章级分析（支持范围、滑动窗口）
 nm pipeline outline <id>            # 大纲生成
 nm pipeline worldbuilding <id>      # 世界观提取
-nm pipeline characters <id>         # 人物提取
+nm pipeline characters <id>         # 人物提取（三层分层）
 nm pipeline tags <id>               # 标签生成
-nm pipeline refine <id>             # 精调统计
-nm pipeline full <file>             # 完整流水线（入库→分析→骨架→精调）
+nm pipeline refine <id>             # 精调统计 + 结构推断
+nm pipeline full <file>             # 完整流水线（入库→评估→分析→骨架→精调）
 nm pipeline status <id>             # 查看进度
-nm pipeline continue <id>           # 自动从断点继续（支持 --skip-sync）
+nm pipeline continue <id>           # 自动从断点继续（支持 --window）
 ```
 
 ### Search 命令
@@ -282,6 +286,44 @@ providers:
 | `author_note` | 作者说 | 放宽分析要求 |
 
 特殊章节不参与张力评估、人物识别等叙事分析，但在检索时可作为过滤维度。
+
+## 章节级标签
+
+章级分析新增字段：
+
+| 字段 | 说明 | 合法值来源 |
+|------|------|-----------|
+| emotional_tone | 情感基调 | tags.yaml → chapter_function |
+| scene_type | 场景类型 | tags.yaml → chapter_function |
+| technique | 叙事技巧 | tags.yaml → chapter_function |
+| hook_type | 章末钩子 | 悬念/反转/情感/信息/危机/无钩子 |
+
+滑动窗口模式新增字段：
+
+| 字段 | 说明 |
+|------|------|
+| tension_change | 张力变化方向（上升/持平/下降） |
+| emotion_transition | 情感过渡描述 |
+| plot_progress | 情节进度描述 |
+
+## 结构角色字段
+
+两个字段语义不同：
+
+| 字段 | 来源 | 说明 |
+|------|------|------|
+| key_event | LLM生成 | 关键事件描述（10-30字） |
+| key_plot_point | 代码推断 | 结构角色标记 |
+
+key_plot_point 合法值：
+- `inciting_incident`：激励事件（前10%章节）
+- `first_turning_point`：第一转折点（前25%章节）
+- `midpoint`：中点（40-60%章节）
+- `second_turning_point`：第二转折点（60-80%章节）
+- `climax`：高潮（后20%章节）
+- `resolution`：结局（最后10%章节）
+
+Agent 不应手动编辑 key_plot_point，由 refine 阶段自动推断。
 
 ## LLM 分析质量动态调节
 
