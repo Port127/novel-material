@@ -11,7 +11,15 @@ from .outline import generate_outline, generate_simple_acts
 from .worldbuilding import generate_worldbuilding
 from .characters import generate_characters
 from .tags import generate_tags
-from .progress import get_pipeline_progress, print_pipeline_status, get_next_pending_stage
+from .progress import (
+    get_pipeline_progress,
+    print_pipeline_status,
+    get_next_pending_stage,
+    PIPELINE_STAGES,
+    get_pipeline_stages,
+    calculate_total_stages,
+    calculate_current_stage,
+)
 from .evaluate import run_evaluation
 
 __all__ = [
@@ -36,5 +44,9 @@ __all__ = [
     "get_pipeline_progress",
     "print_pipeline_status",
     "get_next_pending_stage",
+    "PIPELINE_STAGES",
+    "get_pipeline_stages",
+    "calculate_total_stages",
+    "calculate_current_stage",
     "run_evaluation",
 ]

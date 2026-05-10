@@ -13,6 +13,36 @@ load_dotenv()
 console = Console()
 
 
+# 流水线阶段定义（按执行顺序）
+PIPELINE_STAGES = [
+    ("入库", "ingested", True),           # (显示名, 进度键, 是否计入总阶段数)
+    ("总体评估", "evaluation", False),    # 可选阶段，不计入总阶段数
+    ("章级分析", "analyzed", True),
+    ("大纲", "outline", True),
+    ("世界观", "worldbuilding", True),
+    ("人物", "characters", True),
+    ("标签", "tags", True),
+    ("精调", "refined", True),
+    ("数据库同步", "synced", False),      # 不计入总阶段数，仅用于进度状态表
+]
+
+
+def get_pipeline_stages(include_evaluation: bool = False) -> list:
+    """获取流水线阶段列表（不含数据库同步）。
+
+    Args:
+        include_evaluation: 是否包含总体评估阶段
+
+    Returns:
+        list: 阶段列表 [(显示名, 进度键), ...]
+    """
+    return [
+        (name, key)
+        for name, key, counted in PIPELINE_STAGES
+        if counted or (key == "evaluation" and include_evaluation)
+    ]
+
+
 def get_pipeline_progress(material_id: str) -> dict:
     """检查各阶段完成情况。
 
@@ -95,19 +125,7 @@ def print_pipeline_status(progress: dict) -> None:
     table.add_column("阶段", style="cyan")
     table.add_column("状态", style="green")
 
-    stages = [
-        ("入库", "ingested"),
-        ("总体评估", "evaluation"),  # 可选阶段
-        ("章级分析", "analyzed"),
-        ("大纲", "outline"),
-        ("世界观", "worldbuilding"),
-        ("人物", "characters"),
-        ("标签", "tags"),
-        ("精调", "refined"),
-        ("数据库同步", "synced"),
-    ]
-
-    for name, key in stages:
+    for name, key, _ in PIPELINE_STAGES:
         # evaluation 是可选阶段，显示不同标记
         if key == "evaluation":
             status = "✓ 完成" if progress.get(key) else "- 未运行（可选）"
@@ -133,11 +151,12 @@ def get_next_pending_stage(progress: dict) -> str | None:
     if not progress.get("analyzed"):
         return "analyze"
 
+    # 从 PIPELINE_STAGES 获取骨架阶段顺序（保持定义顺序）
+    skeleton_keys = ["outline", "worldbuilding", "characters", "tags"]
     skeleton_stages = [
-        ("outline", "outline"),
-        ("worldbuilding", "worldbuilding"),
-        ("characters", "characters"),
-        ("tags", "tags"),
+        (key, key)
+        for _, key, _ in PIPELINE_STAGES
+        if key in skeleton_keys
     ]
 
     for name, key in skeleton_stages:
@@ -151,3 +170,52 @@ def get_next_pending_stage(progress: dict) -> str | None:
         return "sync"
 
     return None
+
+
+def calculate_total_stages(has_evaluation: bool) -> int:
+    """计算流水线总阶段数（不含数据库同步）。
+
+    Args:
+        has_evaluation: 是否包含总体评估阶段（基于历史状态或本次参数）
+
+    Returns:
+        int: 总阶段数
+    """
+    return len(get_pipeline_stages(has_evaluation))
+
+
+def calculate_current_stage(
+    progress: dict,
+    use_window_detected: bool,
+    will_analyze: bool,
+) -> int:
+    """计算当前阶段编号（下一待执行阶段）。
+
+    Args:
+        progress: 进度检查结果字典
+        use_window_detected: 是否检测到总体评估已完成
+        will_analyze: 本次是否会执行章级分析
+
+    Returns:
+        int: 下一待执行阶段的编号（从 1 开始）
+    """
+    stages = get_pipeline_stages(use_window_detected)
+
+    completed_count = 0
+    for name, key in stages:
+        if key == "analyzed":
+            # 章级分析特殊处理：已完成且本次不重新执行才算完成
+            if progress.get("analyzed") and not will_analyze:
+                completed_count += 1
+            else:
+                break  # 未完成或需重新执行，停止计数
+        elif key == "ingested":
+            # 入库在 continue 模式下总是已完成
+            completed_count += 1
+        else:
+            if progress.get(key):
+                completed_count += 1
+            else:
+                break  # 未完成，停止计数
+
+    return completed_count + 1  # 下一待执行阶段

@@ -17,7 +17,14 @@ from novel_material.pipeline import (
     refine,
     run_evaluation,
 )
-from novel_material.pipeline.progress import get_pipeline_progress, print_pipeline_status, get_next_pending_stage
+from novel_material.pipeline.progress import (
+    get_pipeline_progress,
+    print_pipeline_status,
+    get_next_pending_stage,
+    calculate_total_stages,
+    calculate_current_stage,
+    get_pipeline_stages,
+)
 from novel_material.storage.sync import sync_novel
 
 app = typer.Typer(help="数据处理流水线")
@@ -295,7 +302,7 @@ def cmd_full(
         range_end_text = end or "末"
         range_desc = f" (第 {range_start}-{range_end_text} 章)"
     window_desc = " [滑动窗口]" if use_window else ""
-    total_stages = 8 if use_window else 7
+    total_stages = calculate_total_stages(use_window)
 
     console.print(f"[cyan]开始完整流水线{range_desc}{window_desc}[/cyan]")
     logger.info(_PIPELINE_SEPARATOR)
@@ -430,15 +437,12 @@ def cmd_full(
     table = Table(title="流水线完成")
     table.add_column("阶段", style="cyan")
     table.add_column("状态", style="green")
-    table.add_row("入库", "✓")
-    if use_window:
-        table.add_row("总体评估", "✓")
-    table.add_row("章级分析", "✓")
-    table.add_row("大纲", "✓")
-    table.add_row("世界观", "✓")
-    table.add_row("人物", "✓")
-    table.add_row("标签", "✓")
-    table.add_row("精调", "✓")
+
+    final_progress = get_pipeline_progress(material_id)
+    for name, key in get_pipeline_stages(use_window):
+        status = "✓ 完成" if final_progress.get(key) else "○ 未完成"
+        table.add_row(name, status)
+
     console.print(table)
     console.print(f"[green]material_id:[/green] [cyan]{material_id}[/cyan]")
 
@@ -530,6 +534,17 @@ def cmd_continue(
         console.print(f"[red]结束章节号 {end} 超出总章数 {total_chapters}[/red]")
         raise typer.Exit(1)
 
+    # 计算总阶段数和当前阶段编号（动态）
+    use_window_detected = progress.get("evaluation")
+    total_stages = calculate_total_stages(use_window_detected)
+
+    # 预计算：本次是否会执行章级分析
+    # 条件：章级分析未完成，或用户指定了范围（即使已完成也要重新分析）
+    will_analyze = not progress.get("analyzed") or start is not None or end is not None
+
+    # 计算当前阶段编号
+    current_stage = calculate_current_stage(progress, use_window_detected, will_analyze)
+
     # 显示范围信息
     range_desc = ""
     if start is not None or end is not None:
@@ -537,7 +552,8 @@ def cmd_continue(
         range_end_text = end or total_chapters
         range_desc = f" (第 {range_start}-{range_end_text} 章)"
 
-    console.print(f"\n[cyan]从 {next_stage or '章级分析'} 阶段继续{range_desc}[/cyan]")
+    next_stage_display = next_stage or "章级分析"
+    console.print(f"\n[cyan]从 {next_stage_display} 阶段继续{range_desc}[/cyan]")
     logger.info(_PIPELINE_SEPARATOR)
 
     # 计算范围内章节数
@@ -556,14 +572,14 @@ def cmd_continue(
         console=console,
     ) as progress_bar:
 
-        # 阶段 1: 章级分析（细粒度进度）
+        # 章级分析（细粒度进度）
         # 如果指定了范围，即使进度检查认为已完成，也要进入分析阶段（让内部判断是否需要分析）
-        should_analyze = not progress.get("analyzed") or start is not None or end is not None
-        if should_analyze:
-            task1 = progress_bar.add_task("阶段 1: 章级分析", total=range_total)
+        if will_analyze:
+            console.print(f"[cyan]阶段 {current_stage}/{total_stages}: 章级分析...[/cyan]")
+            task1 = progress_bar.add_task(f"阶段 {current_stage}/{total_stages}: 章级分析", total=range_total)
 
             def update_progress(done: int, total: int, desc: str):
-                progress_bar.update(task1, completed=done, description=f"阶段 1: {desc}")
+                progress_bar.update(task1, completed=done, description=f"阶段 {current_stage}/{total_stages}: {desc}")
 
             with silent_console():
                 chapter_analyze(
@@ -575,56 +591,61 @@ def cmd_continue(
                     use_window=use_window,
                 )
             progress_bar.remove_task(task1)
+            current_stage += 1
 
-        # 阶段 2: 大纲（不确定进度）
+        # 大纲（不确定进度）
         if not progress.get("outline"):
             # 警告：如果指定了范围，后续阶段基于不完整数据
             if start is not None or end is not None:
                 console.print("[yellow]警告：仅分析了部分章节，大纲/世界观/人物等将基于不完整的章级数据生成[/yellow]")
 
-            task2 = progress_bar.add_task("阶段 2: 大纲", total=None)
+            console.print(f"[cyan]阶段 {current_stage}/{total_stages}: 大纲生成...[/cyan]")
+            task2 = progress_bar.add_task(f"阶段 {current_stage}/{total_stages}: 大纲", total=None)
 
             def update_outline_progress(done: int, total: int, desc: str):
                 if total > 0:
-                    progress_bar.update(task2, total=total, completed=done, description=f"阶段 2: {desc}")
+                    progress_bar.update(task2, total=total, completed=done, description=f"阶段 {current_stage}/{total_stages}: {desc}")
                 else:
-                    progress_bar.update(task2, description=f"阶段 2: {desc}")
+                    progress_bar.update(task2, description=f"阶段 {current_stage}/{total_stages}: {desc}")
 
             with silent_console():
                 generate_outline(material_id, progress_callback=update_outline_progress, provider=provider)
             progress_bar.remove_task(task2)
+            current_stage += 1
 
-        # 阶段 3-5: 世界观/人物/标签
+        # 世界观/人物/标签
         other_stages = [
             ("世界观", generate_worldbuilding, "worldbuilding"),
             ("人物", generate_characters, "characters"),
             ("标签", generate_tags, "tags"),
         ]
 
-        task_num = 3
         for name, func, key in other_stages:
             if not progress.get(key):
-                task = progress_bar.add_task(f"阶段 {task_num}: {name}", total=1)
+                console.print(f"[cyan]阶段 {current_stage}/{total_stages}: {name}提取...[/cyan]")
+                task = progress_bar.add_task(f"阶段 {current_stage}/{total_stages}: {name}", total=1)
                 with silent_console():
                     func(material_id, provider=provider)
                 progress_bar.update(task, completed=1)
                 progress_bar.remove_task(task)
-            task_num += 1
+                current_stage += 1
 
-        # 阶段 6: 精调
+        # 精调
         if not progress.get("refined"):
-            task6 = progress_bar.add_task("阶段 6: 精调", total=1)
+            console.print(f"[cyan]阶段 {current_stage}/{total_stages}: 数据精调...[/cyan]")
+            task6 = progress_bar.add_task(f"阶段 {current_stage}/{total_stages}: 精调", total=1)
             with silent_console():
                 if not refine(material_id):
                     console.print("[red]精调失败[/red]")
                     raise typer.Exit(1)
             progress_bar.update(task6, completed=1)
             progress_bar.remove_task(task6)
+            current_stage += 1
 
-        # 阶段 7: 数据库同步
+        # 数据库同步（不计入总阶段数）
         sync_failed = False
         if not skip_sync and not progress.get("synced"):
-            task7 = progress_bar.add_task("阶段 7: 同步数据库", total=1)
+            task7 = progress_bar.add_task(f"同步数据库", total=1)
             with silent_console():
                 try:
                     sync_novel(material_id)
@@ -646,16 +667,9 @@ def cmd_continue(
     table.add_column("阶段", style="cyan")
     table.add_column("状态", style="green")
 
-    stages = [
-        ("入库", "ingested"),
-        ("章级分析", "analyzed"),
-        ("大纲", "outline"),
-        ("世界观", "worldbuilding"),
-        ("人物", "characters"),
-        ("标签", "tags"),
-        ("精调", "refined"),
-        ("数据库同步", "synced"),
-    ]
+    stages = get_pipeline_stages(use_window_detected)
+    # 数据库同步不计入总阶段数，单独添加用于状态显示
+    stages.append(("数据库同步", "synced"))
 
     final_progress = get_pipeline_progress(material_id)
     for name, key in stages:
