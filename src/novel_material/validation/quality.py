@@ -110,6 +110,48 @@ def check_summary_similarity(
     return unique_warnings[:20]  # 最多返回 20 条警告
 
 
+def get_short_summary_chapters(
+    material_id: str,
+    min_length: int = 40,
+    start_ch: int | None = None,
+    end_ch: int | None = None,
+) -> list[int]:
+    """返回 summary 长度不够的章节号列表。
+
+    用于自动重试场景：检测哪些章节需要重新分析。
+
+    参数：
+        material_id: 素材 ID
+        min_length: 最小摘要长度阈值（默认 40）
+        start_ch: 起始章节号（可选，用于部分分析）
+        end_ch: 结束章节号（可选，用于部分分析）
+    """
+    chapters_file = NOVELS_DIR / material_id / "chapters.yaml"
+    if not chapters_file.exists():
+        return []
+
+    with open(chapters_file, "r", encoding="utf-8") as f:
+        chapters = yaml.safe_load(f) or []
+
+    short_chapters: list[int] = []
+    for entry in chapters:
+        if not isinstance(entry, dict):
+            continue
+        ch_num = entry.get("chapter")
+        summary = entry.get("summary", "")
+
+        # 范围过滤
+        if start_ch is not None and isinstance(ch_num, int) and ch_num < start_ch:
+            continue
+        if end_ch is not None and isinstance(ch_num, int) and ch_num > end_ch:
+            continue
+
+        if isinstance(ch_num, int) and len(summary) < min_length:
+            short_chapters.append(ch_num)
+
+    return short_chapters
+
+
 def check_summary_quality(material_id: str, start_ch: int | None = None, end_ch: int | None = None) -> tuple[list[str], list[str]]:
     """检查摘要质量，返回 (errors, warnings)。
 

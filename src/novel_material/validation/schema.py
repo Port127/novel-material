@@ -8,7 +8,7 @@ from typing import Optional, Any
 from pydantic import BaseModel, field_validator, Field
 from pydantic import ValidationError as PydanticValidationError
 
-from novel_material.infra.config import NOVELS_DIR, VALID_STATUSES, TAGS_VIEW_FILE
+from novel_material.infra.config import NOVELS_DIR, VALID_STATUSES
 from novel_material.infra.logging_config import get_pipeline_logger
 from novel_material.tags.validate import validate_tag, validate_tags_batch
 from novel_material.validation.pacing_normalize import PACING_CORE, normalize_pacing
@@ -20,39 +20,6 @@ _VALID_STATUSES = set(VALID_STATUSES)
 _VALID_PACING = PACING_CORE  # 使用核心集合，变体已在前置规范化处理
 
 logger = get_pipeline_logger()
-
-# ── 章节级标签白名单（从 tags_view.yaml 加载）──
-# 设计说明：tags 表用于小说级标签（element/setting/style/structure），
-# 章节级标签（情感基调/场景类型/叙事技巧）在 tags_view.yaml 中单独分组，两者用途不同。
-_CHAPTER_TAG_WHITELIST: dict[str, set[str]] = {}
-
-
-def _load_chapter_tag_whitelist() -> dict[str, set[str]]:
-    """加载章节级标签白名单（情感基调/场景类型/叙事技巧）。
-
-    返回：
-        dict：{分组名: 标签集合}
-    """
-    if _CHAPTER_TAG_WHITELIST:
-        return _CHAPTER_TAG_WHITELIST
-
-    if not TAGS_VIEW_FILE.exists():
-        logger.warning(f"tags_view.yaml 不存在：{TAGS_VIEW_FILE}")
-        return {}
-
-    with open(TAGS_VIEW_FILE, "r", encoding="utf-8") as f:
-        tags_view = yaml.safe_load(f) or {}
-
-    chapter_func = tags_view.get("chapter_function", {})
-    common = chapter_func.get("common", {})
-
-    # 提取三个分组
-    for group_name in ("情感基调", "场景类型", "叙事技巧"):
-        tags_list = common.get(group_name, [])
-        if isinstance(tags_list, list):
-            _CHAPTER_TAG_WHITELIST[group_name] = set(tags_list)
-
-    return _CHAPTER_TAG_WHITELIST
 
 
 # Pydantic 模型
@@ -379,6 +346,10 @@ def validate_chapter_tags_fields(result: dict) -> list[str]:
 
     返回：
         list[str]：错误描述列表
+
+    注意：
+        emotional_tone/scene_type/technique 不做白名单校验，允许 LLM 自由发挥，
+        以后再整理字典。只校验类型（必须是数组）。
     """
     errors = []
 
@@ -388,41 +359,23 @@ def validate_chapter_tags_fields(result: dict) -> list[str]:
         if hook_type not in HOOK_TYPE_VALUES:
             errors.append(f"hook_type 值 '{hook_type}' 不合法，合法值：{HOOK_TYPE_VALUES}")
 
-    # 加载白名单
-    whitelist = _load_chapter_tag_whitelist()
-
-    # emotional_tone 校验（白名单 + 类型）
+    # emotional_tone 校验（仅类型）
     emotional_tone = result.get("emotional_tone")
     if emotional_tone:
         if not isinstance(emotional_tone, list):
             errors.append(f"emotional_tone 应为数组，实际类型：{type(emotional_tone).__name__}")
-        else:
-            allowed = whitelist.get("情感基调", set())
-            for tag in emotional_tone:
-                if tag not in allowed:
-                    errors.append(f"emotional_tone '{tag}' 不在字典中（建议审核入库）")
 
-    # scene_type 校验（白名单 + 类型）
+    # scene_type 校验（仅类型）
     scene_type = result.get("scene_type")
     if scene_type:
         if not isinstance(scene_type, list):
             errors.append(f"scene_type 应为数组，实际类型：{type(scene_type).__name__}")
-        else:
-            allowed = whitelist.get("场景类型", set())
-            for tag in scene_type:
-                if tag not in allowed:
-                    errors.append(f"scene_type '{tag}' 不在字典中（建议审核入库）")
 
-    # technique 校验（白名单 + 类型）
+    # technique 校验（仅类型）
     technique = result.get("technique")
     if technique:
         if not isinstance(technique, list):
             errors.append(f"technique 应为数组，实际类型：{type(technique).__name__}")
-        else:
-            allowed = whitelist.get("叙事技巧", set())
-            for tag in technique:
-                if tag not in allowed:
-                    errors.append(f"technique '{tag}' 不在字典中（建议审核入库）")
 
     return errors
 
@@ -436,9 +389,9 @@ def validate_chapter_tags(material_id: str, start_ch: int | None = None, end_ch:
         end_ch: 结束章节号（可选）
 
     校验字段：
-        - chapter_functions（硬性白名单）
-        - hook_type（硬性白名单）
-        - emotional_tone/scene_type/technique（开放字典，建议入库）
+        - chapter_functions（白名单校验）
+        - hook_type（白名单校验）
+        - emotional_tone/scene_type/technique（仅类型校验，不做白名单限制）
     """
     chapters_file = NOVELS_DIR / material_id / "chapters.yaml"
     if not chapters_file.exists():
@@ -519,7 +472,7 @@ def validate_material(material_id: str, verbose: bool = True, start_ch: int | No
         ("chapters.yaml 结构校验", lambda m: validate_chapters(m, start_ch=start_ch, end_ch=end_ch)),
         ("小说级标签校验", validate_novel_tags),
         ("总体评估校验", validate_evaluation),  # 可选文件校验
-        ("章节功能标签字典校验", lambda m: validate_chapter_tags(m, start_ch=start_ch, end_ch=end_ch)),
+        ("章节标签字段校验", lambda m: validate_chapter_tags(m, start_ch=start_ch, end_ch=end_ch)),
     ]
 
     for label, fn in checks:

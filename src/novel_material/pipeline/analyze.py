@@ -24,7 +24,7 @@ from collections.abc import Callable
 
 from novel_material.infra.config import NOVELS_DIR, update_meta_status, get_settings
 from novel_material.infra.llm import load_config, call_llm, truncate_to_tokens, get_last_call_finish_reason
-from novel_material.validation.quality import run_quality_check
+from novel_material.validation.quality import run_quality_check, get_short_summary_chapters
 from novel_material.validation.pacing_normalize import normalize_pacing
 from novel_material.infra.progress import get_pipeline_logger
 from novel_material.infra.constants import TENSION_CHANGE_VALUES
@@ -439,7 +439,6 @@ def analyze_chapter(
     temperature_override = _calculate_dynamic_temperature(progress_ratio, config)
 
     timeout = config["llm"].get("analyze_timeout", 300)
-    prefix = f"[{material_id}] " if material_id else ""
     context = f"{material_id} 单章#{chapter_info.get('chapter', 'N/A')}"
     return call_llm(
         system_prompt, user_prompt, config,
@@ -544,7 +543,7 @@ def analyze_chapters_batch(
         config,
         max_tokens_override=n * 1500,
         timeout_override=config["llm"].get("analyze_timeout"),
-        context=f"{material_id} 章节分析#批次[{batch_range}]",
+        context=f"{material_id} 批次[{batch_range}]",
         thinking_budget=thinking_budget,
         temperature_override=temperature_override,
     )
@@ -731,6 +730,109 @@ def _get_batch_size(config: dict) -> int:
     return max(1, batch_size)
 
 
+def _reanalyze_chapters(
+    material_id: str,
+    chapters: list[int],
+    provider: str | None = None,
+    use_window: bool = False,
+    start_ch: int | None = None,
+    end_ch: int | None = None,
+    progress_callback: Callable[[int, int, str], None] | None = None,
+) -> int:
+    """重新分析指定章节（用于 summary 长度自动修复）。
+
+    返回成功重新分析的章节数。
+    """
+    novel_dir = NOVELS_DIR / material_id
+    config = load_config(provider)
+
+    # 删除这些章节的分析文件（使用 04d 格式）
+    for ch_num in chapters:
+        ch_file = novel_dir / "chapters" / f"{ch_num:04d}.yaml"
+        if ch_file.exists():
+            ch_file.unlink()
+
+    # 读取章节索引和原文
+    with open(novel_dir / "chapter_index.yaml", "r", encoding="utf-8") as f:
+        chapter_index = yaml.safe_load(f)
+
+    with open(novel_dir / "source.txt", "r", encoding="utf-8") as f:
+        full_text = f.read()
+
+    lines = full_text.split("\n")
+
+    # 构建待重新分析的章节列表
+    batch_info = [
+        ch for ch in chapter_index
+        if ch["chapter"] in chapters
+    ]
+
+    if not batch_info:
+        return 0
+
+    # 滑动窗口模式：加载 evaluation.yaml 和已分析章节
+    evaluation = None
+    done: dict[int, dict] = {}
+    if use_window:
+        evaluation = load_evaluation(material_id)
+        done = _load_existing_chapters(novel_dir)
+
+    # 逐章重新分析
+    success_count = 0
+    total_to_reanalyze = len(batch_info)
+
+    for ch_info in batch_info:
+        ch_num = ch_info["chapter"]
+        chapter_text = "\n".join(lines[ch_info["start_line"] - 1:ch_info["end_line"]])
+
+        try:
+            # 构建滑动窗口上下文（如果启用）
+            window_context = None
+            if use_window:
+                window_context = build_sliding_window_context(
+                    ch_num, done, lines, chapter_index, evaluation
+                )
+
+            # 单章分析
+            result = analyze_chapter(
+                chapter_text,
+                ch_info,
+                config,
+                progress_ratio=0.0,
+                material_id=material_id,
+                window_context=window_context,
+            )
+
+            result["chapter"] = ch_num
+            result["title"] = ch_info["title"]
+            result["type"] = ch_info.get("type", "normal")
+            result["word_count"] = ch_info.get("word_count", 0)
+
+            # 规范化 pacing
+            if "pacing" in result:
+                result["pacing"] = normalize_pacing(result["pacing"])
+
+            # 写入章节文件（使用 _append_chapter 保持格式一致）
+            _append_chapter(novel_dir, result)
+            success_count += 1
+
+            # 更新 done 字典（用于后续章节的窗口上下文）
+            if use_window:
+                done[ch_num] = result
+
+        except Exception as e:
+            logger.warning(f"[{material_id}] 重新分析第 {ch_num} 章失败: {e}")
+
+        # 进度回调
+        if progress_callback:
+            progress_callback(
+                success_count, total_to_reanalyze,
+                f"重分析第 {ch_num} 章"
+            )
+
+    return success_count
+
+
 def chapter_analyze(
     material_id: str,
     progress_callback: Callable[[int, int, str], None] | None = None,
@@ -822,6 +924,9 @@ def chapter_analyze(
     if use_window and batch_size > 1:
         logger.info(f"[{material_id}] 滑动窗口模式禁用批量处理，改为逐章分析")
         batch_size = 1
+
+    # 标签校验去重：同一标签只警告一次（避免日志污染）
+    warned_tags: set[str] = set()
 
     completed = 0
     skipped = 0
@@ -960,7 +1065,10 @@ def chapter_analyze(
             # 章节级标签校验（阶段四新增）
             tags_errors = validate_chapter_tags_fields(result)
             for err in tags_errors:
-                logger.warning(f"[{material_id}] [标签] {err}")
+                # 去重：同一标签只警告一次
+                if err not in warned_tags:
+                    warned_tags.add(err)
+                    logger.warning(f"[{material_id}] [标签] {err}")
                 batch_errors += 1
 
             result["chapter"] = ch_num
@@ -1030,11 +1138,45 @@ def chapter_analyze(
     # 合并所有章节文件
     _merge_chapters(novel_dir, material_id=material_id)
 
-    # 质量检查
-    logger.info(f"[{material_id}] 执行章级分析质量校验...")
-    if not run_quality_check(material_id, start_ch=start_ch, end_ch=end_ch):
-        update_meta_status(material_id, "failed")
-        raise ValueError(f"章级分析质量校验未通过：{material_id}")
+    # 质量检查（带 summary 长度自动修复）
+    max_summary_retries = 3
+    final_passed = False
+
+    for retry_idx in range(max_summary_retries):
+        logger.info(f"[{material_id}] 执行章级分析质量校验...")
+        if run_quality_check(material_id, start_ch=start_ch, end_ch=end_ch):
+            final_passed = True
+            break
+
+        # 检查是否有 summary 长度不够的章节（应用范围过滤）
+        short_chapters = get_short_summary_chapters(material_id, start_ch=start_ch, end_ch=end_ch)
+        if not short_chapters:
+            # 不是 summary 问题，无法自动修复
+            update_meta_status(material_id, "failed")
+            raise ValueError(f"章级分析质量校验未通过：{material_id}")
+
+        # 自动重新分析这些章节
+        logger.info(
+            f"[{material_id}] 发现 {len(short_chapters)} 章 summary 长度不足，"
+            f"自动重新分析（第 {retry_idx + 1}/{max_summary_retries} 次）"
+        )
+        success = _reanalyze_chapters(
+            material_id, short_chapters,
+            provider=provider,
+            use_window=use_window,
+            start_ch=start_ch,
+            end_ch=end_ch,
+            progress_callback=progress_callback
+        )
+        if success < len(short_chapters):
+            logger.warning(f"[{material_id}] 重分析部分失败：成功 {success}/{len(short_chapters)} 章")
+        _merge_chapters(novel_dir, material_id=material_id)
+
+    # 循环未通过时的最终校验
+    if not final_passed:
+        if not run_quality_check(material_id, start_ch=start_ch, end_ch=end_ch):
+            update_meta_status(material_id, "failed")
+            raise ValueError(f"章级分析质量校验未通过（已重试 {max_summary_retries} 次）：{material_id}")
 
     update_meta_status(material_id, "analyzed")
 
