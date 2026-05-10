@@ -1,11 +1,18 @@
 """世界观提取：LLM 基于章级摘要池提取世界观设定（力量体系/地理/势力/背景知识）。
 
 注意：此脚本在 analyze 完成后运行，需要 chapters.yaml 作为全书视角输入。
+
+轻量优化：
+- 从章级分析的 setting 字段聚合地点统计
+- 从 characters_appear 中识别组织名（如"XX成员"、"XX学生")
+- 传入聚合统计给 LLM，增强提取准确性
 """
 import sys
 import yaml
 import time
+import re
 from pathlib import Path
+from collections import Counter
 
 from novel_material.infra.config import NOVELS_DIR
 from novel_material.infra.llm import load_config, call_llm, get_last_call_finish_reason
@@ -15,14 +22,79 @@ from novel_material.infra.progress import get_pipeline_logger
 logger = get_pipeline_logger()
 
 
-def _build_context(novel_dir: Path, config: dict, material_id: str = "") -> tuple[str, str]:
+# 组织名匹配模式（用于从 characters_appear 中提取组织）
+ORGANIZATION_PATTERNS = [
+    r"(.+)成员$",      # XX成员
+    r"(.+)学生$",      # XX学生
+    r"(.+)弟子$",      # XX弟子
+    r"(.+)士兵$",      # XX士兵
+    r"(.+)队员$",      # XX队员
+    r"(.+)学员$",      # XX学员
+]
+
+
+def _aggregate_worldbuilding_stats(chapters_data: list) -> dict:
+    """从章级分析中聚合组织/地点统计。
+
+    Args:
+        chapters_data: 章节数据列表
+
+    Returns:
+        dict: {
+            "organizations": {"组织名": 出场章数},
+            "locations": {"地点名": 出场章数}
+        }
+    """
+    org_counts = Counter()
+    location_counts = Counter()
+
+    for ch in chapters_data:
+        # 跳过特殊类型章节
+        ch_type = ch.get("type", "normal")
+        if ch_type in ("afterword", "author_note"):
+            continue
+
+        # 从 characters_appear 中识别组织名
+        chars = ch.get("characters_appear", [])
+        for char_name in chars:
+            for pattern in ORGANIZATION_PATTERNS:
+                match = re.match(pattern, char_name)
+                if match:
+                    org_name = match.group(1)
+                    org_counts[org_name] += 1
+                    break
+
+        # 从 setting 中聚合地点
+        settings = ch.get("setting", [])
+        for setting in settings:
+            # 清理地点名（去掉"XX场景"、"XX环境"等后缀）
+            clean_setting = setting
+            for suffix in ["场景", "环境", "地带", "区域"]:
+                if setting.endswith(suffix) and len(setting) > len(suffix):
+                    clean_setting = setting[:-len(suffix)]
+            location_counts[clean_setting] += 1
+
+    return {
+        "organizations": dict(org_counts.most_common(30)),
+        "locations": dict(location_counts.most_common(30))
+    }
+
+
+def _build_context(novel_dir: Path, config: dict, chapters_data: list | None = None, material_id: str = "") -> tuple[str, str]:
     """构建分析上下文，优先使用章级摘要池，兜底读原文片段。
 
     章数 > 200 时自动启用分层均匀采样，确保全书首尾及中间均有代表。
     特殊类型章节（afterword/author_note）不参与摘要池构建。
+
+    Args:
+        novel_dir: 小说目录
+        config: LLM配置
+        chapters_data: 可选的已加载章节数据（避免重复调用 load_chapters_data）
+        material_id: 素材ID
     """
     model = config["llm"]["model"]
-    chapters_data = load_chapters_data(novel_dir)
+    if chapters_data is None:
+        chapters_data = load_chapters_data(novel_dir)
     if chapters_data:
         # 过滤特殊类型章节
         filtered_chapters = [
@@ -79,10 +151,32 @@ def generate_worldbuilding(material_id, provider: str | None = None) -> bool:
     # 输出小说基本信息
     logger.info(f"[{material_id}] 小说: {title} | {chapter_count} 章 | {word_count} 字 | 状态: {status}")
 
-    # 构建分析上下文（章级摘要池 > 原文片段）
-    context_text, context_label = _build_context(novel_dir, config, material_id=material_id)
+    # 加载章节数据并聚合统计（新增）
+    chapters_data = load_chapters_data(novel_dir)
+    wb_stats = _aggregate_worldbuilding_stats(chapters_data) if chapters_data else {}
+    org_stats = wb_stats.get("organizations", {})
+    loc_stats = wb_stats.get("locations", {})
+    logger.info(
+        f"[{material_id}] 聚合统计: {len(org_stats)} 个组织候选, {len(loc_stats)} 个地点候选"
+    )
+
+    # 构建分析上下文（章级摘要池 > 原文片段，传入已加载的 chapters_data）
+    context_text, context_label = _build_context(novel_dir, config, chapters_data, material_id=material_id)
     context_chars = len(context_text)
     logger.info(f"[{material_id}] 输入: {context_chars} 字符 | {context_label}")
+
+    # 构建统计信息文本（新增）
+    org_text = ""
+    if org_stats:
+        org_lines = [f"  {name}: {count} 章提及" for name, count in org_stats.items()]
+        org_text = "\n【组织出现频率】（从章级分析聚合）:\n" + "\n".join(org_lines)
+
+    loc_text = ""
+    if loc_stats:
+        loc_lines = [f"  {name}: {count} 章出现" for name, count in loc_stats.items()]
+        loc_text = "\n【地点出现频率】（从章级分析聚合）:\n" + "\n".join(loc_lines)
+
+    stats_context = org_text + loc_text
 
     system_prompt = """你是专业的小说世界观分析师。请根据提供的内容提取以下世界观设定，返回 JSON 格式：
 {
@@ -115,18 +209,20 @@ def generate_worldbuilding(material_id, provider: str | None = None) -> bool:
 注意：
 1. 所有名称和描述用中文
 2. 如果某个维度不存在，留空数组
-3. importance 标注重要性
-4. 只提取原文中明确提到的内容，不要编造"""
+3. importance 标注重要性（高频出现的组织/地点应为 primary）
+4. 只提取原文中明确提到的内容，不要编造
+5. 组织出现频率列表中的组织应优先提取，补充详细信息"""
 
     user_prompt = f"""请分析以下小说的世界观设定：
 
 类型：{meta.get('theme', ['未知'])}
 基调：{meta.get('tone', ['未知'])}
+{stats_context}
 
 {context_label}：
 {context_text}
 
-请返回 JSON 格式如上。"""
+请返回 JSON 格式如上。高频出现的组织和地点应优先提取。"""
 
     rate_limit = config["llm"].get("rate_limit_seconds", 1)
 

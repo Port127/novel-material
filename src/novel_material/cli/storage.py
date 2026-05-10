@@ -61,8 +61,13 @@ def cmd_init_tags():
 @app.command("sync")
 def cmd_sync(
     material_id: str = typer.Argument(None, help="素材 ID（不指定则同步全部）"),
+    provider: str = typer.Option(None, "--provider", "-p", help="服务商名称（用于修复时）"),
+    use_window: bool = typer.Option(False, "--window", "-w", help="使用滑动窗口模式修复"),
 ):
-    """同步素材到数据库。"""
+    """同步素材到数据库。
+
+    如果检测到质量问题（如 summary 长度不足），会自动尝试修复后重试。
+    """
     if material_id:
         with Progress(
             SpinnerColumn(),
@@ -70,10 +75,15 @@ def cmd_sync(
             console=console,
         ) as progress:
             task = progress.add_task(f"同步素材: {material_id}", total=None)
-            sync_novel(material_id)
+            success = sync_novel(material_id, provider=provider, use_window=use_window)
             progress.update(task, completed=True)
 
-        console.print(f"[green]素材 {material_id} 已同步[/green]")
+        if success:
+            console.print(f"[green]素材 {material_id} 已同步[/green]")
+        else:
+            console.print(f"[red]素材 {material_id} 同步失败[/red]")
+            console.print("[yellow]提示：检查日志排查问题，或手动修复后重试[/yellow]")
+            raise typer.Exit(1)
     else:
         with Progress(
             SpinnerColumn(),

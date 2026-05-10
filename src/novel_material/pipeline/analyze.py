@@ -1183,6 +1183,57 @@ def chapter_analyze(
     return True
 
 
+def repair_short_summaries(
+    material_id: str,
+    short_chapters: list[int] | None = None,
+    provider: str | None = None,
+    use_window: bool = False,
+    min_success_rate: float = 0.8,
+) -> tuple[bool, int, int]:
+    """修复 summary 长度不足的章节（公开接口）。
+
+    参数：
+        material_id: 素材 ID
+        short_chapters: 需要修复的章节列表（None 则自动检测）
+        provider: LLM 服务商（应与原始分析一致）
+        use_window: 是否使用滑动窗口（应与原始分析一致）
+        min_success_rate: 最低成功率阈值（低于此值视为失败）
+
+    返回：
+        tuple: (是否成功修复, 成功章数, 总需修复章数)
+    """
+    from novel_material.validation.quality import get_short_summary_chapters
+
+    if short_chapters is None:
+        short_chapters = get_short_summary_chapters(material_id)
+
+    if not short_chapters:
+        return True, 0, 0
+
+    novel_dir = NOVELS_DIR / material_id
+    success_count = _reanalyze_chapters(
+        material_id,
+        short_chapters,
+        provider=provider,
+        use_window=use_window,
+    )
+    total = len(short_chapters)
+
+    # 合并章节文件
+    _merge_chapters(novel_dir, material_id=material_id)
+
+    # 判断是否成功（成功率 >= min_success_rate）
+    success_rate = success_count / total if total > 0 else 1.0
+    success = success_rate >= min_success_rate
+
+    if not success:
+        logger.warning(
+            f"[{material_id}] 修复成功率 {success_rate:.1%} 低于阈值 {min_success_rate:.1%}"
+        )
+
+    return success, success_count, total
+
+
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("用法: python analyze.py <material_id>")

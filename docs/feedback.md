@@ -1,19 +1,19 @@
 # bug
 - ~~执行nm pipeline continue nm_novel_20260510_y4fz的时候，没有日志，是continue没有日志还是outline没有日志？~~ -> 日志明明为题，没有顺序所以没找到，加了时分秒
-- nm_novel_20260510_y4fz/characters/profiles，只创建了16个人？1300多章的小说啊，我记得之前有调整过这里的逻辑啊，而同样的问题会不会出现在outline、worldbuilding里面呢？
-- continue的时候，没有自动补全summary字数不够的问题吗？
-频率自动批准了 0 个标签
-✓ meta.yaml 结构校验
-✗ chapters.yaml 结构校验：31 个错误
-    第11章 [summary]: String should have at least 40 characters
-    第12章 [summary]: String should have at least 40 characters
-    第13章 [summary]: String should have at least 40 characters
-    第14章 [summary]: String should have at least 40 characters
-    第15章 [summary]: String should have at least 40 characters
-    ... 共 31 个错误
-✓ 总体评估校验
-Schema 校验（已跳过标签校验）：nm_novel_20260510_y4fz 失败
-数据库同步失败: Schema 预检未通过，中止同步: nm_novel_20260510_y4fz
+- ~~nm_novel_20260510_y4fz/characters/profiles，只创建了16个人？1300多章的小说啊，我记得之前有调整过这里的逻辑啊，而同样的问题会不会出现在outline、worldbuilding里面呢？~~
+- ~~continue的时候，没有自动补全summary字数不够的问题吗？~~
+~~频率自动批准了 0 个标签~~
+~~✓ meta.yaml 结构校验~~
+~~✗ chapters.yaml 结构校验：31 个错误~~
+    ~~第11章 [summary]: String should have at least 40 characters~~
+    ~~第12章 [summary]: String should have at least 40 characters~~
+    ~~第13章 [summary]: String should have at least 40 characters~~
+    ~~第14章 [summary]: String should have at least 40 characters~~
+    ~~第15章 [summary]: String should have at least 40 characters~~
+    ~~... 共 31 个错误~~
+~~✓ 总体评估校验~~
+~~Schema 校验（已跳过标签校验）：nm_novel_20260510_y4fz 失败~~
+~~数据库同步失败: Schema 预检未通过，中止同步: nm_novel_20260510_y4fz~~
 
 
 # 阶段行优化
@@ -22,6 +22,7 @@ Schema 校验（已跳过标签校验）：nm_novel_20260510_y4fz 失败
 ~~从 outline 阶段继续~~
 ~~============================================================~~
 ~~⠋ 阶段 2: 第二幕：潜龙出渊 / 京华考核与市井博弈 ━━━━━━━━━━━━━━╺━━━━━━━━━━━━━━━━━━━━━━━━━  36%~~
+- ~~cli还对吗？现在改了很多的东西？要不要重新打包呢？~~
 
 - evaluation怎么还在用meta包住，这不奇怪吗？还是说它会有很多输出？
 - run_history.yaml又是什么东西？
@@ -60,4 +61,5 @@ nm material delete --id=nm_novel_20260508_2j74
 - 根据文档规划，仔细查看所有规划的上下游，放在整个项目中考虑，是否存在错误、缺陷、隐患、优化点、职责不清晰
 ## 文档类
 - 更新文档：AGENTS.md、ARCHITECTURE.md、README.md、USER_MANUAL.md，从全局出发深入到每个模块内部，针对这些文档的定位更新
+- 查看一下AGENTS.md、ARCHITECTURE.md、README.md、USER_MANUAL.md，针对这些文档的定位，判断是否需要更新
 - 以 REQUIREMENTS 为基础，现有功能为依据，重新审视：

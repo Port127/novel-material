@@ -1,9 +1,11 @@
-"""人物提取：分层提取人物体系（核心人物 + 次要人物）。
+"""人物提取：统计驱动的分层人物提取。
 
 分层策略：
-1. 统计章节出场人物频率，生成候选名单
-2. 第一轮：提取主角/反派/重要配角（完整档案：心理分析、弧线、关键事件）
-3. 第二轮：补充次要人物（精简档案：基础信息 + 关系）
+1. 统计章节出场人物频率，筛选候选人（>=5章）
+2. 分三层处理：
+   - 核心层（>=50章）：完整档案（心理分析、弧线、关键事件）
+   - 配角层（>=10章）：标准档案（基础信息 + 关系）
+   - 次要层（>=5章）：精简档案（仅基础信息）
 
 注意：此脚本在 analyze 完成后运行，需要 chapters.yaml 作为全书视角输入。
 """
@@ -24,6 +26,303 @@ logger = get_pipeline_logger()
 
 # 有效角色类型
 VALID_ROLES = ("protagonist", "antagonist", "supporting", "minor")
+
+# 分层阈值（可配置）
+CHARACTER_THRESHOLDS = {
+    "core": 50,       # >= 50 章为核心人物
+    "supporting": 10,  # >= 10 章为配角
+    "minor": 5         # >= 5 章为次要人物
+}
+
+# 分批大小
+CHARACTER_BATCH_SIZE = 25  # 每批处理 25 人
+
+
+# ============================================================
+# 统计驱动的分层筛选
+# ============================================================
+
+def _select_candidate_characters(appearance_stats: dict, thresholds: dict | None = None) -> dict:
+    """基于出场统计分层筛选候选人。
+
+    Args:
+        appearance_stats: 出场统计 {人物名: 出场章数}
+        thresholds: 可选的分层阈值，默认使用 CHARACTER_THRESHOLDS
+
+    Returns:
+        dict: {
+            "core": [(name, count), ...],    # >= 50 章
+            "supporting": [...],              # 10-49 章
+            "minor": [...]                    # 5-9 章
+        }
+    """
+    if thresholds is None:
+        thresholds = CHARACTER_THRESHOLDS
+
+    core_threshold = thresholds.get("core", 50)
+    supporting_threshold = thresholds.get("supporting", 10)
+    minor_threshold = thresholds.get("minor", 5)
+
+    core = []
+    supporting = []
+    minor = []
+
+    for name, count in appearance_stats.items():
+        if count >= core_threshold:
+            core.append((name, count))
+        elif count >= supporting_threshold:
+            supporting.append((name, count))
+        elif count >= minor_threshold:
+            minor.append((name, count))
+
+    # 按出场频率排序
+    core.sort(key=lambda x: -x[1])
+    supporting.sort(key=lambda x: -x[1])
+    minor.sort(key=lambda x: -x[1])
+
+    return {
+        "core": core,
+        "supporting": supporting,
+        "minor": minor
+    }
+
+
+def _build_basic_profile_from_stats(name: str, count: int, role: str, chapters_data: list) -> dict:
+    """基于出场统计生成基础人物档案（兜底方案，不调用LLM）。
+
+    Args:
+        name: 人物名称
+        count: 出场章数
+        role: 角色类型
+        chapters_data: 章节数据（用于提取首章和关键事件）
+
+    Returns:
+        dict: 基础人物档案
+    """
+    # 从章节数据中提取首次出场章节
+    first_chapter = None
+    key_events = []
+
+    for ch in chapters_data:
+        if name in ch.get("characters_appear", []):
+            ch_num = ch.get("chapter", 0)
+            if first_chapter is None:
+                first_chapter = ch_num
+            # 收集关键事件（最多5个）
+            event = ch.get("key_event", "")
+            if event and len(key_events) < 5:
+                key_events.append({"chapter": ch_num, "description": event[:30]})
+
+    profile = {
+        "name": name,
+        "role": role,
+        "description": f"出场 {count} 章，为主要角色之一。",
+        "first_appearance_chapter": first_chapter,
+        "appearance_count": count,
+        "narrative_function": "待补充",
+        "relationships": []
+    }
+
+    if role in ("protagonist", "antagonist", "supporting"):
+        # 核心人物添加 key_events
+        profile["key_events"] = key_events
+
+    return profile
+
+
+# ============================================================
+# 分批提取人物详情（统计驱动）
+# ============================================================
+
+def _extract_character_batch(
+    candidates: list[tuple[str, int]],
+    role_tier: str,
+    context_text: str,
+    context_label: str,
+    meta: dict,
+    config: dict,
+    material_id: str = "",
+    batch_size: int | None = None,
+    chapters_data: list | None = None,
+) -> list[dict]:
+    """分批调用LLM，为已筛选的候选人补充档案详情。
+
+    注意：候选人名单已由出场统计确定，LLM只需补充详情，不需要"发现"人物。
+    若LLM调用失败，使用出场统计生成基础档案兜底。
+
+    Args:
+        candidates: 候选人列表 [(name, count), ...]
+        role_tier: 角色层级 "core"/"supporting"/"minor"
+        context_text: 分析上下文（摘要池）
+        context_label: 上下文标签
+        meta: 小说元数据
+        config: LLM配置
+        material_id: 素材ID
+        batch_size: 每批处理数量，默认 CHARACTER_BATCH_SIZE
+        chapters_data: 章节数据（用于兜底时生成完整档案）
+
+    Returns:
+        list[dict]: 人物档案列表
+    """
+    if not candidates:
+        return []
+
+    if batch_size is None:
+        batch_size = CHARACTER_BATCH_SIZE
+
+    prefix = f"[{material_id}] " if material_id else ""
+    role_mapping = {
+        "core": ("protagonist", "antagonist", "supporting"),
+        "supporting": ("supporting",),
+        "minor": ("minor",)
+    }
+    valid_roles = role_mapping.get(role_tier, ("minor",))
+
+    # 根据角色层级构建不同的prompt
+    if role_tier == "core":
+        system_prompt = """你是专业的小说人物分析师。请为以下已确认的核心人物补充完整档案，返回 JSON 格式：
+{
+  "characters": [
+    {
+      "name": "角色名（必须与输入一致）",
+      "role": "protagonist/antagonist/supporting",
+      "archetype": "英雄/导师/伙伴/反派/隐士/复仇者/守护者/野心家",
+      "moral_spectrum": "善良/灰色/邪恶",
+      "description": "角色描述（100字）",
+      "arc_summary": "角色弧线概述（50字）",
+      "narrative_function": "在故事中的功能",
+      "psychology": {
+        "fatal_flaw": "致命弱点",
+        "obsession": "执念/目标",
+        "soft_spot": "软肋",
+        "motivation": "驱动力"
+      },
+      "first_appearance_chapter": 1,
+      "key_events": [{"chapter": 1, "description": "关键事件"}],
+      "relationships": [{"character": "角色名", "relationship": "关系", "nature": "ally/enemy/romance/mentor/rival"}]
+    }
+  ]
+}
+
+注意：
+1. 必须为输入名单中的每个角色返回档案，不能遗漏
+2. role 根据剧情重要性选择（主角用 protagonist，反派用 antagonist，其他用 supporting）
+3. key_events 按重要性排序，最多 10 个
+4. relationships 用中文描述"""
+    elif role_tier == "supporting":
+        system_prompt = """你是专业的小说人物分析师。请为以下已确认的配角补充标准档案，返回 JSON 格式：
+{
+  "characters": [
+    {
+      "name": "角色名（必须与输入一致）",
+      "role": "supporting",
+      "description": "角色描述（50字）",
+      "narrative_function": "在故事中的功能",
+      "first_appearance_chapter": 1,
+      "key_events": [{"chapter": 1, "description": "关键事件"}],
+      "relationships": [{"character": "角色名", "relationship": "关系"}]
+    }
+  ]
+}
+
+注意：
+1. 必须为输入名单中的每个角色返回档案，不能遗漏
+2. key_events 最多 5 个
+3. relationships 用中文描述"""
+    else:  # minor
+        system_prompt = """你是专业的小说人物分析师。请为以下已确认的次要角色补充精简档案，返回 JSON 格式：
+{
+  "characters": [
+    {
+      "name": "角色名（必须与输入一致）",
+      "role": "minor",
+      "description": "角色描述（30字）",
+      "narrative_function": "在故事中的功能（简述）",
+      "first_appearance_chapter": 1,
+      "relationships": [{"character": "角色名", "relationship": "关系"}]
+    }
+  ]
+}
+
+注意：
+1. 必须为输入名单中的每个角色返回档案，不能遗漏
+2. 档案精简，不需要 key_events"""
+
+    all_characters = []
+    total_batches = (len(candidates) + batch_size - 1) // batch_size
+
+    for batch_idx in range(total_batches):
+        batch_start = batch_idx * batch_size
+        batch_end = min(batch_start + batch_size, len(candidates))
+        batch_candidates = candidates[batch_start:batch_end]
+
+        # 构建名单文本
+        names_list = [f"{name}（{count}章）" for name, count in batch_candidates]
+        names_text = "\n".join(names_list)
+
+        user_prompt = f"""请为以下角色补充档案：
+
+类型：{meta.get('theme', ['未知'])}
+
+【待处理角色名单】（共 {len(batch_candidates)} 人）：
+{names_text}
+
+{context_label}：
+{context_text}
+
+请返回 JSON 格式如上，必须包含名单中每个角色的档案。"""
+
+        try:
+            result = call_llm(
+                system_prompt, user_prompt, config,
+                max_tokens_override=4000,
+                timeout_override=config["llm"]["characters_timeout"],
+                context=f"{material_id} 人物#{role_tier}批次{batch_idx + 1}"
+            )
+
+            if isinstance(result, list):
+                characters = result
+            else:
+                characters = result.get("characters", [])
+
+            # 验证返回的人物是否在候选名单中
+            candidate_names = {name for name, _ in batch_candidates}
+            for ch in characters:
+                ch_name = ch.get("name")
+                if ch_name in candidate_names:
+                    all_characters.append(ch)
+                else:
+                    logger.warning(f"{prefix}批次{batch_idx + 1}: LLM返回了非候选人物 '{ch_name}'，跳过")
+
+            logger.info(
+                f"{prefix}批次{batch_idx + 1}/{total_batches}: "
+                f"返回 {len(characters)} 人，有效 {len([ch for ch in characters if ch.get('name') in candidate_names])} 人"
+            )
+
+        except Exception as e:
+            logger.error(f"{prefix}批次{batch_idx + 1} LLM调用失败: {e}")
+            logger.warning(f"{prefix}使用出场统计生成基础档案兜底")
+            # 兜底：生成基础档案
+            for name, count in batch_candidates:
+                if chapters_data:
+                    profile = _build_basic_profile_from_stats(name, count, valid_roles[0], chapters_data)
+                else:
+                    profile = {
+                        "name": name,
+                        "role": valid_roles[0],
+                        "description": f"出场 {count} 章。",
+                        "first_appearance_chapter": None,
+                        "narrative_function": "待补充",
+                        "appearance_count": count,
+                        "relationships": []
+                    }
+                all_characters.append(profile)
+
+        # 批次间等待（避免rate limit）
+        if batch_idx < total_batches - 1:
+            time.sleep(config["llm"].get("rate_limit_seconds", 1))
+
+    return all_characters
 
 
 # ============================================================
@@ -159,158 +458,15 @@ def _build_context(novel_dir: Path, config: dict, chapters_data: list | None = N
         return f.read()[:8000], "原文摘录（前 8000 字）"
 
 
-def _extract_core_characters(
-    context_text: str,
-    context_label: str,
-    meta: dict,
-    appearance_stats: dict,
-    config: dict,
-    material_id: str = "",
-) -> list:
-    """第一轮：提取核心人物（主角/反派/重要配角），完整档案。"""
-    prefix = f"[{material_id}] " if material_id else ""
-    system_prompt = """你是专业的小说人物分析师。请提取有完整角色弧线的核心人物，返回 JSON 格式：
-{
-  "characters": [
-    {
-      "name": "角色名",
-      "role": "protagonist/antagonist/supporting",
-      "archetype": "英雄/导师/伙伴/反派/隐士/复仇者/守护者/野心家",
-      "moral_spectrum": "善良/灰色/邪恶",
-      "description": "角色描述（100字）",
-      "arc_summary": "角色弧线概述（50字）",
-      "narrative_function": "在故事中的功能",
-      "psychology": {
-        "fatal_flaw": "致命弱点",
-        "obsession": "执念/目标",
-        "soft_spot": "软肋",
-        "motivation": "驱动力"
-      },
-      "first_appearance_chapter": 1,
-      "key_events": [
-        {"chapter": 1, "description": "关键事件描述"}
-      ],
-      "relationships": [
-        {"character": "角色名", "relationship": "关系描述", "nature": "ally/enemy/romance/mentor/rival"}
-      ]
-    }
-  ]
-}
-
-注意：
-1. 只提取有完整弧线的核心人物（主角、反派、重要配角），通常 10-25 人
-2. role 只能是 protagonist/antagonist/supporting（不要填写 minor）
-3. key_events 按重要性排序（最重要的在前），最多 10 个
-4. 关系描述用中文"""
-
-    # 构建出场统计文本（高频人物优先）
-    sorted_chars = sorted(appearance_stats.items(), key=lambda x: -x[1])
-    stats_lines = []
-    for name, count in sorted_chars[:100]:  # 只展示前 100 个高频人物
-        stats_lines.append(f"  {name}: {count} 章")
-    stats_text = "\n".join(stats_lines)
-
-    user_prompt = f"""请分析以下小说的核心人物：
-
-类型：{meta.get('theme', ['未知'])}
-
-【出场人物统计】（按出场频率排序，前100名）：
-{stats_text}
-
-{context_label}：
-{context_text}
-
-请返回 JSON 格式如上，只提取有完整弧线的重要角色。
-优先关注出场频率高的人物，但也要考虑其剧情重要性而非仅看数量。"""
-
-    logger.info(f"{prefix}第一轮：提取核心人物...")
-    result = call_llm(system_prompt, user_prompt, config, max_tokens_override=8000, timeout_override=config["llm"]["characters_timeout"], context=f"{material_id} 人物#核心")
-    # 兼容 LLM 直接返回数组的情况
-    if isinstance(result, list):
-        logger.warning(f"{prefix}人物提取返回裸数组，自动适配")
-        characters = result
-    else:
-        characters = result.get("characters", [])
-    logger.info(f"{prefix}核心人物提取完成: {len(characters)} 人 | finish={get_last_call_finish_reason()}")
-    return characters
-
-
-def _extract_minor_characters(
-    context_text: str,
-    context_label: str,
-    meta: dict,
-    core_names: list,
-    appearance_stats: dict,
-    config: dict,
-    material_id: str = "",
-) -> list:
-    """第二轮：补充次要人物（精简档案）。"""
-    prefix = f"[{material_id}] " if material_id else ""
-    system_prompt = """你是专业的小说人物分析师。请补充其他有名字且有剧情作用的次要人物，返回 JSON 格式：
-{
-  "characters": [
-    {
-      "name": "角色名",
-      "role": "minor",
-      "description": "角色描述（50字）",
-      "first_appearance_chapter": 1,
-      "narrative_function": "在故事中的功能（简述）",
-      "relationships": [
-        {"character": "角色名", "relationship": "关系描述"}
-      ]
-    }
-  ]
-}
-
-注意：
-1. 只提取不在已有名单中的次要人物
-2. 这些是有名字且有剧情作用但无完整弧线的角色
-3. 档案精简，不需要 psychology/arc_summary/archetype 等深层分析
-4. 关系描述用中文"""
-
-    # 构建出场统计文本（排除已提取的核心人物）
-    remaining_chars = {
-        name: count for name, count in appearance_stats.items()
-        if name not in core_names
-    }
-    sorted_remaining = sorted(remaining_chars.items(), key=lambda x: -x[1])
-    stats_lines = []
-    for name, count in sorted_remaining[:100]:
-        stats_lines.append(f"  {name}: {count} 章")
-    stats_text = "\n".join(stats_lines)
-
-    user_prompt = f"""请补充以下小说的次要人物：
-
-类型：{meta.get('theme', ['未知'])}
-
-已有核心人物名单（不要重复提取）：
-{', '.join(core_names)}
-
-【剩余出场人物统计】（按出场频率排序，前100名）：
-{stats_text}
-
-{context_label}：
-{context_text}
-
-请返回 JSON 格式如上，补充其他有剧情作用的次要角色。
-优先关注出场频率较高（≥5章）的人物，但也要判断其是否有实际剧情作用。"""
-
-    logger.info(f"{prefix}第二轮：补充次要人物...")
-    result = call_llm(system_prompt, user_prompt, config, max_tokens_override=8000, timeout_override=config["llm"]["characters_timeout"], context=f"{material_id} 人物#次要")
-    # 兼容 LLM 直接返回数组的情况
-    if isinstance(result, list):
-        logger.warning(f"{prefix}次要人物提取返回裸数组，自动适配")
-        characters = result
-    else:
-        characters = result.get("characters", [])
-    logger.info(f"{prefix}次要人物提取完成: {len(characters)} 人 | finish={get_last_call_finish_reason()}")
-    return characters
-
-
 def generate_characters(material_id, progress_callback: Callable[[int, int, str], None] | None = None, provider: str | None = None) -> bool:
-    """分层提取人物体系。
+    """统计驱动的人物提取。
 
-    容错策略：任何轮次失败时使用空数组继续，不中断流程。
+    新策略：
+    1. 基于出场统计筛选候选人（分层：核心/配角/次要）
+    2. 分批调用LLM补充档案详情
+    3. LLM失败时使用出场统计生成基础档案兜底
+
+    容错策略：任何轮次失败时使用出场统计兜底，不中断流程。
     返回 True 表示成功。
 
     参数：
@@ -353,6 +509,19 @@ def generate_characters(material_id, progress_callback: Callable[[int, int, str]
     appearance_stats = _extract_appearance_stats(chapters_data) if chapters_data else {}
     logger.info(f"[{material_id}] 出场人物统计: {len(appearance_stats)} 个不同人物")
 
+    # ── 统计驱动的分层筛选（新增）──
+    candidates = _select_candidate_characters(appearance_stats)
+    core_candidates = candidates["core"]
+    supporting_candidates = candidates["supporting"]
+    minor_candidates = candidates["minor"]
+
+    logger.info(
+        f"[{material_id}] 分层筛选结果:\n"
+        f"  核心人物（>= {CHARACTER_THRESHOLDS['core']} 章）: {len(core_candidates)} 人\n"
+        f"  配角（>= {CHARACTER_THRESHOLDS['supporting']} 章）: {len(supporting_candidates)} 人\n"
+        f"  次要（>= {CHARACTER_THRESHOLDS['minor']} 章）: {len(minor_candidates)} 人"
+    )
+
     # 构建分析上下文（传递已加载的 chapters_data，避免重复调用）
     context_text, context_label = _build_context(novel_dir, config, chapters_data, material_id=material_id)
     context_chars = len(context_text)
@@ -379,96 +548,154 @@ def generate_characters(material_id, progress_callback: Callable[[int, int, str]
                 "nature": rel.get("nature", "unknown")
             })
 
-    # ── 第一轮：核心人物（容错，增量写入）──
-    core_characters = []
-    new_core_count = 0
-    try:
-        if progress_callback:
-            progress_callback(0, 2, "提取核心人物")
-        core_characters = _extract_core_characters(context_text, context_label, meta, appearance_stats, config, material_id=material_id)
-        if progress_callback:
-            progress_callback(1, 2, f"核心人物: {len(core_characters)} 人")
-        else:
-            logger.info(f"[{material_id}] 提取核心人物: {len(core_characters)} 人")
-    except Exception as e:
-        logger.error(f"[{material_id}] 核心人物提取失败: {e}")
-        logger.warning(f"[{material_id}] 使用空列表继续，不中断流程")
-        core_characters = []
-
-    # 核心人物立即保存（增量写入）
     idx = len(existing_profiles)
-    for ch in core_characters:
-        name = ch.get("name")
-        if not name or name in existing_names:
-            continue  # 断点续传：跳过已存在的人物
+    total_batches = 3  # 核心/配角/次要 三层
 
-        # 验证 role 字段
-        role = ch.get("role", "supporting")
-        if role not in VALID_ROLES:
-            logger.warning(f"[{material_id}] 无效 role '{role}'，默认为 supporting")
-            role = "supporting"
+    # ── 第一层：核心人物（>=50章）──
+    new_core_count = 0
+    if core_candidates:
+        if progress_callback:
+            progress_callback(0, total_batches, f"提取核心人物 ({len(core_candidates)} 人)")
 
-        profile = _build_profile_from_character(ch, role)
-        _save_character_profile(profiles_dir, idx, profile, name)
-        existing_profiles.append(profile)
-        existing_names.add(name)
-        idx += 1
-        new_core_count += 1
+        try:
+            core_characters = _extract_character_batch(
+                core_candidates, "core", context_text, context_label,
+                meta, config, material_id=material_id, chapters_data=chapters_data
+            )
+        except Exception as e:
+            logger.error(f"[{material_id}] 核心人物提取失败: {e}")
+            logger.warning(f"[{material_id}] 使用出场统计生成基础档案兜底")
+            core_characters = []
+            for name, count in core_candidates:
+                profile = _build_basic_profile_from_stats(name, count, "supporting", chapters_data)
+                core_characters.append(profile)
 
-        # 收集关系
-        for rel in ch.get("relationships", []):
-            all_relationships.append({
-                "from": name,
-                "to": rel.get("character"),
-                "relationship": rel.get("relationship"),
-                "nature": rel.get("nature", "unknown")
-            })
+        # 保存核心人物
+        for ch in core_characters:
+            name = ch.get("name")
+            if not name or name in existing_names:
+                continue
 
-    if new_core_count > 0:
-        logger.info(f"[{material_id}] 已保存 {new_core_count} 个核心人物")
+            role = ch.get("role", "supporting")
+            if role not in VALID_ROLES:
+                role = "supporting"
 
-    core_names = [ch.get("name") for ch in core_characters if ch.get("name")]
+            profile = _build_profile_from_character(ch, role)
+            profile["appearance_count"] = appearance_stats.get(name, 0)
+            _save_character_profile(profiles_dir, idx, profile, name)
+            existing_profiles.append(profile)
+            existing_names.add(name)
+            idx += 1
+            new_core_count += 1
 
-    # ── 第二轮：次要人物（容错，增量写入）──
-    minor_characters = []
+            for rel in ch.get("relationships", []):
+                all_relationships.append({
+                    "from": name,
+                    "to": rel.get("character"),
+                    "relationship": rel.get("relationship"),
+                    "nature": rel.get("nature", "unknown")
+                })
+
+        logger.info(f"[{material_id}] 核心人物: 保存 {new_core_count} 人")
+    else:
+        logger.info(f"[{material_id}] 无核心人物候选人（>= {CHARACTER_THRESHOLDS['core']} 章）")
+
+    if progress_callback:
+        progress_callback(1, total_batches, f"核心人物完成 ({new_core_count} 人)")
+
+    # ── 第二层：配角（10-49章）──
+    new_supporting_count = 0
+    if supporting_candidates:
+        if progress_callback:
+            progress_callback(1, total_batches, f"提取配角 ({len(supporting_candidates)} 人)")
+
+        try:
+            supporting_characters = _extract_character_batch(
+                supporting_candidates, "supporting", context_text, context_label,
+                meta, config, material_id=material_id, chapters_data=chapters_data
+            )
+        except Exception as e:
+            logger.error(f"[{material_id}] 配角提取失败: {e}")
+            logger.warning(f"[{material_id}] 使用出场统计生成基础档案兜底")
+            supporting_characters = []
+            for name, count in supporting_candidates:
+                profile = _build_basic_profile_from_stats(name, count, "supporting", chapters_data)
+                supporting_characters.append(profile)
+
+        for ch in supporting_characters:
+            name = ch.get("name")
+            if not name or name in existing_names:
+                continue
+
+            profile = _build_profile_from_character(ch, "supporting")
+            profile["appearance_count"] = appearance_stats.get(name, 0)
+            _save_character_profile(profiles_dir, idx, profile, name)
+            existing_profiles.append(profile)
+            existing_names.add(name)
+            idx += 1
+            new_supporting_count += 1
+
+            for rel in ch.get("relationships", []):
+                all_relationships.append({
+                    "from": name,
+                    "to": rel.get("character"),
+                    "relationship": rel.get("relationship"),
+                    "nature": rel.get("nature", "unknown")
+                })
+
+        logger.info(f"[{material_id}] 配角: 保存 {new_supporting_count} 人")
+    else:
+        logger.info(f"[{material_id}] 无配角候选人（>= {CHARACTER_THRESHOLDS['supporting']} 章）")
+
+    if progress_callback:
+        progress_callback(2, total_batches, f"配角完成 ({new_supporting_count} 人)")
+
+    # ── 第三层：次要人物（5-9章）──
     new_minor_count = 0
-    try:
+    if minor_candidates:
         if progress_callback:
-            progress_callback(1, 2, "补充次要人物")
-        minor_characters = _extract_minor_characters(context_text, context_label, meta, core_names, appearance_stats, config, material_id=material_id)
-        if progress_callback:
-            progress_callback(2, 2, f"次要人物: {len(minor_characters)} 人")
-        else:
-            logger.info(f"[{material_id}] 补充次要人物: {len(minor_characters)} 人")
-    except Exception as e:
-        logger.error(f"[{material_id}] 次要人物提取失败: {e}")
-        logger.warning(f"[{material_id}] 使用空列表继续，不中断流程")
-        minor_characters = []
+            progress_callback(2, total_batches, f"提取次要人物 ({len(minor_candidates)} 人)")
 
-    # 次要人物立即保存（增量写入）
-    for ch in minor_characters:
-        name = ch.get("name")
-        if not name or name in existing_names:
-            continue  # 断点续传：跳过已存在的人物
+        try:
+            minor_characters = _extract_character_batch(
+                minor_candidates, "minor", context_text, context_label,
+                meta, config, material_id=material_id, chapters_data=chapters_data
+            )
+        except Exception as e:
+            logger.error(f"[{material_id}] 次要人物提取失败: {e}")
+            logger.warning(f"[{material_id}] 使用出场统计生成基础档案兜底")
+            minor_characters = []
+            for name, count in minor_candidates:
+                profile = _build_basic_profile_from_stats(name, count, "minor", chapters_data)
+                minor_characters.append(profile)
 
-        profile = _build_profile_from_character(ch, "minor")
-        _save_character_profile(profiles_dir, idx, profile, name)
-        existing_profiles.append(profile)
-        existing_names.add(name)
-        idx += 1
-        new_minor_count += 1
+        for ch in minor_characters:
+            name = ch.get("name")
+            if not name or name in existing_names:
+                continue
 
-        # 收集关系
-        for rel in ch.get("relationships", []):
-            all_relationships.append({
-                "from": name,
-                "to": rel.get("character"),
-                "relationship": rel.get("relationship"),
-                "nature": rel.get("nature", "unknown")
-            })
+            profile = _build_profile_from_character(ch, "minor")
+            profile["appearance_count"] = appearance_stats.get(name, 0)
+            _save_character_profile(profiles_dir, idx, profile, name)
+            existing_profiles.append(profile)
+            existing_names.add(name)
+            idx += 1
+            new_minor_count += 1
 
-    if new_minor_count > 0:
-        logger.info(f"[{material_id}] 已保存 {new_minor_count} 个次要人物")
+            for rel in ch.get("relationships", []):
+                all_relationships.append({
+                    "from": name,
+                    "to": rel.get("character"),
+                    "relationship": rel.get("relationship"),
+                    "nature": rel.get("nature", "unknown")
+                })
+
+        logger.info(f"[{material_id}] 次要人物: 保存 {new_minor_count} 人")
+    else:
+        logger.info(f"[{material_id}] 无次要人物候选人（>= {CHARACTER_THRESHOLDS['minor']} 章）")
+
+    if progress_callback:
+        progress_callback(3, total_batches, f"完成: {new_core_count + new_supporting_count + new_minor_count} 人")
 
     # 合并所有人物（现有 + 新增）
     all_characters = existing_profiles
@@ -477,6 +704,8 @@ def generate_characters(material_id, progress_callback: Callable[[int, int, str]
     seen_pairs = set()
     unique_relationships = []
     for rel in all_relationships:
+        if not rel.get("from") or not rel.get("to"):
+            continue
         pair_key = tuple(sorted([rel["from"], rel["to"]]))
         if pair_key not in seen_pairs:
             seen_pairs.add(pair_key)

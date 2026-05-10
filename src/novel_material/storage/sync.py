@@ -1,4 +1,10 @@
-"""数据库同步：把本地 YAML 文件同步到 PostgreSQL。"""
+"""数据库同步：把本地 YAML 文件同步到 PostgreSQL。
+
+职责边界：
+- 本模块只负责数据同步，不负责数据修复
+- 如果检测到质量问题，抛出 QualityCheckError 让上层处理
+- 上层可选择调用 pipeline.analyze.repair_short_summaries 修复后重试
+"""
 import os
 import sys
 import json
@@ -13,9 +19,31 @@ load_dotenv()
 from novel_material.infra.config import NOVELS_DIR
 from novel_material.infra.progress import get_pipeline_logger
 from novel_material.validation.schema import validate_material
+from novel_material.validation.quality import get_short_summary_chapters
 
 logger = get_pipeline_logger()
 DATABASE_URL = os.getenv("DATABASE_URL")
+
+
+class QualityCheckError(Exception):
+    """数据质量检查失败，可尝试修复后重试。
+
+    Attributes:
+        material_id: 素材 ID
+        short_chapters: summary 长度不足的章节列表
+        other_errors: 其他错误描述
+    """
+
+    def __init__(self, material_id: str, short_chapters: list[int] = None, other_errors: list[str] = None):
+        self.material_id = material_id
+        self.short_chapters = short_chapters or []
+        self.other_errors = other_errors or []
+        msg = f"Schema 预检失败: {material_id}"
+        if short_chapters:
+            msg += f"（{len(short_chapters)} 章 summary 长度不足）"
+        if other_errors:
+            msg += f"（{len(other_errors)} 个其他错误）"
+        super().__init__(msg)
 
 
 def get_db_connection():
@@ -25,44 +53,99 @@ def get_db_connection():
     return conn
 
 
-def _precheck_schema(material_id: str) -> bool:
-    """同步前检查数据格式是否正确（跳过标签字典校验）。
+def _precheck_schema(material_id: str, verbose: bool = True) -> None:
+    """同步前检查数据格式（纯校验，不修复）。
 
-    标签不在字典不影响数据完整性，同步后可通过 tags-manage 审核。
+    参数：
+        material_id: 素材 ID
+        verbose: 是否输出详细信息
+
+    Raises:
+        QualityCheckError: 检查失败，包含可修复的章节列表
+        ValueError: 检查失败且无法修复（非 summary 问题）
     """
-    if validate_material(material_id, verbose=True, skip_tags=True):
+    if validate_material(material_id, verbose=verbose, skip_tags=True):
         logger.info(f"Schema 预检通过: {material_id}")
-        return True
+        return
 
-    logger.error(f"Schema 预检失败，终止同步: {material_id}")
-    return False
+    # 检查是否是 summary 长度问题
+    short_chapters = get_short_summary_chapters(material_id)
+    if short_chapters:
+        # 是 summary 问题，可修复
+        logger.warning(f"Schema 预检失败: {material_id}，{len(short_chapters)} 章 summary 长度不足")
+        raise QualityCheckError(material_id, short_chapters=short_chapters)
+    else:
+        # 不是 summary 问题，无法自动修复
+        logger.error(f"Schema 预检失败（非 summary 问题），无法自动修复: {material_id}")
+        raise ValueError(f"Schema 预检失败（非 summary 问题），中止同步: {material_id}")
 
 
-def sync_novel(material_id):
-    """同步单本小说到数据库。"""
+def sync_novel(material_id: str, provider: str | None = None, use_window: bool = False) -> bool:
+    """同步单本小说到数据库。
+
+    参数：
+        material_id: 素材 ID
+        provider: LLM 服务商（用于修复时的参数传递）
+        use_window: 是否使用滑动窗口（用于修复时的参数传递）
+
+    返回：
+        True 表示成功，False 表示失败（需人工干预）
+
+    Raises:
+        ValueError: 无法自动修复的问题
+    """
+    from novel_material.pipeline.analyze import repair_short_summaries
+
     novel_dir = NOVELS_DIR / material_id
     if not novel_dir.exists():
         logger.warning(f"跳过: 目录不存在 {novel_dir}")
-        return
+        return False
 
-    if not _precheck_schema(material_id):
-        raise ValueError(f"Schema 预检未通过，中止同步: {material_id}")
+    # 尝试同步，最多重试 2 次（首次 + 修复后）
+    max_attempts = 2
+    for attempt in range(max_attempts):
+        try:
+            # 只有首次 verbose=True，后续静默避免刷屏
+            _precheck_schema(material_id, verbose=(attempt == 0))
 
-    conn = get_db_connection()
-    try:
-        _sync_meta(conn, novel_dir, material_id)
-        _sync_chapters(conn, novel_dir, material_id)
-        _sync_outline(conn, novel_dir, material_id)
-        _sync_characters(conn, novel_dir, material_id)
-        _sync_worldbuilding(conn, novel_dir, material_id)
-        conn.commit()
-        logger.info(f"同步完成: {material_id}")
-    except Exception as e:
-        conn.rollback()
-        logger.error(f"同步失败，已回滚: {e}")
-        raise
-    finally:
-        conn.close()
+            # 校验通过，执行同步
+            conn = get_db_connection()
+            try:
+                _sync_meta(conn, novel_dir, material_id)
+                _sync_chapters(conn, novel_dir, material_id)
+                _sync_outline(conn, novel_dir, material_id)
+                _sync_characters(conn, novel_dir, material_id)
+                _sync_worldbuilding(conn, novel_dir, material_id)
+                conn.commit()
+                logger.info(f"同步完成: {material_id}")
+                return True
+            except Exception as e:
+                conn.rollback()
+                logger.error(f"同步失败，已回滚: {e}")
+                raise
+            finally:
+                conn.close()
+
+        except QualityCheckError as e:
+            if attempt >= max_attempts - 1:
+                # 已是最后一次尝试，不再修复
+                logger.error(f"修复后仍失败: {material_id}")
+                return False
+
+            # 尝试修复
+            logger.info(f"[{material_id}] 自动修复 {len(e.short_chapters)} 章...")
+            success, repaired, total = repair_short_summaries(
+                material_id,
+                short_chapters=e.short_chapters,
+                provider=provider,
+                use_window=use_window,
+            )
+            if not success:
+                logger.warning(f"[{material_id}] 修复失败（成功率不足），需人工干预")
+                return False
+            logger.info(f"[{material_id}] 修复成功: {repaired}/{total} 章")
+
+    return False
 
 
 def _sync_meta(conn, novel_dir, material_id):
@@ -523,15 +606,23 @@ def _sync_worldbuilding(conn, novel_dir, material_id):
     logger.info(f"已同步世界观实体: {synced} 个")
 
 
-def sync_all():
-    """同步所有小说到数据库。"""
+def sync_all() -> int:
+    """同步所有小说到数据库。
+
+    返回：
+        成功同步的素材数量
+    """
     if not NOVELS_DIR.exists():
         logger.warning("没有小说目录")
-        return
+        return 0
 
+    success_count = 0
     for novel_dir in sorted(NOVELS_DIR.iterdir()):
         if novel_dir.is_dir() and novel_dir.name.startswith("nm_"):
-            sync_novel(novel_dir.name)
+            if sync_novel(novel_dir.name):
+                success_count += 1
+
+    return success_count
 
 
 if __name__ == "__main__":
@@ -540,6 +631,12 @@ if __name__ == "__main__":
         sys.exit(1)
 
     if sys.argv[1] == "all":
-        sync_all()
+        count = sync_all()
+        print(f"已同步 {count} 个素材")
     else:
-        sync_novel(sys.argv[1])
+        success = sync_novel(sys.argv[1])
+        if success:
+            print(f"同步完成: {sys.argv[1]}")
+        else:
+            print(f"同步失败: {sys.argv[1]}")
+            sys.exit(1)

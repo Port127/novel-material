@@ -239,7 +239,7 @@ def cmd_characters(
         TimeRemainingColumn(),
         console=console,
     ) as progress:
-        task = progress.add_task(f"提取人物: {material_id}", total=2)
+        task = progress.add_task(f"提取人物: {material_id}", total=3)
 
         def update_chars_progress(done: int, total: int, desc: str):
             progress.update(task, completed=done, description=f"提取人物: {desc}")
@@ -429,7 +429,7 @@ def cmd_full(
 
         # 阶段 N+3: 人物
         char_stage = world_stage + 1
-        task5 = progress.add_task(f"阶段 {char_stage}/{total_stages}: 人物提取", total=2)
+        task5 = progress.add_task(f"阶段 {char_stage}/{total_stages}: 人物提取", total=3)
 
         def update_chars_progress_full(done: int, total: int, desc: str):
             progress.update(task5, completed=done, description=f"阶段 {char_stage}/{total_stages}: {desc}")
@@ -653,7 +653,7 @@ def cmd_continue(
         # 人物（细粒度进度）
         if not progress.get("characters"):
             console.print(f"[cyan]阶段 {current_stage}/{total_stages}: 人物提取...[/cyan]")
-            task = progress_bar.add_task(f"阶段 {current_stage}/{total_stages}: 人物", total=2)
+            task = progress_bar.add_task(f"阶段 {current_stage}/{total_stages}: 人物", total=3)
 
             def update_chars_progress_continue(done: int, total: int, desc: str):
                 progress_bar.update(task, completed=done, description=f"阶段 {current_stage}/{total_stages}: {desc}")
@@ -690,11 +690,10 @@ def cmd_continue(
         if not skip_sync and not progress.get("synced"):
             task7 = progress_bar.add_task(f"同步数据库", total=1)
             with silent_console():
-                try:
-                    sync_novel(material_id)
-                except Exception as e:
+                success = sync_novel(material_id, provider=provider, use_window=use_window)
+                if not success:
                     sync_failed = True
-                    console.print(f"[red]数据库同步失败: {e}[/red]")
+                    console.print("[red]数据库同步失败[/red]")
                     console.print("[yellow]可手动执行 nm storage sync 重试[/yellow]")
             if not sync_failed:
                 progress_bar.update(task7, completed=1)
