@@ -273,9 +273,9 @@ def run_quality_check(material_id: str, start_ch: int | None = None, end_ch: int
     print(f"质量校验：{material_id}{range_desc}")
     print(f"{'='*50}")
 
-    # Schema 结构校验
+    # Schema 结构校验（跳过标签字典校验）
     print("\n[Schema 结构校验]")
-    schema_ok = validate_material(material_id, verbose=True, start_ch=start_ch, end_ch=end_ch)
+    schema_ok = validate_material(material_id, verbose=True, start_ch=start_ch, end_ch=end_ch, skip_tags=True)
 
     # 内容质量校验
     print("\n[内容质量校验]")

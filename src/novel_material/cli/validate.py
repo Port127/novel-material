@@ -18,26 +18,20 @@ def validate(
     """校验素材数据完整性。"""
     if all:
         from novel_material.infra.config import NOVELS_DIR
-        from pathlib import Path
 
         results = []
         for novel_dir in NOVELS_DIR.iterdir():
             if novel_dir.is_dir():
-                result = validate_material(novel_dir.name)
-                results.append(result)
+                passed = validate_material(novel_dir.name, verbose=False)
+                results.append({"material_id": novel_dir.name, "passed": passed})
 
         table = Table(title="校验结果汇总")
         table.add_column("素材", style="cyan")
         table.add_column("状态", style="green")
-        table.add_column("错误数", style="red")
 
         for r in results:
-            status = "[green]通过[/green]" if r.get("valid") else "[red]失败[/red]"
-            table.add_row(
-                r.get("material_id", ""),
-                status,
-                str(len(r.get("errors", [])))
-            )
+            status = "[green]通过[/green]" if r["passed"] else "[red]失败[/red]"
+            table.add_row(r["material_id"], status)
 
         console.print(table)
 
@@ -71,17 +65,7 @@ def cmd_quality(
 
     result = run_quality_check(material_id, start_ch=start, end_ch=end)
 
-    table = Table(title="质量检查结果")
-    table.add_column("维度", style="cyan")
-    table.add_column("得分", style="green")
-    table.add_column("说明", style="white")
-
-    for dim, data in result.items():
-        if isinstance(data, dict):
-            table.add_row(
-                dim,
-                str(data.get("score", 0)),
-                data.get("note", "")
-            )
-
-    console.print(table)
+    if result:
+        console.print(f"[green]素材 {material_id} 质量检查通过[/green]")
+    else:
+        console.print(f"[red]素材 {material_id} 质量检查失败[/red]")
