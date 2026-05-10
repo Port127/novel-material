@@ -10,6 +10,7 @@ import json
 import yaml
 import psycopg2
 import psycopg2.extras
+import numpy as np
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -23,6 +24,37 @@ from novel_material.pipeline.analyze import repair_short_summaries
 
 logger = get_pipeline_logger()
 DATABASE_URL = os.getenv("DATABASE_URL")
+
+
+def _load_embeddings_npz(npz_path: Path) -> dict:
+    """从 NPZ 文件加载向量。
+
+    支持两种格式：
+    - 章节格式：chapters 数组（整数 key）
+    - 通用格式：keys 数组（字符串 key）
+
+    Args:
+        npz_path: NPZ 文件路径
+
+    Returns:
+        dict: {key: embedding_list}
+    """
+    if not npz_path.exists():
+        return {}
+    data = np.load(str(npz_path))
+    vectors_arr = data["vectors"]
+
+    # 章节格式（整数 key）
+    if "chapters" in data:
+        chapters_arr = data["chapters"]
+        return {str(int(ch)): vectors_arr[i].tolist() for i, ch in enumerate(chapters_arr)}
+
+    # 通用格式（字符串 key）
+    if "keys" in data:
+        keys_arr = data["keys"]
+        return {str(k): vectors_arr[i].tolist() for i, k in enumerate(keys_arr)}
+
+    return {}
 
 
 class DatabaseConfigError(Exception):
@@ -240,17 +272,15 @@ def _sync_chapters(conn, novel_dir, material_id):
     if not chapters:
         return
 
-    # 加载向量
-    embeddings: dict = {}
+    # 加载向量（统一使用 _load_embeddings_npz）
     embeddings_npz = novel_dir / "chapter_embeddings.npz"
     embeddings_yaml = novel_dir / "chapter_embeddings.yaml"
 
+    embeddings: dict = {}
     if embeddings_npz.exists():
-        import numpy as np
-        data = np.load(str(embeddings_npz))
-        chapters_arr = data["chapters"]
-        vectors_arr = data["vectors"]
-        embeddings = {int(ch): vectors_arr[i].tolist() for i, ch in enumerate(chapters_arr)}
+        embeddings = _load_embeddings_npz(embeddings_npz)
+        # 转换为整数 key（章节同步需要）
+        embeddings = {int(k): v for k, v in embeddings.items()}
         logger.info(f"加载向量 (.npz): {len(embeddings)} 章")
     elif embeddings_yaml.exists():
         with open(embeddings_yaml, "r", encoding="utf-8") as f:
@@ -360,7 +390,31 @@ def _sync_chapters(conn, novel_dir, material_id):
 
 
 def _sync_outline(conn, novel_dir, material_id):
-    """同步大纲结构。"""
+    """同步大纲结构和向量。"""
+    # 加载大纲向量
+    embeddings_npz = novel_dir / "outline" / "outline_embeddings.npz"
+    embeddings = _load_embeddings_npz(embeddings_npz)
+    if embeddings:
+        logger.info(f"加载大纲向量: {len(embeddings)} 条")
+
+    premise_vec = embeddings.get("premise")
+
+    # 从 meta.yaml 读取 premise/theme/tone（与 embedding 数据源一致）
+    meta_file = novel_dir / "meta.yaml"
+    premise = None
+    theme = []
+    tone = []
+    if meta_file.exists():
+        with open(meta_file, "r", encoding="utf-8") as f:
+            meta = yaml.safe_load(f) or {}
+        premise = meta.get("premise")
+        theme = meta.get("theme", [])
+        tone = meta.get("tone", [])
+        if isinstance(theme, str):
+            theme = [theme]
+        if isinstance(tone, str):
+            tone = [tone]
+
     outline_index = novel_dir / "outline" / "_index.yaml"
     if outline_index.exists():
         with open(outline_index, "r", encoding="utf-8") as f:
@@ -370,34 +424,51 @@ def _sync_outline(conn, novel_dir, material_id):
         hooks = index_data.get("hooks_stats", {})
         subplots = index_data.get("subplots_stats", {})
 
-        theme = index_data.get("theme", [])
-        tone = index_data.get("tone", [])
-        if isinstance(theme, str):
-            theme = [theme]
-        if isinstance(tone, str):
-            tone = [tone]
-
         with conn.cursor() as cur:
-            cur.execute("""
-                UPDATE novels SET
-                    premise = %s,
-                    theme = %s,
-                    tone = %s,
-                    act_count = %s,
-                    sequence_count = %s,
-                    hook_count = %s,
-                    subplot_count = %s
-                WHERE material_id = %s
-            """, (
-                index_data.get("premise"),
-                theme,
-                tone,
-                summary.get("acts"),
-                summary.get("sequences"),
-                hooks.get("total"),
-                subplots.get("count"),
-                material_id,
-            ))
+            if premise_vec is not None:
+                cur.execute("""
+                    UPDATE novels SET
+                        premise = %s,
+                        theme = %s,
+                        tone = %s,
+                        act_count = %s,
+                        sequence_count = %s,
+                        hook_count = %s,
+                        subplot_count = %s,
+                        premise_embedding = %s
+                    WHERE material_id = %s
+                """, (
+                    premise,
+                    theme,
+                    tone,
+                    summary.get("acts"),
+                    summary.get("sequences"),
+                    hooks.get("total"),
+                    subplots.get("count"),
+                    premise_vec,
+                    material_id,
+                ))
+            else:
+                cur.execute("""
+                    UPDATE novels SET
+                        premise = %s,
+                        theme = %s,
+                        tone = %s,
+                        act_count = %s,
+                        sequence_count = %s,
+                        hook_count = %s,
+                        subplot_count = %s
+                    WHERE material_id = %s
+                """, (
+                    premise,
+                    theme,
+                    tone,
+                    summary.get("acts"),
+                    summary.get("sequences"),
+                    hooks.get("total"),
+                    subplots.get("count"),
+                    material_id,
+                ))
         logger.info(f"已同步大纲元信息（premise/theme/tone）")
 
     structure_file = novel_dir / "outline" / "structure.yaml"
@@ -415,6 +486,7 @@ def _sync_outline(conn, novel_dir, material_id):
 
     seq_count = 0
     beat_count = 0
+    beat_with_vec = 0
     with conn.cursor() as cur:
         if structure_type:
             cur.execute(
@@ -452,26 +524,45 @@ def _sync_outline(conn, novel_dir, material_id):
 
                 for beat_data in seq_data.get("beats", []):
                     beat_num = beat_data.get("beat") or beat_data.get("beat_number")
+                    beat_key = f"beat:{act_num}:{seq_num}:{beat_num}"
+                    beat_vec = embeddings.get(beat_key)
 
-                    cur.execute("""
-                        INSERT INTO outline_beats (
-                            material_id, act, sequence, beat,
-                            title, chapter, description, tension
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                    """, (
-                        material_id, act_num, seq_num, beat_num,
-                        beat_data.get("title"),
-                        beat_data.get("chapter"),
-                        beat_data.get("description"),
-                        beat_data.get("tension"),
-                    ))
+                    if beat_vec is not None:
+                        cur.execute("""
+                            INSERT INTO outline_beats (
+                                material_id, act, sequence, beat,
+                                title, chapter, description, tension,
+                                description_embedding
+                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        """, (
+                            material_id, act_num, seq_num, beat_num,
+                            beat_data.get("title"),
+                            beat_data.get("chapter"),
+                            beat_data.get("description"),
+                            beat_data.get("tension"),
+                            beat_vec,
+                        ))
+                        beat_with_vec += 1
+                    else:
+                        cur.execute("""
+                            INSERT INTO outline_beats (
+                                material_id, act, sequence, beat,
+                                title, chapter, description, tension
+                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                        """, (
+                            material_id, act_num, seq_num, beat_num,
+                            beat_data.get("title"),
+                            beat_data.get("chapter"),
+                            beat_data.get("description"),
+                            beat_data.get("tension"),
+                        ))
                     beat_count += 1
 
-    logger.info(f"已同步大纲结构: {seq_count} 个序列，{beat_count} 个节拍")
+    logger.info(f"已同步大纲结构: {seq_count} 个序列，{beat_count} 个节拍，其中 {beat_with_vec} 个含向量")
 
 
 def _sync_characters(conn, novel_dir, material_id):
-    """同步人物档案。"""
+    """同步人物档案和向量。"""
     profiles_dir = novel_dir / "characters" / "profiles"
     if not profiles_dir.exists():
         return
@@ -479,6 +570,12 @@ def _sync_characters(conn, novel_dir, material_id):
     profile_files = list(profiles_dir.glob("*.yaml"))
     if not profile_files:
         return
+
+    # 加载人物向量
+    embeddings_npz = novel_dir / "characters" / "character_embeddings.npz"
+    embeddings = _load_embeddings_npz(embeddings_npz)
+    if embeddings:
+        logger.info(f"加载人物向量: {len(embeddings)} 条")
 
     with conn.cursor() as cur:
         for profile_file in profile_files:
@@ -491,44 +588,86 @@ def _sync_characters(conn, novel_dir, material_id):
             psychology_value = json.dumps(
                 profile.get("psychology", {}), ensure_ascii=False
             )
-            char_name = profile.get("name") or profile.get("character_name")
+            char_name = profile.get("name")
+            if not char_name:
+                continue
+            vec = embeddings.get(char_name)
 
-            cur.execute("""
-                INSERT INTO characters (
-                    material_id, name, role, archetype,
-                    moral_spectrum, arc_summary, narrative_function,
-                    psychology, first_appearance, last_appearance,
-                    appearance_count, file_path, description
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (material_id, name) DO UPDATE SET
-                    role = EXCLUDED.role,
-                    archetype = EXCLUDED.archetype,
-                    moral_spectrum = EXCLUDED.moral_spectrum,
-                    arc_summary = EXCLUDED.arc_summary,
-                    narrative_function = EXCLUDED.narrative_function,
-                    psychology = EXCLUDED.psychology,
-                    first_appearance = EXCLUDED.first_appearance,
-                    last_appearance = EXCLUDED.last_appearance,
-                    appearance_count = EXCLUDED.appearance_count,
-                    description = EXCLUDED.description,
-                    file_path = EXCLUDED.file_path
-            """, (
-                material_id,
-                char_name,
-                profile.get("role"),
-                profile.get("archetype"),
-                profile.get("moral_spectrum"),
-                profile.get("arc_summary"),
-                profile.get("narrative_function"),
-                psychology_value,
-                profile.get("first_appearance"),
-                profile.get("last_appearance"),
-                profile.get("appearance_count", 0),
-                str(profile_file),
-                profile.get("description"),
-            ))
+            if vec is not None:
+                cur.execute("""
+                    INSERT INTO characters (
+                        material_id, name, role, archetype,
+                        moral_spectrum, arc_summary, narrative_function,
+                        psychology, first_appearance, last_appearance,
+                        appearance_count, file_path, description,
+                        arc_summary_embedding
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (material_id, name) DO UPDATE SET
+                        role = EXCLUDED.role,
+                        archetype = EXCLUDED.archetype,
+                        moral_spectrum = EXCLUDED.moral_spectrum,
+                        arc_summary = EXCLUDED.arc_summary,
+                        narrative_function = EXCLUDED.narrative_function,
+                        psychology = EXCLUDED.psychology,
+                        first_appearance = EXCLUDED.first_appearance,
+                        last_appearance = EXCLUDED.last_appearance,
+                        appearance_count = EXCLUDED.appearance_count,
+                        description = EXCLUDED.description,
+                        file_path = EXCLUDED.file_path,
+                        arc_summary_embedding = EXCLUDED.arc_summary_embedding
+                """, (
+                    material_id,
+                    char_name,
+                    profile.get("role"),
+                    profile.get("archetype"),
+                    profile.get("moral_spectrum"),
+                    profile.get("arc_summary"),
+                    profile.get("narrative_function"),
+                    psychology_value,
+                    profile.get("first_appearance"),
+                    profile.get("last_appearance"),
+                    profile.get("appearance_count", 0),
+                    str(profile_file),
+                    profile.get("description"),
+                    vec,
+                ))
+            else:
+                cur.execute("""
+                    INSERT INTO characters (
+                        material_id, name, role, archetype,
+                        moral_spectrum, arc_summary, narrative_function,
+                        psychology, first_appearance, last_appearance,
+                        appearance_count, file_path, description
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (material_id, name) DO UPDATE SET
+                        role = EXCLUDED.role,
+                        archetype = EXCLUDED.archetype,
+                        moral_spectrum = EXCLUDED.moral_spectrum,
+                        arc_summary = EXCLUDED.arc_summary,
+                        narrative_function = EXCLUDED.narrative_function,
+                        psychology = EXCLUDED.psychology,
+                        first_appearance = EXCLUDED.first_appearance,
+                        last_appearance = EXCLUDED.last_appearance,
+                        appearance_count = EXCLUDED.appearance_count,
+                        description = EXCLUDED.description,
+                        file_path = EXCLUDED.file_path
+                """, (
+                    material_id,
+                    char_name,
+                    profile.get("role"),
+                    profile.get("archetype"),
+                    profile.get("moral_spectrum"),
+                    profile.get("arc_summary"),
+                    profile.get("narrative_function"),
+                    psychology_value,
+                    profile.get("first_appearance"),
+                    profile.get("last_appearance"),
+                    profile.get("appearance_count", 0),
+                    str(profile_file),
+                    profile.get("description"),
+                ))
 
-    logger.info(f"已同步人物: {len(profile_files)} 个")
+    logger.info(f"已同步人物: {len(profile_files)} 个，其中 {len(embeddings)} 条含向量")
 
     _sync_character_appearances(conn, novel_dir, material_id)
 
@@ -569,10 +708,16 @@ def _sync_character_appearances(conn, novel_dir, material_id):
 
 
 def _sync_worldbuilding(conn, novel_dir, material_id):
-    """同步世界观元素。"""
+    """同步世界观元素和向量。"""
     wb_index = novel_dir / "worldbuilding" / "_index.yaml"
     if not wb_index.exists():
         return
+
+    # 加载世界观向量
+    embeddings_npz = novel_dir / "worldbuilding" / "wb_embeddings.npz"
+    embeddings = _load_embeddings_npz(embeddings_npz)
+    if embeddings:
+        logger.info(f"加载世界观向量: {len(embeddings)} 条")
 
     def _load_worldbuilding_entities(entity_type: str) -> list[dict]:
         """加载世界观实体数据，兼容新旧格式。"""
@@ -611,6 +756,7 @@ def _sync_worldbuilding(conn, novel_dir, material_id):
         return [entity for entity in loaded if isinstance(entity, dict)]
 
     synced = 0
+    synced_with_vec = 0
     with conn.cursor() as cur:
         for entity_type in ["factions", "regions", "power_systems"]:
             entities = _load_worldbuilding_entities(entity_type)
@@ -621,28 +767,57 @@ def _sync_worldbuilding(conn, novel_dir, material_id):
                 properties_value = json.dumps(
                     entity.get("properties", {}), ensure_ascii=False
                 )
-                cur.execute("""
-                    INSERT INTO worldbuilding_entities (
-                        material_id, entity_type, name, description,
-                        properties, first_appearance, importance
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (material_id, entity_type, name) DO UPDATE SET
-                        description = EXCLUDED.description,
-                        properties = EXCLUDED.properties,
-                        first_appearance = EXCLUDED.first_appearance,
-                        importance = EXCLUDED.importance
-                """, (
-                    material_id,
-                    entity_type,
-                    entity.get("name", ""),
-                    entity.get("description", ""),
-                    properties_value,
-                    entity.get("first_appearance"),
-                    entity.get("importance", "secondary"),
-                ))
+                entity_name = entity.get("name", "")
+                vec_key = f"{entity_type}:{entity_name}"
+                vec = embeddings.get(vec_key)
+
+                if vec is not None:
+                    cur.execute("""
+                        INSERT INTO worldbuilding_entities (
+                            material_id, entity_type, name, description,
+                            properties, first_appearance, importance,
+                            description_embedding
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (material_id, entity_type, name) DO UPDATE SET
+                            description = EXCLUDED.description,
+                            properties = EXCLUDED.properties,
+                            first_appearance = EXCLUDED.first_appearance,
+                            importance = EXCLUDED.importance,
+                            description_embedding = EXCLUDED.description_embedding
+                    """, (
+                        material_id,
+                        entity_type,
+                        entity_name,
+                        entity.get("description", ""),
+                        properties_value,
+                        entity.get("first_appearance"),
+                        entity.get("importance", "secondary"),
+                        vec,
+                    ))
+                    synced_with_vec += 1
+                else:
+                    cur.execute("""
+                        INSERT INTO worldbuilding_entities (
+                            material_id, entity_type, name, description,
+                            properties, first_appearance, importance
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (material_id, entity_type, name) DO UPDATE SET
+                            description = EXCLUDED.description,
+                            properties = EXCLUDED.properties,
+                            first_appearance = EXCLUDED.first_appearance,
+                            importance = EXCLUDED.importance
+                    """, (
+                        material_id,
+                        entity_type,
+                        entity_name,
+                        entity.get("description", ""),
+                        properties_value,
+                        entity.get("first_appearance"),
+                        entity.get("importance", "secondary"),
+                    ))
                 synced += 1
 
-    logger.info(f"已同步世界观实体: {synced} 个")
+    logger.info(f"已同步世界观实体: {synced} 个，其中 {synced_with_vec} 条含向量")
 
 
 def sync_all(provider: str | None = None, use_window: bool = False) -> int:

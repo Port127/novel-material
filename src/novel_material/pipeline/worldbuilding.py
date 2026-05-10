@@ -18,6 +18,7 @@ from novel_material.infra.config import NOVELS_DIR
 from novel_material.infra.llm import load_config, call_llm, get_last_call_finish_reason, get_call_details, clear_call_details
 from novel_material.pipeline.loader import load_chapters_data, build_summary_pool
 from novel_material.infra.progress import get_pipeline_logger, save_run_history
+from novel_material.storage.embedding import embed_worldbuilding
 
 logger = get_pipeline_logger()
 
@@ -301,6 +302,10 @@ def generate_worldbuilding(material_id, provider: str | None = None) -> bool:
         total_elapsed=elapsed,
         status="success"
     )
+
+    # 生成世界观向量
+    logger.info(f"[{material_id}] 生成世界观向量...")
+    embed_worldbuilding(material_id)
 
     return True
 

@@ -1,6 +1,7 @@
 """精调工具：基于章级分析数据调整 outline/characters/tags，并推断结构角色。
 
 注意：精调阶段不调用 LLM，仅基于章级分析数据进行统计聚合和推断。
+最后生成大纲向量（premise + beats）。
 """
 import sys
 import yaml
@@ -9,6 +10,7 @@ import time
 from novel_material.infra.config import NOVELS_DIR
 from novel_material.infra.progress import get_pipeline_logger
 from novel_material.pipeline.infer import infer_key_plot_points
+from novel_material.storage.embedding import embed_outline
 
 logger = get_pipeline_logger()
 
@@ -211,6 +213,10 @@ def refine(material_id) -> bool:
     for module, success in refined.items():
         status = "已精调" if success else "跳过"
         logger.info(f"  {module}: {status}")
+
+    # 生成大纲向量（premise + beats）
+    logger.info(f"[{material_id}] 生成大纲向量...")
+    embed_outline(material_id)
 
     return True
 

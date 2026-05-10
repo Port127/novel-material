@@ -21,6 +21,7 @@ from novel_material.infra.config import NOVELS_DIR
 from novel_material.infra.llm import load_config, call_llm, get_last_call_finish_reason, get_call_details
 from novel_material.pipeline.loader import load_chapters_data, build_summary_pool
 from novel_material.infra.progress import get_pipeline_logger, PipelineRunner
+from novel_material.storage.embedding import embed_characters
 
 logger = get_pipeline_logger()
 
@@ -507,7 +508,7 @@ def generate_characters(material_id, progress_callback: Callable[[int, int, str]
     # 创建 PipelineRunner 记录运行历史
     runner = PipelineRunner(
         name="人物提取",
-        total_stages=3,  # 核心/配角/次要三层
+        total_stages=4,  # 核心/配角/次要/向量化
         novel_dir=novel_dir,
         material_id=material_id,
         novel_info={"name": title, "chapter_count": chapter_count, "word_count": word_count}
@@ -797,6 +798,14 @@ def generate_characters(material_id, progress_callback: Callable[[int, int, str]
 
     # 保存运行历史
     runner.save_history(status="success")
+
+    # 生成人物向量
+    logger.info(f"[{material_id}] 生成人物向量...")
+    if progress_callback:
+        progress_callback(3, 4, "生成人物向量...")
+    embed_characters(material_id)
+    if progress_callback:
+        progress_callback(4, 4, "向量化完成")
 
     return True
 
