@@ -78,7 +78,8 @@ def _setup_pipeline_logger() -> logging.Logger:
 
     # PID 隔离：每个进程独立日志文件
     log_file = log_dir / f"pipeline_{time.strftime('%Y-%m-%d')}_{os.getpid()}.log"
-    file_handler = logging.FileHandler(log_file, encoding="utf-8", mode="a")
+    # delay=True: 延迟创建文件，直到实际写入时才创建（避免空日志文件）
+    file_handler = logging.FileHandler(log_file, encoding="utf-8", mode="a", delay=True)
     file_handler.setFormatter(
         logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s", datefmt="%H:%M:%S")
     )
@@ -116,7 +117,8 @@ def _setup_search_logger() -> logging.Logger:
     log_dir = ensure_log_dir()
 
     log_file = log_dir / f"search_{time.strftime('%Y-%m-%d')}_{os.getpid()}.log"
-    file_handler = logging.FileHandler(log_file, encoding="utf-8", mode="a")
+    # delay=True: 延迟创建文件，直到实际写入时才创建（避免空日志文件）
+    file_handler = logging.FileHandler(log_file, encoding="utf-8", mode="a", delay=True)
     file_handler.setFormatter(
         logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s", datefmt="%H:%M:%S")
     )

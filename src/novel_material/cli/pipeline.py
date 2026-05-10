@@ -271,8 +271,15 @@ def cmd_full(
     start: int = typer.Option(None, "--start", "-s", help="起始章节号"),
     end: int = typer.Option(None, "--end", "-e", help="结束章节号（不指定则到结尾）"),
     provider: str = typer.Option(None, "--provider", "-p", help="服务商名称"),
+    use_window: bool = typer.Option(False, "--window", "-w", help="启用滑动窗口模式（自动执行总体评估）"),
 ):
-    """完整流水线：入库 → 章级分析 → 骨架分析 → 精调。"""
+    """完整流水线：入库 → 章级分析 → 骨架分析 → 精调。
+
+    滑动窗口模式（--window）：
+    - 自动执行总体评估阶段
+    - 为每章提供前章摘要和全局评估作为上下文
+    - 输出新增字段：tension_change、emotion_transition、plot_progress
+    """
     # 验证参数
     if start is not None and start < 1:
         console.print("[red]起始章节号必须 >= 1[/red]")
@@ -287,8 +294,10 @@ def cmd_full(
         range_start = start or 1
         range_end_text = end or "末"
         range_desc = f" (第 {range_start}-{range_end_text} 章)"
+    window_desc = " [滑动窗口]" if use_window else ""
+    total_stages = 8 if use_window else 7
 
-    console.print(f"[cyan]开始完整流水线{range_desc}[/cyan]")
+    console.print(f"[cyan]开始完整流水线{range_desc}{window_desc}[/cyan]")
     logger.info(_PIPELINE_SEPARATOR)
 
     with Progress(
@@ -300,7 +309,7 @@ def cmd_full(
     ) as progress:
 
         # 阶段 1: 入库
-        console.print("[cyan]阶段 1/7: 入库...[/cyan]")
+        console.print(f"[cyan]阶段 1/{total_stages}: 入库...[/cyan]")
         task1 = progress.add_task("入库处理", total=1)
         with silent_console():
             material_id = ingest_file(file_path)
@@ -311,7 +320,23 @@ def cmd_full(
         console.print(f"[green]入库完成: {material_id}[/green]")
         progress.remove_task(task1)
 
-        # 阶段 2: 章级分析（细粒度进度）
+        # 阶段 2: 总体评估（仅滑动窗口模式）
+        if use_window:
+            console.print(f"[cyan]阶段 2/{total_stages}: 总体评估...[/cyan]")
+            task_eval = progress.add_task("总体评估", total=5)
+
+            def update_eval_progress(done: int, total: int, desc: str):
+                progress.update(task_eval, completed=done, description=f"总体评估: {desc}")
+
+            with silent_console():
+                success = run_evaluation(material_id, provider=provider, progress_callback=update_eval_progress)
+            if not success:
+                console.print("[red]总体评估失败，终止流水线[/red]")
+                raise typer.Exit(1)
+            progress.remove_task(task_eval)
+
+        # 阶段 N: 章级分析（细粒度进度）
+        analyze_stage = 2 if not use_window else 3
         novel_dir = NOVELS_DIR / material_id
         with open(novel_dir / "chapter_index.yaml", "r", encoding="utf-8") as f:
             chapter_index = yaml.safe_load(f)
@@ -333,51 +358,63 @@ def cmd_full(
         ]
         range_total = len(chapters_in_range)
 
-        task2 = progress.add_task("阶段 2/7: 章级分析", total=range_total)
+        task2 = progress.add_task(f"阶段 {analyze_stage}/{total_stages}: 章级分析", total=range_total)
 
         def update_progress(done: int, total: int, desc: str):
-            progress.update(task2, completed=done, description=f"阶段 2/7: {desc}")
+            progress.update(task2, completed=done, description=f"阶段 {analyze_stage}/{total_stages}: {desc}")
 
         with silent_console():
-            chapter_analyze(material_id, start_ch=start, end_ch=end, progress_callback=update_progress, provider=provider)
+            chapter_analyze(
+                material_id,
+                start_ch=start,
+                end_ch=end,
+                progress_callback=update_progress,
+                provider=provider,
+                use_window=use_window,
+            )
         progress.remove_task(task2)
 
-        # 阶段 3: 大纲（不确定进度，序列数动态计算）
-        task3 = progress.add_task("阶段 3/7: 大纲生成", total=None)
+        # 阶段 N+1: 大纲（不确定进度，序列数动态计算）
+        outline_stage = analyze_stage + 1
+        task3 = progress.add_task(f"阶段 {outline_stage}/{total_stages}: 大纲生成", total=None)
 
         def update_outline_progress(done: int, total: int, desc: str):
             if total > 0:
-                progress.update(task3, total=total, completed=done, description=f"阶段 3/7: {desc}")
+                progress.update(task3, total=total, completed=done, description=f"阶段 {outline_stage}/{total_stages}: {desc}")
             else:
-                progress.update(task3, description=f"阶段 3/7: {desc}")
+                progress.update(task3, description=f"阶段 {outline_stage}/{total_stages}: {desc}")
 
         with silent_console():
             generate_outline(material_id, progress_callback=update_outline_progress, provider=provider)
         progress.remove_task(task3)
 
-        # 阶段 4: 世界观
-        task4 = progress.add_task("阶段 4/7: 世界观提取", total=1)
+        # 阶段 N+2: 世界观
+        world_stage = outline_stage + 1
+        task4 = progress.add_task(f"阶段 {world_stage}/{total_stages}: 世界观提取", total=1)
         with silent_console():
             generate_worldbuilding(material_id, provider=provider)
         progress.update(task4, completed=1)
         progress.remove_task(task4)
 
-        # 阶段 5: 人物
-        task5 = progress.add_task("阶段 5/7: 人物提取", total=1)
+        # 阶段 N+3: 人物
+        char_stage = world_stage + 1
+        task5 = progress.add_task(f"阶段 {char_stage}/{total_stages}: 人物提取", total=1)
         with silent_console():
             generate_characters(material_id, provider=provider)
         progress.update(task5, completed=1)
         progress.remove_task(task5)
 
-        # 阶段 6: 标签
-        task6 = progress.add_task("阶段 6/7: 标签生成", total=1)
+        # 阶段 N+4: 标签
+        tags_stage = char_stage + 1
+        task6 = progress.add_task(f"阶段 {tags_stage}/{total_stages}: 标签生成", total=1)
         with silent_console():
             generate_tags(material_id, provider=provider)
         progress.update(task6, completed=1)
         progress.remove_task(task6)
 
-        # 阶段 7: 精调
-        task7 = progress.add_task("阶段 7/7: 数据精调", total=1)
+        # 阶段 N+5: 精调
+        refine_stage = tags_stage + 1
+        task7 = progress.add_task(f"阶段 {refine_stage}/{total_stages}: 数据精调", total=1)
         with silent_console():
             if not refine(material_id):
                 console.print("[red]精调失败，终止流水线[/red]")
@@ -394,6 +431,8 @@ def cmd_full(
     table.add_column("阶段", style="cyan")
     table.add_column("状态", style="green")
     table.add_row("入库", "✓")
+    if use_window:
+        table.add_row("总体评估", "✓")
     table.add_row("章级分析", "✓")
     table.add_row("大纲", "✓")
     table.add_row("世界观", "✓")
