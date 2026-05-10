@@ -263,6 +263,16 @@ def _retry_wait(retry_state):
     return wait
 
 
+def _format_prefix(context: str | None) -> str:
+    """格式化日志前缀：[material_id] 批次部分"""
+    if not context:
+        return ""
+    if " " in context:
+        parts = context.split(" ", 1)
+        return f"[{parts[0]}] {parts[1]} "
+    return f"[{context}] "
+
+
 def call_llm(
     system_prompt: str,
     user_prompt: str,
@@ -389,7 +399,7 @@ def call_llm(
             "request_id": request_id,
         }
 
-        prefix = f"[{context}] " if context else ""
+        prefix = _format_prefix(context)
         if usage:
             _api_stats["tokens_total"] += usage.total_tokens
             detail["input_tokens"] = usage.prompt_tokens
@@ -432,7 +442,7 @@ def call_llm(
         except json.JSONDecodeError as e:
             if attempt < max_json_retries:
                 new_max = min(effective_max_tokens * 2, 65536)
-                prefix = f"[{context}] " if context else ""
+                prefix = _format_prefix(context)
                 logger.warning(
                     f"{prefix}[JSON] 解析失败（max_tokens={effective_max_tokens}），"
                     f"加大到 {new_max}，重试 {attempt+1}/{max_json_retries}"
@@ -441,13 +451,13 @@ def call_llm(
             else:
                 _api_stats["errors"] += 1
                 elapsed = time.monotonic() - _outer_start
-                prefix = f"[{context}] " if context else ""
+                prefix = _format_prefix(context)
                 logger.error(f"{prefix}[JSON] 解析最终失败 ({elapsed:.1f}s): {e}")
                 raise
         except Exception as e:
             _api_stats["errors"] += 1
             elapsed = time.monotonic() - _outer_start
             error_tag = _classify_error(e)
-            prefix = f"[{context}] " if context else ""
+            prefix = _format_prefix(context)
             logger.error(f"{prefix}{error_tag} API 失败 ({elapsed:.1f}s): {type(e).__name__}: {e}")
             raise
