@@ -141,7 +141,7 @@ def generate_worldbuilding(material_id, provider: str | None = None) -> bool:
 
     title = meta.get("name", material_id)
     word_count = meta.get("word_count", "?")
-    status = meta.get("status", "?")
+    status = meta.get("status", "raw")
 
     # 读取章节索引获取章数
     chapter_index_file = novel_dir / "chapter_index.yaml"

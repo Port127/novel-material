@@ -101,7 +101,7 @@ def import_material(source_path):
 
     index[new_id] = {
         "name": meta.get("name", source_path.name),
-        "status": meta.get("status", "imported"),
+        "status": meta.get("status", "raw"),
         "path": f"data/novels/{new_id}",
         "imported_at": meta.get("imported_at")
     }

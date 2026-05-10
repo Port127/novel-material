@@ -426,7 +426,7 @@ def generate_outline(material_id, progress_callback: Callable[[int, int, str], N
 
     title = meta.get("name", material_id)
     word_count = meta.get("word_count", "?")
-    status = meta.get("status", "?")
+    status = meta.get("status", "raw")
 
     # 读取章节索引
     chapter_index_file = novel_dir / "chapter_index.yaml"

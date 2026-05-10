@@ -69,7 +69,11 @@ _SYSTEM_PROMPT = """你是专业的小说分析助手，负责对每章内容生
 11. hook_type：章末钩子类型（必填），可选：悬念钩子/反转钩子/情感钩子/信息钩子/危机钩子/无钩子
 
 滑动窗口字段（仅当提供了前章上下文时）：
-- tension_change：张力变化方向（上升/持平/下降）
+- tension_change：张力变化方向，必须根据前章张力值计算（重要）：
+  - 前章张力 > 当前张力 → "下降"
+  - 前章张力 < 当前张力 → "上升"
+  - 前章张力 = 当前张力 → "持平"
+  注意：tension_level 与 tension_change 必须一致
 - emotion_transition：情感过渡描述（10-50字）
 - plot_progress：情节进度描述（20-100字）"""
 
@@ -236,7 +240,6 @@ _BATCH_JSON_SCHEMA = """{
 }
 
 关键：chapter 字段必须是输入中的实际章节号（如 171、172），绝对不能用序号（如 1、2、3）"""
-
 
 def build_sliding_window_context(
     chapter_num: int,
@@ -495,11 +498,11 @@ def analyze_chapters_batch(
 
     avg_chars_per_ch = total_chars // max(n, 1)
     batch_nums = [ch_info["chapter"] for ch_info in batch_info]
-    batch_range = f"{min(batch_nums)}-{max(batch_nums)}"
+    batch_range = f"#{min(batch_nums)}-{max(batch_nums)}"
 
     # 打印批次输入统计（DEBUG 级别）
     prefix = f"[{material_id}] " if material_id else ""
-    logger.debug(f"{prefix}批次[{batch_range}] 开始: {total_chars} 字符 ×{n}章")
+    logger.debug(f"{prefix}批次{batch_range} 开始: {total_chars} 字符 ×{n}章")
 
     combined = ("\n\n" + "=" * 30 + "\n\n").join(blocks)
 
@@ -543,7 +546,7 @@ def analyze_chapters_batch(
         config,
         max_tokens_override=n * 1500,
         timeout_override=config["llm"].get("analyze_timeout"),
-        context=f"{material_id} 批次[{batch_range}]",
+        context=f"{material_id} 批次{batch_range}",
         thinking_budget=thinking_budget,
         temperature_override=temperature_override,
     )
@@ -588,13 +591,13 @@ def analyze_chapters_batch(
 
     if missing_count > 0:
         logger.warning(
-            f"{prefix}批次[{batch_range}] 章节号错位: 期望 {sorted(expected_chapters)}，"
+            f"{prefix}批次{batch_range} 章节号错位: 期望 {sorted(expected_chapters)}，"
             f"实际 {sorted(returned_chapters)}，缺失 {missing}"
         )
 
     if extra:
         logger.warning(
-            f"{prefix}批次[{batch_range}] 章节号错位: 返回了非期望章节号 {extra}（期望 {sorted(expected_chapters)}）"
+            f"{prefix}批次{batch_range} 章节号错位: 返回了非期望章节号 {extra}（期望 {sorted(expected_chapters)}）"
         )
 
     # 每章输出统计
@@ -609,7 +612,7 @@ def analyze_chapters_batch(
     # 输出批次质量摘要
     tension_range = f"{min(tension_values)}-{max(tension_values)}" if tension_values else "?"
     logger.info(
-        f"{prefix}批次[{batch_range}] 完成: 返回 {returned_count}/{n} 章 | "
+        f"{prefix}批次{batch_range} 完成: 返回 {returned_count}/{n} 章 | "
         f"摘要={avg_summary_len}字 | 张力={tension_range} | "
         f"API {api_elapsed:.1f}s | 解析 {parse_elapsed:.2f}s"
     )
@@ -878,7 +881,7 @@ def chapter_analyze(
 
     title = meta.get("name", material_id)
     word_count = meta.get("word_count", "?")
-    status = meta.get("status", "?")
+    status = meta.get("status", "raw")
 
     with open(novel_dir / "chapter_index.yaml", "r", encoding="utf-8") as f:
         chapter_index = yaml.safe_load(f)
@@ -920,7 +923,7 @@ def chapter_analyze(
     rate_limit = config["llm"].get("rate_limit_seconds", 1)
     batch_size = _get_batch_size(config)
 
-    # 滑动窗口模式：禁用批量处理（每章上下文不同）
+    # 滑动窗口模式：禁用批量处理（每章需要前章结果作为上下文）
     if use_window and batch_size > 1:
         logger.info(f"[{material_id}] 滑动窗口模式禁用批量处理，改为逐章分析")
         batch_size = 1
@@ -1033,7 +1036,7 @@ def chapter_analyze(
         for ch_info in batch:
             ch_num = ch_info["chapter"]
             result = batch_results.get(ch_num)
-            window_context = None  # 显式初始化，避免作用域问题
+            window_context = None
 
             if result is None:
                 # 批量失败或缺漏，改用单章分析
@@ -1147,7 +1150,7 @@ def chapter_analyze(
         if not progress_callback:
             finish_reason = get_last_call_finish_reason()
             logger.info(
-                f"[{material_id}] 批次#{batch_idx + 1} 完成: {batch_elapsed:.1f}s | "
+                f"[{material_id}] [批次 {batch_idx + 1}/{n_batches}] 完成: {batch_elapsed:.1f}s | "
                 f"返回 {len(batch_results)}/{len(batch)} 章 | "
                 f"降级 {batch_downgrades} 次 | 错误 {batch_errors} 次 | "
                 f"finish={finish_reason}"

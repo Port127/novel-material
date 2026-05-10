@@ -330,7 +330,7 @@ def run_evaluation(
 
     title = meta.get("name", material_id)
     word_count = meta.get("word_count", "?")
-    status = meta.get("status", "?")
+    status = meta.get("status", "raw")
 
     # 加载章节索引（检查文件存在性）
     chapter_index_file = novel_dir / "chapter_index.yaml"
@@ -390,7 +390,7 @@ def run_evaluation(
     for batch_num in pending_batches:
         sample_chapters = batches.get(batch_num, [])
         if not sample_chapters:
-            logger.warning(f"[{material_id}] 批次 {batch_num} 无样本章节")
+            logger.warning(f"[{material_id}] 批次#{batch_num} 无样本章节")
             continue
 
         batch_start = time.monotonic()
@@ -410,7 +410,7 @@ def run_evaluation(
                 tracker,
             )
         except Exception as e:
-            logger.error(f"[{material_id}] 批次 {batch_num} 评估失败: {e}")
+            logger.error(f"[{material_id}] 批次#{batch_num} 评估失败: {e}")
             tracker.stop_spinner()
             return False
 
@@ -441,12 +441,12 @@ def run_evaluation(
 
         finish_reason = get_last_call_finish_reason()
         logger.info(
-            f"[{material_id}] 批次{batch_num} 完成: {batch_elapsed:.1f}s | "
+            f"[{material_id}] 批次#{batch_num} 完成: {batch_elapsed:.1f}s | "
             f"tokens {tracker._tokens_in}/{tracker._tokens_out} | finish={finish_reason}"
         )
 
         if progress_callback:
-            progress_callback(len(completed_batches), 5, f"批次{batch_num}完成")
+            progress_callback(len(completed_batches), 5, f"批次#{batch_num}完成")
 
         # 批次间等待（避免速率限制）
         rate_limit = config["llm"].get("rate_limit_seconds", 1)

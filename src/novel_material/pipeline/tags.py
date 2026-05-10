@@ -59,7 +59,7 @@ def generate_tags(material_id, provider: str | None = None) -> bool:
 
     title = meta.get("name", material_id)
     word_count = meta.get("word_count", "?")
-    status = meta.get("status", "?")
+    status = meta.get("status", "raw")
     genre = meta.get("genre", [])
     genre_primary = genre[0] if genre else "其他"
     genre_secondary = genre[1] if len(genre) > 1 else None
