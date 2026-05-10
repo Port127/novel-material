@@ -26,8 +26,11 @@ def get_db_connection():
 
 
 def _precheck_schema(material_id: str) -> bool:
-    """同步前检查数据格式是否正确。"""
-    if validate_material(material_id, verbose=True):
+    """同步前检查数据格式是否正确（跳过标签字典校验）。
+
+    标签不在字典不影响数据完整性，同步后可通过 tags-manage 审核。
+    """
+    if validate_material(material_id, verbose=True, skip_tags=True):
         logger.info(f"Schema 预检通过: {material_id}")
         return True
 

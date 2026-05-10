@@ -455,7 +455,13 @@ def validate_evaluation(material_id: str) -> list[str]:
 
 # 综合入口
 
-def validate_material(material_id: str, verbose: bool = True, start_ch: int | None = None, end_ch: int | None = None) -> bool:
+def validate_material(
+    material_id: str,
+    verbose: bool = True,
+    start_ch: int | None = None,
+    end_ch: int | None = None,
+    skip_tags: bool = False,
+) -> bool:
     """对指定素材运行所有校验，返回 True 表示全部通过。
 
     参数：
@@ -463,35 +469,48 @@ def validate_material(material_id: str, verbose: bool = True, start_ch: int | No
         verbose: 是否输出详细信息
         start_ch: 起始章节号（可选，仅校验指定范围）
         end_ch: 结束章节号（可选）
+        skip_tags: 跳过标签字典校验（用于同步场景，标签不在字典不影响数据完整性）
     """
     all_errors: list[str] = []
 
-    # meta/tags 校验不受范围限制，章节校验应用范围过滤
-    checks = [
+    # 核心结构校验（必须通过）
+    core_checks = [
         ("meta.yaml 结构校验", lambda m: validate_meta(m)),
         ("chapters.yaml 结构校验", lambda m: validate_chapters(m, start_ch=start_ch, end_ch=end_ch)),
+    ]
+
+    # 标签字典校验（可选跳过）
+    tag_checks = [
         ("小说级标签校验", validate_novel_tags),
-        ("总体评估校验", validate_evaluation),  # 可选文件校验
         ("章节标签字段校验", lambda m: validate_chapter_tags(m, start_ch=start_ch, end_ch=end_ch)),
     ]
+
+    # 可选文件校验
+    optional_checks = [
+        ("总体评估校验", validate_evaluation),
+    ]
+
+    checks = core_checks + ([] if skip_tags else tag_checks) + optional_checks
 
     for label, fn in checks:
         errs = fn(material_id)
         if verbose:
             if errs:
                 print(f"  ✗ {label}：{len(errs)} 个错误")
-                for e in errs:
+                for e in errs[:5]:  # 只显示前 5 个错误
                     print(f"      {e}")
+                if len(errs) > 5:
+                    print(f"      ... 共 {len(errs)} 个错误")
             else:
                 print(f"  ✓ {label}")
         all_errors.extend(errs)
 
     passed = len(all_errors) == 0
     if verbose:
-        if passed:
-            print(f"\nSchema 校验通过：{material_id}")
+        if skip_tags:
+            print(f"\nSchema 校验（已跳过标签校验）：{material_id} {'通过' if passed else '失败'}")
         else:
-            print(f"\nSchema 校验失败：{len(all_errors)} 个错误 [{material_id}]")
+            print(f"\nSchema 校验{'通过' if passed else '失败'}：{material_id}")
 
     return passed
 
