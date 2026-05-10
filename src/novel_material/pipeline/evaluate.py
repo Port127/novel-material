@@ -258,7 +258,7 @@ def evaluate_batch(
             config,
             max_tokens_override=1500,
             timeout_override=config["llm"].get("other_timeout", 120),
-            context=f"{material_id} 评估#批次{batch_num}",
+            context=f"{material_id} 批次#{batch_num}",
         )
         tracker.record_api_call(success=True)
 
