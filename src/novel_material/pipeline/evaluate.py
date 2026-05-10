@@ -296,6 +296,7 @@ def run_evaluation(
     material_id: str,
     provider: str | None = None,
     progress_callback: Callable[[int, int, str], None] | None = None,
+    silent: bool = False,
 ) -> bool:
     """执行总体评估流程。
 
@@ -310,6 +311,7 @@ def run_evaluation(
         material_id：素材 ID
         provider：LLM 服务商名称（可选）
         progress_callback：进度回调函数
+        silent：禁止内部打印（用于 Rich Progress 上下文）
 
     返回：
         True 表示成功，False 表示失败
@@ -381,6 +383,7 @@ def run_evaluation(
         stage_name="总体评估",
         material_id=material_id,
         novel_info={"name": title, "chapter_count": total_chapters, "word_count": word_count},
+        silent=silent,
     )
     tracker.print_header()
 

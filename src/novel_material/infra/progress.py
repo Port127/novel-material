@@ -114,12 +114,14 @@ class StageTracker:
         stage_num: int = 0,
         material_id: str = None,
         novel_info: dict = None,
+        silent: bool = False,
     ):
         self.total_stages = total_stages
         self.stage_name = stage_name
         self.stage_num = stage_num
         self.material_id = material_id
         self.novel_info = novel_info or {}
+        self.silent = silent
         self.stage_start = time.monotonic()
         self.wall_start = time.monotonic()
         self.api_calls = 0
@@ -202,6 +204,8 @@ class StageTracker:
         sys.stdout.flush()
 
     def start_spinner(self, msg: str = "LLM 调用中") -> None:
+        if self.silent:
+            return
         pause_console_logging()
         self._stop_spinner.clear()
         self._spinner_thread = threading.Thread(
@@ -222,6 +226,8 @@ class StageTracker:
             self.api_errors += 1
 
     def print_header(self) -> None:
+        if self.silent:
+            return
         # 显示小说基本信息
         if self.novel_info:
             title = self.novel_info.get("name", self.material_id or "未知")

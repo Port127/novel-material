@@ -167,7 +167,7 @@ def cmd_evaluate(
             progress.update(task, completed=done, description=f"总体评估: {desc}")
 
         with silent_console():
-            success = run_evaluation(material_id, provider=provider, progress_callback=update_progress)
+            success = run_evaluation(material_id, provider=provider, progress_callback=update_progress, silent=True)
 
     if success:
         console.print("[green]总体评估完成[/green]")
@@ -360,7 +360,7 @@ def cmd_full(
                 progress.update(task_eval, completed=done, description=f"总体评估: {desc}")
 
             with silent_console():
-                success = run_evaluation(material_id, provider=provider, progress_callback=update_eval_progress)
+                success = run_evaluation(material_id, provider=provider, progress_callback=update_eval_progress, silent=True)
             if not success:
                 console.print("[red]总体评估失败，终止流水线[/red]")
                 raise typer.Exit(1)
