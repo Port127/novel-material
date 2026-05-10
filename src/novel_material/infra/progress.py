@@ -316,6 +316,10 @@ class PipelineRunner:
     """流水线运行器。"""
 
     def __init__(self, name: str, total_stages: int, novel_dir: Path = None, material_id: str = None, novel_info: dict = None):
+        # 延迟导入避免循环依赖（llm.py 已导入 progress.get_pipeline_logger）
+        from novel_material.infra.llm import clear_call_details
+        clear_call_details()  # 每次流水线启动时清理历史调用记录
+
         self.name = name
         self.total_stages = total_stages
         self.wall_start = time.monotonic()

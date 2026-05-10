@@ -139,12 +139,23 @@ def _setup_search_logger() -> logging.Logger:
 # ============================================================================
 
 def pause_console_logging() -> None:
-    """暂停控制台日志输出（用于进度条显示期间）。"""
-    if _PIPELINE_HANDLER:
-        _PIPELINE_HANDLER.setLevel(logging.CRITICAL + 1)
+    """暂停控制台日志输出（用于进度条显示期间）。
+
+    临时移除 handler 以避免与 spinner 线程的 stdout 竞态条件。
+    """
+    global _PIPELINE_HANDLER
+    if _PIPELINE_HANDLER is None:
+        return
+    logger = logging.getLogger("pipeline")
+    if _PIPELINE_HANDLER in logger.handlers:
+        logger.removeHandler(_PIPELINE_HANDLER)
 
 
 def resume_console_logging() -> None:
     """恢复控制台日志输出。"""
-    if _PIPELINE_HANDLER:
-        _PIPELINE_HANDLER.setLevel(get_effective_level())
+    global _PIPELINE_HANDLER
+    if _PIPELINE_HANDLER is None:
+        return
+    logger = logging.getLogger("pipeline")
+    if _PIPELINE_HANDLER not in logger.handlers:
+        logger.addHandler(_PIPELINE_HANDLER)

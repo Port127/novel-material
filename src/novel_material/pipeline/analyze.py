@@ -23,10 +23,10 @@ from pathlib import Path
 from collections.abc import Callable
 
 from novel_material.infra.config import NOVELS_DIR, update_meta_status, get_settings
-from novel_material.infra.llm import load_config, call_llm, truncate_to_tokens, get_last_call_finish_reason
+from novel_material.infra.llm import load_config, call_llm, truncate_to_tokens, get_last_call_finish_reason, get_call_details
 from novel_material.validation.quality import run_quality_check, get_short_summary_chapters
 from novel_material.validation.pacing_normalize import normalize_pacing
-from novel_material.infra.progress import get_pipeline_logger
+from novel_material.infra.progress import get_pipeline_logger, PipelineRunner, save_run_history
 from novel_material.infra.constants import TENSION_CHANGE_VALUES
 from novel_material.validation.schema import validate_chapter_tags_fields
 from novel_material.pipeline.evaluate import load_evaluation
@@ -961,6 +961,9 @@ def chapter_analyze(
     # ETA 估算：记录处理开始时间（跳过已完成章节后的真正起点）
     eta_start_time = time.monotonic() if pending else None
 
+    # PipelineRunner 用于记录运行历史（仅在有待处理章节时创建）
+    runner = None
+
     if not pending:
         if progress_callback:
             progress_callback(total, total, "所有章节已完成")
@@ -973,8 +976,17 @@ def chapter_analyze(
         else:
             logger.info(f"[{material_id}] 待分析: {len(pending)} 章，批量大小: {batch_size}，共 {n_batches} 批次")
 
-    for batch_idx, batch_start in enumerate(range(0, len(pending), batch_size)):
-        batch = pending[batch_start:batch_start + batch_size]
+        # 创建 PipelineRunner 记录运行历史
+        runner = PipelineRunner(
+            name="章级分析",
+            total_stages=n_batches,
+            novel_dir=novel_dir,
+            material_id=material_id,
+            novel_info={"name": title, "chapter_count": chapter_count, "word_count": word_count}
+        )
+
+    for batch_idx, batch_start_idx in enumerate(range(0, len(pending), batch_size)):
+        batch = pending[batch_start_idx:batch_start_idx + batch_size]
         first_ch = batch[0]["chapter"]
         last_ch = batch[-1]["chapter"]
 
@@ -990,6 +1002,8 @@ def chapter_analyze(
         batch_errors = 0
         batch_downgrades = 0
         batch_api_calls = 0
+        # 记录 call_details 基准（用于计算增量）
+        call_details_base_len = len(get_call_details())
 
         # 批量分析
         batch_results: dict[int, dict] = {}
@@ -1110,6 +1124,26 @@ def chapter_analyze(
         batch_elapsed = time.monotonic() - batch_start_time
         total_downgrades += batch_downgrades
         total_batch_errors += batch_errors
+
+        # 计算批次 tokens 增量
+        call_details = get_call_details()
+        batch_tokens_in = 0
+        batch_tokens_out = 0
+        for detail in call_details[call_details_base_len:]:
+            batch_tokens_in += detail.get("input_tokens", 0)
+            batch_tokens_out += detail.get("output_tokens", 0)
+
+        # 记录批次完成（用于 run_history）
+        if runner:
+            runner.record_stage_complete(
+                stage_name=f"批次{batch_idx + 1}",
+                elapsed=batch_elapsed,
+                api_calls=batch_api_calls,
+                api_errors=batch_errors,
+                tokens_in=batch_tokens_in,
+                tokens_out=batch_tokens_out
+            )
+
         if not progress_callback:
             finish_reason = get_last_call_finish_reason()
             logger.info(
@@ -1120,7 +1154,7 @@ def chapter_analyze(
             )
 
         # 批次间等待（避免触发速率限制）
-        if batch_start + batch_size < len(pending):
+        if batch_start_idx + batch_size < len(pending):
             time.sleep(rate_limit)
 
     if progress_callback:
@@ -1179,6 +1213,10 @@ def chapter_analyze(
             raise ValueError(f"章级分析质量校验未通过（已重试 {max_summary_retries} 次）：{material_id}")
 
     update_meta_status(material_id, "analyzed")
+
+    # 保存运行历史
+    if runner:
+        runner.save_history(status="success")
 
     return True
 

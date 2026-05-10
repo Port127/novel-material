@@ -18,9 +18,9 @@ from collections.abc import Callable
 from collections import Counter
 
 from novel_material.infra.config import NOVELS_DIR
-from novel_material.infra.llm import load_config, call_llm, get_last_call_finish_reason
+from novel_material.infra.llm import load_config, call_llm, get_last_call_finish_reason, get_call_details
 from novel_material.pipeline.loader import load_chapters_data, build_summary_pool
-from novel_material.infra.progress import get_pipeline_logger
+from novel_material.infra.progress import get_pipeline_logger, PipelineRunner
 
 logger = get_pipeline_logger()
 
@@ -438,6 +438,16 @@ def generate_outline(material_id, progress_callback: Callable[[int, int, str], N
         chapter_index = yaml.safe_load(f) or []
     chapter_count = len(chapter_index)
 
+    # 创建 PipelineRunner 记录运行历史（移到读取 chapter_count 之后）
+    runner = PipelineRunner(
+        name="大纲生成",
+        total_stages=3,  # 前提提炼 + 幕序列划分 + beats生成
+        novel_dir=novel_dir,
+        material_id=material_id,
+        novel_info={"name": title, "chapter_count": chapter_count, "word_count": word_count}
+    )
+    wall_start = time.monotonic()
+
     # 输出小说基本信息
     logger.info(f"[{material_id}] 小说: {title} | {chapter_count} 章 | {word_count} 字 | 状态: {status}")
 
@@ -491,6 +501,9 @@ def generate_outline(material_id, progress_callback: Callable[[int, int, str], N
 
 返回 JSON 格式如上。"""
 
+    # 记录前提提炼阶段开始前的 call_details 基准长度（用于增量计算）
+    premise_base_len = len(get_call_details())
+
     result = {}
     try:
         result = call_llm(system_prompt_premise, user_prompt_premise, config, timeout_override=config["llm"]["outline_timeout"], context=f"{material_id} 前提提炼")
@@ -520,6 +533,22 @@ def generate_outline(material_id, progress_callback: Callable[[int, int, str], N
         yaml.dump(meta, f, allow_unicode=True, default_flow_style=False)
 
     logger.info(f"[{material_id}] 已生成前提: {meta['premise']}")
+
+    # 记录前提提炼阶段完成（使用增量计算）
+    premise_elapsed = time.monotonic() - wall_start
+    call_details = get_call_details()
+    premise_tokens_in = sum(d.get("input_tokens", 0) for d in call_details[premise_base_len:])
+    premise_tokens_out = sum(d.get("output_tokens", 0) for d in call_details[premise_base_len:])
+    runner.record_stage_complete(
+        stage_name="前提提炼",
+        elapsed=premise_elapsed,
+        api_calls=1,
+        api_errors=0 if "premise" in result else 1,
+        tokens_in=premise_tokens_in,
+        tokens_out=premise_tokens_out
+    )
+    wall_start = time.monotonic()  # 重置计时起点
+
     time.sleep(rate_limit)
 
     # ── 第二轮：生成幕 + 序列（不含 beats）（断点续传 + 容错）──
@@ -527,7 +556,19 @@ def generate_outline(material_id, progress_callback: Callable[[int, int, str], N
     acts = _load_acts_temp(outline_dir)
     if acts and any(act.get("sequences") for act in acts):
         logger.info(f"[{material_id}] 断点续传：加载已完成的幕/序列划分")
+        # 断点续传：记录占位阶段（标记为已跳过）
+        runner.record_stage_complete(
+            stage_name="幕序列划分(断点续传)",
+            elapsed=0.0,
+            api_calls=0,
+            api_errors=0,
+            tokens_in=0,
+            tokens_out=0
+        )
+        wall_start = time.monotonic()  # 重置计时起点
     else:
+        # 记录幕序列划分阶段开始前的 call_details 基准长度（用于增量计算）
+        acts_base_len = len(get_call_details())
         acts = []
         logger.info(f"[{material_id}] 生成幕/序列结构（共 {chapter_count} 章）...")
         try:
@@ -545,6 +586,21 @@ def generate_outline(material_id, progress_callback: Callable[[int, int, str], N
         # 立即保存幕/序列划分中间结果（增量写入）
         _save_acts_temp(outline_dir, acts)
         logger.info(f"[{material_id}] 已保存幕/序列划分中间结果")
+
+        # 记录幕序列划分阶段完成（使用增量计算）
+        acts_elapsed = time.monotonic() - wall_start
+        call_details = get_call_details()
+        acts_tokens_in = sum(d.get("input_tokens", 0) for d in call_details[acts_base_len:])
+        acts_tokens_out = sum(d.get("output_tokens", 0) for d in call_details[acts_base_len:])
+        runner.record_stage_complete(
+            stage_name="幕序列划分",
+            elapsed=acts_elapsed,
+            api_calls=1,
+            api_errors=0 if acts else 1,
+            tokens_in=acts_tokens_in,
+            tokens_out=acts_tokens_out
+        )
+        wall_start = time.monotonic()  # 重置计时起点
 
     # ── 第三轮：逐序列生成 beats（每个序列容错，断点续传）──
     total_sequences = sum(len(act.get("sequences", [])) for act in acts)
@@ -570,6 +626,9 @@ def generate_outline(material_id, progress_callback: Callable[[int, int, str], N
         progress_callback(len(completed_seqs), total_sequences, f"逐序列生成 beats（共 {total_sequences} 个）")
     else:
         logger.info(f"[{material_id}] 逐序列生成 beats（共 {total_sequences} 个序列）...")
+
+    # 记录 beats 生成前的 call_details 基准长度（用于增量计算）
+    beats_base_len = len(get_call_details())
 
     beats_data = []
     seq_global = 0
@@ -667,6 +726,20 @@ def generate_outline(material_id, progress_callback: Callable[[int, int, str], N
             f"张力范围 {min(tension_vals)}-{max(tension_vals)}"
         )
 
+    # 记录 beats 生成阶段完成（汇总所有序列，使用增量计算）
+    beats_elapsed = time.monotonic() - wall_start
+    call_details = get_call_details()
+    beats_tokens_in = sum(d.get("input_tokens", 0) for d in call_details[beats_base_len:])
+    beats_tokens_out = sum(d.get("output_tokens", 0) for d in call_details[beats_base_len:])
+    runner.record_stage_complete(
+        stage_name=f"Beats生成({total_sequences}序列)",
+        elapsed=beats_elapsed,
+        api_calls=total_sequences,
+        api_errors=failed_sequences,
+        tokens_in=beats_tokens_in,
+        tokens_out=beats_tokens_out
+    )
+
     # ── 写入输出文件 ──
 
     # _index.yaml
@@ -717,6 +790,9 @@ def generate_outline(material_id, progress_callback: Callable[[int, int, str], N
         f"[{material_id}] 大纲生成完成: {len(acts)}幕, {total_sequences}序列, {len(beats_data)}节拍"
         + (f" ({failed_sequences}序列失败)" if failed_sequences > 0 else "")
     )
+
+    # 保存运行历史
+    runner.save_history(status="success")
 
     return True
 

@@ -18,9 +18,9 @@ from collections import Counter
 from collections.abc import Callable
 
 from novel_material.infra.config import NOVELS_DIR
-from novel_material.infra.llm import load_config, call_llm, get_last_call_finish_reason
+from novel_material.infra.llm import load_config, call_llm, get_last_call_finish_reason, get_call_details
 from novel_material.pipeline.loader import load_chapters_data, build_summary_pool
-from novel_material.infra.progress import get_pipeline_logger
+from novel_material.infra.progress import get_pipeline_logger, PipelineRunner
 
 logger = get_pipeline_logger()
 
@@ -504,6 +504,16 @@ def generate_characters(material_id, progress_callback: Callable[[int, int, str]
     # 输出小说基本信息
     logger.info(f"[{material_id}] 小说: {title} | {chapter_count} 章 | {word_count} 字 | 状态: {status}")
 
+    # 创建 PipelineRunner 记录运行历史
+    runner = PipelineRunner(
+        name="人物提取",
+        total_stages=3,  # 核心/配角/次要三层
+        novel_dir=novel_dir,
+        material_id=material_id,
+        novel_info={"name": title, "chapter_count": chapter_count, "word_count": word_count}
+    )
+    wall_start = time.monotonic()
+
     # 加载章节数据并统计出场人物
     chapters_data = load_chapters_data(novel_dir)
     appearance_stats = _extract_appearance_stats(chapters_data) if chapters_data else {}
@@ -553,6 +563,7 @@ def generate_characters(material_id, progress_callback: Callable[[int, int, str]
 
     # ── 第一层：核心人物（>=50章）──
     new_core_count = 0
+    core_base_len = len(get_call_details())  # 记录核心阶段开始前的 call_details 基准长度
     if core_candidates:
         if progress_callback:
             progress_callback(0, total_batches, f"提取核心人物 ({len(core_candidates)} 人)")
@@ -597,6 +608,21 @@ def generate_characters(material_id, progress_callback: Callable[[int, int, str]
                 })
 
         logger.info(f"[{material_id}] 核心人物: 保存 {new_core_count} 人")
+
+        # 记录核心人物阶段完成（使用增量计算）
+        core_elapsed = time.monotonic() - wall_start
+        call_details = get_call_details()
+        core_tokens_in = sum(d.get("input_tokens", 0) for d in call_details[core_base_len:])
+        core_tokens_out = sum(d.get("output_tokens", 0) for d in call_details[core_base_len:])
+        runner.record_stage_complete(
+            stage_name=f"核心人物({len(core_candidates)}人)",
+            elapsed=core_elapsed,
+            api_calls=1,
+            api_errors=0 if new_core_count > 0 else 1,
+            tokens_in=core_tokens_in,
+            tokens_out=core_tokens_out
+        )
+        wall_start = time.monotonic()
     else:
         logger.info(f"[{material_id}] 无核心人物候选人（>= {CHARACTER_THRESHOLDS['core']} 章）")
 
@@ -605,6 +631,7 @@ def generate_characters(material_id, progress_callback: Callable[[int, int, str]
 
     # ── 第二层：配角（10-49章）──
     new_supporting_count = 0
+    supporting_base_len = len(get_call_details())  # 记录配角阶段开始前的 call_details 基准长度
     if supporting_candidates:
         if progress_callback:
             progress_callback(1, total_batches, f"提取配角 ({len(supporting_candidates)} 人)")
@@ -644,6 +671,21 @@ def generate_characters(material_id, progress_callback: Callable[[int, int, str]
                 })
 
         logger.info(f"[{material_id}] 配角: 保存 {new_supporting_count} 人")
+
+        # 记录配角阶段完成（使用增量计算）
+        supporting_elapsed = time.monotonic() - wall_start
+        call_details = get_call_details()
+        supporting_tokens_in = sum(d.get("input_tokens", 0) for d in call_details[supporting_base_len:])
+        supporting_tokens_out = sum(d.get("output_tokens", 0) for d in call_details[supporting_base_len:])
+        runner.record_stage_complete(
+            stage_name=f"配角({len(supporting_candidates)}人)",
+            elapsed=supporting_elapsed,
+            api_calls=1,
+            api_errors=0 if new_supporting_count > 0 else 1,
+            tokens_in=supporting_tokens_in,
+            tokens_out=supporting_tokens_out
+        )
+        wall_start = time.monotonic()
     else:
         logger.info(f"[{material_id}] 无配角候选人（>= {CHARACTER_THRESHOLDS['supporting']} 章）")
 
@@ -652,6 +694,7 @@ def generate_characters(material_id, progress_callback: Callable[[int, int, str]
 
     # ── 第三层：次要人物（5-9章）──
     new_minor_count = 0
+    minor_base_len = len(get_call_details())  # 记录次要阶段开始前的 call_details 基准长度
     if minor_candidates:
         if progress_callback:
             progress_callback(2, total_batches, f"提取次要人物 ({len(minor_candidates)} 人)")
@@ -691,6 +734,20 @@ def generate_characters(material_id, progress_callback: Callable[[int, int, str]
                 })
 
         logger.info(f"[{material_id}] 次要人物: 保存 {new_minor_count} 人")
+
+        # 记录次要人物阶段完成（使用增量计算）
+        minor_elapsed = time.monotonic() - wall_start
+        call_details = get_call_details()
+        minor_tokens_in = sum(d.get("input_tokens", 0) for d in call_details[minor_base_len:])
+        minor_tokens_out = sum(d.get("output_tokens", 0) for d in call_details[minor_base_len:])
+        runner.record_stage_complete(
+            stage_name=f"次要人物({len(minor_candidates)}人)",
+            elapsed=minor_elapsed,
+            api_calls=1,
+            api_errors=0 if new_minor_count > 0 else 1,
+            tokens_in=minor_tokens_in,
+            tokens_out=minor_tokens_out
+        )
     else:
         logger.info(f"[{material_id}] 无次要人物候选人（>= {CHARACTER_THRESHOLDS['minor']} 章）")
 
@@ -737,6 +794,9 @@ def generate_characters(material_id, progress_callback: Callable[[int, int, str]
         f"  次要: {char_index['minor_count']}\n"
         f"  关系: {len(unique_relationships)} 条"
     )
+
+    # 保存运行历史
+    runner.save_history(status="success")
 
     return True
 

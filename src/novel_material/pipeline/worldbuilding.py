@@ -15,9 +15,9 @@ from pathlib import Path
 from collections import Counter
 
 from novel_material.infra.config import NOVELS_DIR
-from novel_material.infra.llm import load_config, call_llm, get_last_call_finish_reason
+from novel_material.infra.llm import load_config, call_llm, get_last_call_finish_reason, get_call_details, clear_call_details
 from novel_material.pipeline.loader import load_chapters_data, build_summary_pool
-from novel_material.infra.progress import get_pipeline_logger
+from novel_material.infra.progress import get_pipeline_logger, save_run_history
 
 logger = get_pipeline_logger()
 
@@ -122,6 +122,9 @@ def generate_worldbuilding(material_id, provider: str | None = None) -> bool:
         material_id: 素材 ID
         provider: 服务商名称（可选，不指定则使用默认配置）
     """
+    # 清理历史调用记录（避免累积前序流水线的 tokens）
+    clear_call_details()
+
     novel_dir = NOVELS_DIR / material_id
     if not novel_dir.exists():
         logger.error(f"[{material_id}] 小说目录不存在: {novel_dir}")
@@ -150,6 +153,8 @@ def generate_worldbuilding(material_id, provider: str | None = None) -> bool:
 
     # 输出小说基本信息
     logger.info(f"[{material_id}] 小说: {title} | {chapter_count} 章 | {word_count} 字 | 状态: {status}")
+
+    wall_start = time.monotonic()
 
     # 加载章节数据并聚合统计（新增）
     chapters_data = load_chapters_data(novel_dir)
@@ -281,6 +286,20 @@ def generate_worldbuilding(material_id, provider: str | None = None) -> bool:
         f"  地理区域: {wb_index['region_count']} 个\n"
         f"  势力: {wb_index['faction_count']} 个\n"
         f"  历史事件: {wb_index['lore_items']} 个"
+    )
+
+    # 保存运行历史
+    elapsed = time.monotonic() - wall_start
+    call_details = get_call_details()
+    tokens_in = sum(d.get("input_tokens", 0) for d in call_details)
+    tokens_out = sum(d.get("output_tokens", 0) for d in call_details)
+    api_calls = len(call_details)
+    save_run_history(
+        novel_dir=novel_dir,
+        pipeline_name="世界观提取",
+        stage_times=[{"name": "世界观提取", "elapsed_sec": elapsed, "api_calls": api_calls, "api_errors": 0 if result else 1, "tokens_in": tokens_in, "tokens_out": tokens_out}],
+        total_elapsed=elapsed,
+        status="success"
     )
 
     return True
