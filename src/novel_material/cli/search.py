@@ -49,7 +49,7 @@ def cmd_character(
     limit: int = typer.Option(10, "--limit", "-l", help="返回数量"),
 ):
     """检索人物。"""
-    results = search_characters(name=name, archetype=archetype, role=role, limit=limit)
+    results = search_characters(name_query=name, archetype=archetype, role=role, limit=limit)
 
     if not results:
         console.print("[yellow]未找到匹配结果[/yellow]")
@@ -113,7 +113,7 @@ def cmd_world(
     limit: int = typer.Option(5, "--limit", "-l", help="返回数量"),
 ):
     """检索世界观设定。"""
-    results = search_worldbuilding(keyword=keyword, dimension=dimension, limit=limit)
+    results = search_worldbuilding(query=keyword, entity_type=dimension, limit=limit)
 
     if not results:
         console.print("[yellow]未找到匹配结果[/yellow]")
