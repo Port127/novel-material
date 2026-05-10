@@ -7,7 +7,7 @@
 4. 输出 evaluation.yaml
 
 特性：
-- 断点续传：使用 meta/evaluation_progress.yaml 记录进度
+- 断点续传：使用 _evaluation_progress.yaml 记录进度
 - 样本策略：复用 loader.py 的分层采样逻辑
 """
 import sys
@@ -128,7 +128,7 @@ def load_evaluation_progress(material_id: str) -> dict:
         dict: 包含 completed_batches、stage_summaries 等字段
     """
     novel_dir = NOVELS_DIR / material_id
-    progress_file = novel_dir / "meta" / "evaluation_progress.yaml"
+    progress_file = novel_dir / "_evaluation_progress.yaml"
 
     if not progress_file.exists():
         return {
@@ -146,10 +146,7 @@ def load_evaluation_progress(material_id: str) -> dict:
 def save_evaluation_progress(material_id: str, progress: dict) -> None:
     """保存评估进度。"""
     novel_dir = NOVELS_DIR / material_id
-    meta_dir = novel_dir / "meta"
-    meta_dir.mkdir(exist_ok=True)
-
-    progress_file = meta_dir / "evaluation_progress.yaml"
+    progress_file = novel_dir / "_evaluation_progress.yaml"
     progress["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
 
     with open(progress_file, "w", encoding="utf-8") as f:
@@ -164,7 +161,7 @@ def load_evaluation(material_id: str) -> dict | None:
     返回：
         dict | None：评估结果，如果不存在则返回 None
     """
-    eval_file = NOVELS_DIR / material_id / "meta" / "evaluation.yaml"
+    eval_file = NOVELS_DIR / material_id / "evaluation.yaml"
     if not eval_file.exists():
         return None
     with open(eval_file, "r", encoding="utf-8") as f:
@@ -472,9 +469,7 @@ def run_evaluation(
         "evaluation_timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
 
-    meta_dir = novel_dir / "meta"
-    meta_dir.mkdir(exist_ok=True)
-    evaluation_file = meta_dir / "evaluation.yaml"
+    evaluation_file = novel_dir / "evaluation.yaml"
 
     with open(evaluation_file, "w", encoding="utf-8") as f:
         yaml.dump(evaluation, f, allow_unicode=True, default_flow_style=False)
@@ -482,7 +477,7 @@ def run_evaluation(
     logger.info(f"[{material_id}] 评估完成，已写入: {evaluation_file}")
 
     # 删除进度文件
-    progress_file = meta_dir / "evaluation_progress.yaml"
+    progress_file = novel_dir / "_evaluation_progress.yaml"
     if progress_file.exists():
         progress_file.unlink()
 

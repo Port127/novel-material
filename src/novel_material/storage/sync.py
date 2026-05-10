@@ -1,9 +1,8 @@
 """数据库同步：把本地 YAML 文件同步到 PostgreSQL。
 
-职责边界：
-- 本模块只负责数据同步，不负责数据修复
-- 如果检测到质量问题，抛出 QualityCheckError 让上层处理
-- 上层可选择调用 pipeline.analyze.repair_short_summaries 修复后重试
+自动修复：
+- 检测到 summary 长度不足时会自动调用修复接口重试
+- 修复成功后继续同步，失败则返回 False
 """
 import os
 import sys
@@ -20,9 +19,15 @@ from novel_material.infra.config import NOVELS_DIR
 from novel_material.infra.progress import get_pipeline_logger
 from novel_material.validation.schema import validate_material
 from novel_material.validation.quality import get_short_summary_chapters
+from novel_material.pipeline.analyze import repair_short_summaries
 
 logger = get_pipeline_logger()
 DATABASE_URL = os.getenv("DATABASE_URL")
+
+
+class DatabaseConfigError(Exception):
+    """数据库配置错误（如 DATABASE_URL 未设置）。"""
+    pass
 
 
 class QualityCheckError(Exception):
@@ -31,23 +36,30 @@ class QualityCheckError(Exception):
     Attributes:
         material_id: 素材 ID
         short_chapters: summary 长度不足的章节列表
-        other_errors: 其他错误描述
     """
 
-    def __init__(self, material_id: str, short_chapters: list[int] = None, other_errors: list[str] = None):
+    def __init__(self, material_id: str, short_chapters: list[int] = None):
         self.material_id = material_id
         self.short_chapters = short_chapters or []
-        self.other_errors = other_errors or []
         msg = f"Schema 预检失败: {material_id}"
         if short_chapters:
             msg += f"（{len(short_chapters)} 章 summary 长度不足）"
-        if other_errors:
-            msg += f"（{len(other_errors)} 个其他错误）"
         super().__init__(msg)
 
 
+class SchemaValidationError(Exception):
+    """Schema 校验失败（非 summary 问题，无法自动修复）。"""
+    pass
+
+
 def get_db_connection():
-    """获取数据库连接。"""
+    """获取数据库连接。
+
+    Raises:
+        DatabaseConfigError: DATABASE_URL 未设置
+    """
+    if not DATABASE_URL:
+        raise DatabaseConfigError("DATABASE_URL 环境变量未设置")
     conn = psycopg2.connect(DATABASE_URL)
     conn.autocommit = False
     return conn
@@ -62,7 +74,7 @@ def _precheck_schema(material_id: str, verbose: bool = True) -> None:
 
     Raises:
         QualityCheckError: 检查失败，包含可修复的章节列表
-        ValueError: 检查失败且无法修复（非 summary 问题）
+        SchemaValidationError: 检查失败且无法修复（非 summary 问题）
     """
     if validate_material(material_id, verbose=verbose, skip_tags=True):
         logger.info(f"Schema 预检通过: {material_id}")
@@ -77,7 +89,51 @@ def _precheck_schema(material_id: str, verbose: bool = True) -> None:
     else:
         # 不是 summary 问题，无法自动修复
         logger.error(f"Schema 预检失败（非 summary 问题），无法自动修复: {material_id}")
-        raise ValueError(f"Schema 预检失败（非 summary 问题），中止同步: {material_id}")
+        raise SchemaValidationError(f"Schema 预检失败（非 summary 问题），中止同步: {material_id}")
+
+
+def _execute_sync(conn, novel_dir: Path, material_id: str) -> bool:
+    """执行同步操作（内部函数，消除重复代码）。
+
+    参数：
+        conn: 数据库连接
+        novel_dir: 小说目录
+        material_id: 素材 ID
+
+    返回：
+        True 表示成功，False 表示失败
+    """
+    try:
+        _sync_meta(conn, novel_dir, material_id)
+        _sync_chapters(conn, novel_dir, material_id)
+        _sync_outline(conn, novel_dir, material_id)
+        _sync_characters(conn, novel_dir, material_id)
+        _sync_worldbuilding(conn, novel_dir, material_id)
+        conn.commit()
+        logger.info(f"同步完成: {material_id}")
+        return True
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"同步失败，已回滚: {e}")
+        return False
+
+
+def _do_sync_with_connection(novel_dir: Path, material_id: str) -> bool:
+    """获取连接并执行同步（内部函数）。
+
+    返回：
+        True 表示成功，False 表示失败
+    """
+    try:
+        conn = get_db_connection()
+    except DatabaseConfigError as e:
+        logger.error(str(e))
+        return False
+
+    try:
+        return _execute_sync(conn, novel_dir, material_id)
+    finally:
+        conn.close()
 
 
 def sync_novel(material_id: str, provider: str | None = None, use_window: bool = False) -> bool:
@@ -90,62 +146,45 @@ def sync_novel(material_id: str, provider: str | None = None, use_window: bool =
 
     返回：
         True 表示成功，False 表示失败（需人工干预）
-
-    Raises:
-        ValueError: 无法自动修复的问题
     """
-    from novel_material.pipeline.analyze import repair_short_summaries
-
     novel_dir = NOVELS_DIR / material_id
     if not novel_dir.exists():
         logger.warning(f"跳过: 目录不存在 {novel_dir}")
         return False
 
-    # 尝试同步，最多重试 2 次（首次 + 修复后）
-    max_attempts = 2
-    for attempt in range(max_attempts):
+    # 预检
+    try:
+        _precheck_schema(material_id, verbose=True)
+    except QualityCheckError as e:
+        # 尝试修复
+        logger.info(f"[{material_id}] 自动修复 {len(e.short_chapters)} 章...")
+        success, repaired, total = repair_short_summaries(
+            material_id,
+            short_chapters=e.short_chapters,
+            provider=provider,
+            use_window=use_window,
+        )
+        if not success:
+            logger.warning(f"[{material_id}] 修复失败（成功率 < 80%），需人工干预")
+            return False
+
+        # 修复成功，再次预检
+        logger.info(f"[{material_id}] 修复成功: {repaired}/{total} 章")
         try:
-            # 只有首次 verbose=True，后续静默避免刷屏
-            _precheck_schema(material_id, verbose=(attempt == 0))
+            _precheck_schema(material_id, verbose=True)
+        except QualityCheckError:
+            # 修复后仍有问题
+            remaining = get_short_summary_chapters(material_id)
+            logger.warning(f"[{material_id}] 修复后仍有 {len(remaining)} 章 summary 长度不足，需人工干预")
+            return False
+        except SchemaValidationError:
+            return False
 
-            # 校验通过，执行同步
-            conn = get_db_connection()
-            try:
-                _sync_meta(conn, novel_dir, material_id)
-                _sync_chapters(conn, novel_dir, material_id)
-                _sync_outline(conn, novel_dir, material_id)
-                _sync_characters(conn, novel_dir, material_id)
-                _sync_worldbuilding(conn, novel_dir, material_id)
-                conn.commit()
-                logger.info(f"同步完成: {material_id}")
-                return True
-            except Exception as e:
-                conn.rollback()
-                logger.error(f"同步失败，已回滚: {e}")
-                raise
-            finally:
-                conn.close()
+    except SchemaValidationError:
+        return False
 
-        except QualityCheckError as e:
-            if attempt >= max_attempts - 1:
-                # 已是最后一次尝试，不再修复
-                logger.error(f"修复后仍失败: {material_id}")
-                return False
-
-            # 尝试修复
-            logger.info(f"[{material_id}] 自动修复 {len(e.short_chapters)} 章...")
-            success, repaired, total = repair_short_summaries(
-                material_id,
-                short_chapters=e.short_chapters,
-                provider=provider,
-                use_window=use_window,
-            )
-            if not success:
-                logger.warning(f"[{material_id}] 修复失败（成功率不足），需人工干预")
-                return False
-            logger.info(f"[{material_id}] 修复成功: {repaired}/{total} 章")
-
-    return False
+    # 预检通过，执行同步
+    return _do_sync_with_connection(novel_dir, material_id)
 
 
 def _sync_meta(conn, novel_dir, material_id):
@@ -606,8 +645,12 @@ def _sync_worldbuilding(conn, novel_dir, material_id):
     logger.info(f"已同步世界观实体: {synced} 个")
 
 
-def sync_all() -> int:
+def sync_all(provider: str | None = None, use_window: bool = False) -> int:
     """同步所有小说到数据库。
+
+    参数：
+        provider: LLM 服务商（用于修复时的参数传递）
+        use_window: 是否使用滑动窗口（用于修复时的参数传递）
 
     返回：
         成功同步的素材数量
@@ -619,7 +662,7 @@ def sync_all() -> int:
     success_count = 0
     for novel_dir in sorted(NOVELS_DIR.iterdir()):
         if novel_dir.is_dir() and novel_dir.name.startswith("nm_"):
-            if sync_novel(novel_dir.name):
+            if sync_novel(novel_dir.name, provider=provider, use_window=use_window):
                 success_count += 1
 
     return success_count

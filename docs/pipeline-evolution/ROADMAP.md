@@ -45,7 +45,7 @@
 
 ### 输出
 
-文件：`data/novels/{material_id}/meta/evaluation.yaml`
+文件：`data/novels/{material_id}/evaluation.yaml`
 
 ```yaml
 schema_version: "2.1"

@@ -1,6 +1,6 @@
 # evaluation.yaml schema
 # 总体评估结果
-# 路径: data/novels/{material_id}/meta/evaluation.yaml
+# 路径: data/novels/{material_id}/evaluation.yaml
 #
 # 由 pipeline/evaluate.py 生成
 # 用于为章级分析提供全局上下文（阶段二输入）

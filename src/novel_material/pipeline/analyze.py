@@ -1202,8 +1202,6 @@ def repair_short_summaries(
     返回：
         tuple: (是否成功修复, 成功章数, 总需修复章数)
     """
-    from novel_material.validation.quality import get_short_summary_chapters
-
     if short_chapters is None:
         short_chapters = get_short_summary_chapters(material_id)
 

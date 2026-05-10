@@ -94,7 +94,7 @@ def cmd_analyze(
 
     # 滑动窗口模式：检查 evaluation.yaml 是否存在
     if use_window:
-        eval_file = novel_dir / "meta" / "evaluation.yaml"
+        eval_file = novel_dir / "evaluation.yaml"
         if not eval_file.exists():
             console.print("[red]错误：滑动窗口模式需要先运行总体评估[/red]")
             console.print("[red]请执行：nm pipeline evaluate {material_id}[/red]")
@@ -521,7 +521,7 @@ def cmd_continue(
     # 滑动窗口模式：检查 evaluation.yaml 是否存在
     if use_window:
         novel_dir = NOVELS_DIR / material_id
-        eval_file = novel_dir / "meta" / "evaluation.yaml"
+        eval_file = novel_dir / "evaluation.yaml"
         if not eval_file.exists():
             console.print("[red]错误：滑动窗口模式需要先运行总体评估[/red]")
             console.print("[red]请执行：nm pipeline evaluate {material_id}[/red]")

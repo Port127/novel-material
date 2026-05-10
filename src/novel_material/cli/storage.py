@@ -91,7 +91,7 @@ def cmd_sync(
             console=console,
         ) as progress:
             task = progress.add_task("同步全部素材...", total=None)
-            count = sync_all()
+            count = sync_all(provider=provider, use_window=use_window)
             progress.update(task, completed=True)
 
         console.print(f"[green]已同步 {count} 个素材[/green]")

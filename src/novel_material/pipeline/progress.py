@@ -96,7 +96,7 @@ def get_pipeline_progress(material_id: str) -> dict:
     return {
         "exists": True,
         "ingested": (novel_dir / "chapter_index.yaml").exists(),
-        "evaluation": (novel_dir / "meta" / "evaluation.yaml").exists(),
+        "evaluation": (novel_dir / "evaluation.yaml").exists(),
         "analyzed": analyzed,
         "outline": (novel_dir / "outline" / "_index.yaml").exists(),
         "worldbuilding": (novel_dir / "worldbuilding" / "_index.yaml").exists(),

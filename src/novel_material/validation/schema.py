@@ -428,7 +428,7 @@ def validate_chapter_tags(material_id: str, start_ch: int | None = None, end_ch:
 
 def validate_evaluation(material_id: str) -> list[str]:
     """校验 evaluation.yaml（可选文件），返回错误描述列表。"""
-    eval_file = NOVELS_DIR / material_id / "meta" / "evaluation.yaml"
+    eval_file = NOVELS_DIR / material_id / "evaluation.yaml"
     if not eval_file.exists():
         return []  # 可选文件，不存在不报错
 
