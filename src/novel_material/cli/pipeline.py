@@ -2,7 +2,7 @@
 import yaml
 import typer
 from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
+from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn, TimeRemainingColumn
 from rich.table import Table
 
 from novel_material.infra.config import NOVELS_DIR
@@ -41,11 +41,14 @@ def cmd_ingest(
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        TimeRemainingColumn(),
         console=console,
     ) as progress:
-        task = progress.add_task(f"正在入库: {file_path}", total=None)
+        task = progress.add_task(f"正在入库: {file_path}", total=1)
         material_id = ingest_file(file_path)
-        progress.update(task, completed=True)
+        progress.update(task, completed=1)
 
     if material_id:
         console.print(f"[green]入库成功[/green] material_id: [cyan]{material_id}[/cyan]")
@@ -118,6 +121,7 @@ def cmd_analyze(
         TextColumn("[progress.description]{task.description}"),
         BarColumn(),
         TaskProgressColumn(),
+        TimeRemainingColumn(),
         console=console,
     ) as progress:
         task = progress.add_task(f"章级分析: {material_id}{range_desc}{window_desc}", total=range_total)
@@ -154,6 +158,7 @@ def cmd_evaluate(
         TextColumn("[progress.description]{task.description}"),
         BarColumn(),
         TaskProgressColumn(),
+        TimeRemainingColumn(),
         console=console,
     ) as progress:
         task = progress.add_task(f"总体评估: {material_id}", total=5)
@@ -182,6 +187,7 @@ def cmd_outline(
         TextColumn("[progress.description]{task.description}"),
         BarColumn(),
         TaskProgressColumn(),
+        TimeRemainingColumn(),
         console=console,
     ) as progress:
         task = progress.add_task(f"生成大纲: {material_id}", total=None)
@@ -207,11 +213,14 @@ def cmd_worldbuilding(
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        TimeRemainingColumn(),
         console=console,
     ) as progress:
-        task = progress.add_task(f"提取世界观: {material_id}", total=None)
+        task = progress.add_task(f"提取世界观: {material_id}", total=1)
         generate_worldbuilding(material_id, provider=provider)
-        progress.update(task, completed=True)
+        progress.update(task, completed=1)
 
     console.print("[green]世界观提取完成[/green]")
 
@@ -225,11 +234,18 @@ def cmd_characters(
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        TimeRemainingColumn(),
         console=console,
     ) as progress:
-        task = progress.add_task(f"提取人物: {material_id}", total=None)
-        generate_characters(material_id, provider=provider)
-        progress.update(task, completed=True)
+        task = progress.add_task(f"提取人物: {material_id}", total=2)
+
+        def update_chars_progress(done: int, total: int, desc: str):
+            progress.update(task, completed=done, description=f"提取人物: {desc}")
+
+        with silent_console():
+            generate_characters(material_id, progress_callback=update_chars_progress, provider=provider)
 
     console.print("[green]人物提取完成[/green]")
 
@@ -243,11 +259,14 @@ def cmd_tags(
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        TimeRemainingColumn(),
         console=console,
     ) as progress:
-        task = progress.add_task(f"生成标签: {material_id}", total=None)
+        task = progress.add_task(f"生成标签: {material_id}", total=1)
         generate_tags(material_id, provider=provider)
-        progress.update(task, completed=True)
+        progress.update(task, completed=1)
 
     console.print("[green]标签生成完成[/green]")
 
@@ -260,14 +279,18 @@ def cmd_refine(
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        TimeRemainingColumn(),
         console=console,
     ) as progress:
-        task = progress.add_task(f"精调数据: {material_id}", total=None)
-        if not refine(material_id):
-            progress.update(task, completed=True)
-            console.print("[red]精调失败[/red]")
-            raise typer.Exit(1)
-        progress.update(task, completed=True)
+        task = progress.add_task(f"精调数据: {material_id}", total=1)
+        with silent_console():
+            if not refine(material_id):
+                progress.update(task, completed=1)
+                console.print("[red]精调失败[/red]")
+                raise typer.Exit(1)
+        progress.update(task, completed=1)
 
     console.print("[green]精调完成[/green]")
 
@@ -312,6 +335,7 @@ def cmd_full(
         TextColumn("[progress.description]{task.description}"),
         BarColumn(),
         TaskProgressColumn(),
+        TimeRemainingColumn(),
         console=console,
     ) as progress:
 
@@ -405,10 +429,13 @@ def cmd_full(
 
         # 阶段 N+3: 人物
         char_stage = world_stage + 1
-        task5 = progress.add_task(f"阶段 {char_stage}/{total_stages}: 人物提取", total=1)
+        task5 = progress.add_task(f"阶段 {char_stage}/{total_stages}: 人物提取", total=2)
+
+        def update_chars_progress_full(done: int, total: int, desc: str):
+            progress.update(task5, completed=done, description=f"阶段 {char_stage}/{total_stages}: {desc}")
+
         with silent_console():
-            generate_characters(material_id, provider=provider)
-        progress.update(task5, completed=1)
+            generate_characters(material_id, progress_callback=update_chars_progress_full, provider=provider)
         progress.remove_task(task5)
 
         # 阶段 N+4: 标签
@@ -613,22 +640,38 @@ def cmd_continue(
             progress_bar.remove_task(task2)
             current_stage += 1
 
-        # 世界观/人物/标签
-        other_stages = [
-            ("世界观", generate_worldbuilding, "worldbuilding"),
-            ("人物", generate_characters, "characters"),
-            ("标签", generate_tags, "tags"),
-        ]
+        # 世界观
+        if not progress.get("worldbuilding"):
+            console.print(f"[cyan]阶段 {current_stage}/{total_stages}: 世界观提取...[/cyan]")
+            task = progress_bar.add_task(f"阶段 {current_stage}/{total_stages}: 世界观", total=1)
+            with silent_console():
+                generate_worldbuilding(material_id, provider=provider)
+            progress_bar.update(task, completed=1)
+            progress_bar.remove_task(task)
+            current_stage += 1
 
-        for name, func, key in other_stages:
-            if not progress.get(key):
-                console.print(f"[cyan]阶段 {current_stage}/{total_stages}: {name}提取...[/cyan]")
-                task = progress_bar.add_task(f"阶段 {current_stage}/{total_stages}: {name}", total=1)
-                with silent_console():
-                    func(material_id, provider=provider)
-                progress_bar.update(task, completed=1)
-                progress_bar.remove_task(task)
-                current_stage += 1
+        # 人物（细粒度进度）
+        if not progress.get("characters"):
+            console.print(f"[cyan]阶段 {current_stage}/{total_stages}: 人物提取...[/cyan]")
+            task = progress_bar.add_task(f"阶段 {current_stage}/{total_stages}: 人物", total=2)
+
+            def update_chars_progress_continue(done: int, total: int, desc: str):
+                progress_bar.update(task, completed=done, description=f"阶段 {current_stage}/{total_stages}: {desc}")
+
+            with silent_console():
+                generate_characters(material_id, progress_callback=update_chars_progress_continue, provider=provider)
+            progress_bar.remove_task(task)
+            current_stage += 1
+
+        # 标签
+        if not progress.get("tags"):
+            console.print(f"[cyan]阶段 {current_stage}/{total_stages}: 标签生成...[/cyan]")
+            task = progress_bar.add_task(f"阶段 {current_stage}/{total_stages}: 标签", total=1)
+            with silent_console():
+                generate_tags(material_id, provider=provider)
+            progress_bar.update(task, completed=1)
+            progress_bar.remove_task(task)
+            current_stage += 1
 
         # 精调
         if not progress.get("refined"):

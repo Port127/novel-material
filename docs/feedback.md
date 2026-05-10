@@ -1,19 +1,33 @@
 # bug
-- chapters.yaml是个什么鬼？把capters文件夹下的文件统一到一个文件里面去了？做什么用的呢？
-- 执行nm pipeline continue nm_novel_20260510_y4fz的时候，没有日志，是continue没有日志还是outline没有日志？
+- ~~执行nm pipeline continue nm_novel_20260510_y4fz的时候，没有日志，是continue没有日志还是outline没有日志？~~ -> 日志明明为题，没有顺序所以没找到，加了时分秒
+- nm_novel_20260510_y4fz/characters/profiles，只创建了16个人？1300多章的小说啊，我记得之前有调整过这里的逻辑啊，而同样的问题会不会出现在outline、worldbuilding里面呢？
+- continue的时候，没有自动补全summary字数不够的问题吗？
+频率自动批准了 0 个标签
+✓ meta.yaml 结构校验
+✗ chapters.yaml 结构校验：31 个错误
+    第11章 [summary]: String should have at least 40 characters
+    第12章 [summary]: String should have at least 40 characters
+    第13章 [summary]: String should have at least 40 characters
+    第14章 [summary]: String should have at least 40 characters
+    第15章 [summary]: String should have at least 40 characters
+    ... 共 31 个错误
+✓ 总体评估校验
+Schema 校验（已跳过标签校验）：nm_novel_20260510_y4fz 失败
+数据库同步失败: Schema 预检未通过，中止同步: nm_novel_20260510_y4fz
 
 
 # 阶段行优化
-- 在docs里面建一feedback的归档文件夹，帮我把feedback.md已经解决的问题归档进去，优化一下，归档的内容，现在看上去太随意了
+- ~~在docs里面建一feedback的归档文件夹，帮我把feedback.md已经解决的问题归档进去，优化一下，归档的内容，现在看上去太随意了~~
+- ~~你看看outline阶段，进度到此时，都没有任何文件写入，难道是所有的分析都完成才写文件吗？会不会因为失败什么都没留下来？而且也没有时间预估。人物、世界观是不是也是这样？~~
+~~从 outline 阶段继续~~
+~~============================================================~~
+~~⠋ 阶段 2: 第二幕：潜龙出渊 / 京华考核与市井博弈 ━━━━━━━━━━━━━━╺━━━━━━━━━━━━━━━━━━━━━━━━━  36%~~
+
 - evaluation怎么还在用meta包住，这不奇怪吗？还是说它会有很多输出？
 - run_history.yaml又是什么东西？
 - analyze是不是太长了？
-- 你看看outline阶段，进度到此时，都没有任何文件写入，难道是所有的分析都完成才写文件吗？会不会因为失败什么都没留下来？而且也没有时间预估。人物、世界观是不是也是这样？
-从 outline 阶段继续
-============================================================
-⠋ 阶段 2: 第二幕：潜龙出渊 / 京华考核与市井博弈 ━━━━━━━━━━━━━━╺━━━━━━━━━━━━━━━━━━━━━━━━━  36%
-- 评估一下当前的标签体系，我需要建立一个对它的全面认知
-方案 A: 把新标签加入字典（让校验通过）                                                                                                                                        
+- 评估一下当前的标签体系，我需要建立一个对它的全面认知，因为这个建议，我有点懵，为什么就要添加标签了呢？
+方案 A: 把新标签加入字典（让校验过）                                                                                                                                        
 使用 /tags-manage 审核 3411 个新标签候选 
 
 

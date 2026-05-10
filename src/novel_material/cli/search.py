@@ -79,7 +79,7 @@ def cmd_chapter(
     limit: int = typer.Option(5, "--limit", "-l", help="返回数量"),
 ):
     """检索章节摘要。"""
-    results = search_chapters(keyword=keyword, limit=limit)
+    results = search_chapters(query=keyword, limit=limit)
 
     if not results:
         console.print("[yellow]未找到匹配结果[/yellow]")

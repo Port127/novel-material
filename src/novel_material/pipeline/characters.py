@@ -26,6 +26,89 @@ logger = get_pipeline_logger()
 VALID_ROLES = ("protagonist", "antagonist", "supporting", "minor")
 
 
+# ============================================================
+# 增量写入辅助函数（断点续传支持）
+# ============================================================
+
+def _save_character_profile(profiles_dir: Path, idx: int, profile: dict, name: str) -> None:
+    """保存单个人物小传到独立文件（增量写入）。
+
+    Args:
+        profiles_dir: profiles 目录路径
+        idx: 人物序号
+        profile: 人物档案数据
+        name: 人物名称（用于生成文件名）
+    """
+    # slug 化文件名：只保留字母、数字、中文，其他替换为下划线
+    slug = re.sub(r'[^\w一-鿿]', '_', name)
+    filename = f"{slug}_{idx:03d}.yaml"
+    with open(profiles_dir / filename, "w", encoding="utf-8") as f:
+        yaml.dump(profile, f, allow_unicode=True, default_flow_style=False)
+
+
+def _load_existing_profiles(char_dir: Path) -> tuple[list, set]:
+    """加载已保存的人物小传（断点续传）。
+
+    Args:
+        char_dir: characters 目录路径
+
+    Returns:
+        tuple: (已保存的人物档案列表, 已保存的人物名称集合)
+    """
+    profiles_dir = char_dir / "profiles"
+    if not profiles_dir.exists():
+        return [], set()
+
+    existing_profiles = []
+    existing_names = set()
+
+    for f in profiles_dir.glob("*.yaml"):
+        try:
+            profile = yaml.safe_load(f.read_text(encoding="utf-8")) or {}
+            if profile.get("name"):
+                existing_profiles.append(profile)
+                existing_names.add(profile["name"])
+        except Exception:
+            continue
+
+    return existing_profiles, existing_names
+
+
+def _build_profile_from_character(ch: dict, role: str) -> dict:
+    """根据角色类型构建人物档案。
+
+    Args:
+        ch: LLM 返回的人物数据
+        role: 角色类型
+
+    Returns:
+        dict: 人物档案
+    """
+    if role in ("protagonist", "antagonist", "supporting"):
+        return {
+            "name": ch.get("name"),
+            "role": role,
+            "archetype": ch.get("archetype"),
+            "moral_spectrum": ch.get("moral_spectrum"),
+            "description": ch.get("description"),
+            "arc_summary": ch.get("arc_summary"),
+            "narrative_function": ch.get("narrative_function"),
+            "psychology": ch.get("psychology", {}),
+            "first_appearance_chapter": ch.get("first_appearance_chapter"),
+            "key_events": ch.get("key_events", [])[:10],
+            "relationships": ch.get("relationships", [])
+        }
+    else:
+        return {
+            "name": ch.get("name"),
+            "role": "minor",
+            "description": ch.get("description"),
+            "first_appearance_chapter": ch.get("first_appearance_chapter"),
+            "narrative_function": ch.get("narrative_function"),
+            "relationships": ch.get("relationships", [])
+        }
+
+
 def _extract_appearance_stats(chapters_data: list) -> dict:
     """统计章节出场人物频率。
 
@@ -275,8 +358,30 @@ def generate_characters(material_id, progress_callback: Callable[[int, int, str]
     context_chars = len(context_text)
     logger.info(f"[{material_id}] 输入: {context_chars} 字符 | {context_label}")
 
-    # ── 第一轮：核心人物（容错）──
+    # 加载已保存的人物（断点续传）
+    existing_profiles, existing_names = _load_existing_profiles(char_dir)
+    if existing_profiles:
+        logger.info(f"[{material_id}] 断点续传：已保存 {len(existing_profiles)} 个人物")
+
+    # 收集所有关系（后续去重）
+    all_relationships = []
+
+    # 收集已有人物的关系（断点续传时避免关系丢失）
+    for profile in existing_profiles:
+        profile_name = profile.get("name")
+        if not profile_name:
+            continue
+        for rel in profile.get("relationships", []):
+            all_relationships.append({
+                "from": profile_name,
+                "to": rel.get("character"),
+                "relationship": rel.get("relationship"),
+                "nature": rel.get("nature", "unknown")
+            })
+
+    # ── 第一轮：核心人物（容错，增量写入）──
     core_characters = []
+    new_core_count = 0
     try:
         if progress_callback:
             progress_callback(0, 2, "提取核心人物")
@@ -290,10 +395,43 @@ def generate_characters(material_id, progress_callback: Callable[[int, int, str]
         logger.warning(f"[{material_id}] 使用空列表继续，不中断流程")
         core_characters = []
 
+    # 核心人物立即保存（增量写入）
+    idx = len(existing_profiles)
+    for ch in core_characters:
+        name = ch.get("name")
+        if not name or name in existing_names:
+            continue  # 断点续传：跳过已存在的人物
+
+        # 验证 role 字段
+        role = ch.get("role", "supporting")
+        if role not in VALID_ROLES:
+            logger.warning(f"[{material_id}] 无效 role '{role}'，默认为 supporting")
+            role = "supporting"
+
+        profile = _build_profile_from_character(ch, role)
+        _save_character_profile(profiles_dir, idx, profile, name)
+        existing_profiles.append(profile)
+        existing_names.add(name)
+        idx += 1
+        new_core_count += 1
+
+        # 收集关系
+        for rel in ch.get("relationships", []):
+            all_relationships.append({
+                "from": name,
+                "to": rel.get("character"),
+                "relationship": rel.get("relationship"),
+                "nature": rel.get("nature", "unknown")
+            })
+
+    if new_core_count > 0:
+        logger.info(f"[{material_id}] 已保存 {new_core_count} 个核心人物")
+
     core_names = [ch.get("name") for ch in core_characters if ch.get("name")]
 
-    # ── 第二轮：次要人物（容错）──
+    # ── 第二轮：次要人物（容错，增量写入）──
     minor_characters = []
+    new_minor_count = 0
     try:
         if progress_callback:
             progress_callback(1, 2, "补充次要人物")
@@ -307,61 +445,33 @@ def generate_characters(material_id, progress_callback: Callable[[int, int, str]
         logger.warning(f"[{material_id}] 使用空列表继续，不中断流程")
         minor_characters = []
 
-    # 合并
-    all_characters = core_characters + minor_characters
+    # 次要人物立即保存（增量写入）
+    for ch in minor_characters:
+        name = ch.get("name")
+        if not name or name in existing_names:
+            continue  # 断点续传：跳过已存在的人物
 
-    # 收集所有关系（后续去重）
-    all_relationships = []
-
-    # 写入每个人物小传
-    for idx, ch in enumerate(all_characters):
-        # 验证 role 字段
-        role = ch.get("role", "minor")
-        if role not in VALID_ROLES:
-            logger.warning(f"[{material_id}] 无效 role '{role}'，默认为 minor")
-            role = "minor"
-
-        # 核心人物完整档案，次要人物精简档案
-        if role in ("protagonist", "antagonist", "supporting"):
-            profile = {
-                "name": ch.get("name"),
-                "role": role,
-                "archetype": ch.get("archetype"),
-                "moral_spectrum": ch.get("moral_spectrum"),
-                "description": ch.get("description"),
-                "arc_summary": ch.get("arc_summary"),
-                "narrative_function": ch.get("narrative_function"),
-                "psychology": ch.get("psychology", {}),
-                "first_appearance_chapter": ch.get("first_appearance_chapter"),
-                "key_events": ch.get("key_events", [])[:10],
-                "relationships": ch.get("relationships", [])
-            }
-        else:
-            profile = {
-                "name": ch.get("name"),
-                "role": "minor",
-                "description": ch.get("description"),
-                "first_appearance_chapter": ch.get("first_appearance_chapter"),
-                "narrative_function": ch.get("narrative_function"),
-                "relationships": ch.get("relationships", [])
-            }
-
-        # slug 化文件名：只保留字母、数字、中文，其他替换为下划线
-        # 添加序号避免同名人物文件冲突
-        name = ch.get("name", f"unknown_{idx}")
-        slug = re.sub(r'[^\w一-鿿]', '_', name)
-        filename = f"{slug}_{idx:03d}.yaml"
-        with open(profiles_dir / filename, "w", encoding="utf-8") as f:
-            yaml.dump(profile, f, allow_unicode=True, default_flow_style=False)
+        profile = _build_profile_from_character(ch, "minor")
+        _save_character_profile(profiles_dir, idx, profile, name)
+        existing_profiles.append(profile)
+        existing_names.add(name)
+        idx += 1
+        new_minor_count += 1
 
         # 收集关系
         for rel in ch.get("relationships", []):
             all_relationships.append({
-                "from": ch.get("name"),
+                "from": name,
                 "to": rel.get("character"),
                 "relationship": rel.get("relationship"),
                 "nature": rel.get("nature", "unknown")
             })
+
+    if new_minor_count > 0:
+        logger.info(f"[{material_id}] 已保存 {new_minor_count} 个次要人物")
+
+    # 合并所有人物（现有 + 新增）
+    all_characters = existing_profiles
 
     # 关系去重：按人物对去重（A-B 和 B-A 视为同一对）
     seen_pairs = set()

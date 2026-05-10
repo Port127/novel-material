@@ -25,6 +25,131 @@ from novel_material.infra.progress import get_pipeline_logger
 logger = get_pipeline_logger()
 
 
+# ============================================================
+# 增量写入辅助函数（断点续传支持）
+# ============================================================
+
+def _save_acts_temp(outline_dir: Path, acts: list) -> None:
+    """保存幕/序列划分中间结果到临时文件。
+
+    Args:
+        outline_dir: outline 目录路径
+        acts: 幕/序列数据列表
+    """
+    acts_temp_file = outline_dir / "acts_temp.yaml"
+    with open(acts_temp_file, "w", encoding="utf-8") as f:
+        yaml.dump({"acts": acts}, f, allow_unicode=True, default_flow_style=False)
+
+
+def _load_acts_temp(outline_dir: Path) -> list | None:
+    """加载幕/序列划分临时文件（断点续传）。
+
+    Args:
+        outline_dir: outline 目录路径
+
+    Returns:
+        acts 列表，如果不存在返回 None
+    """
+    acts_temp_file = outline_dir / "acts_temp.yaml"
+    if not acts_temp_file.exists():
+        return None
+    with open(acts_temp_file, "r", encoding="utf-8") as f:
+        data = yaml.safe_load(f) or {}
+    return data.get("acts", [])
+
+
+def _save_sequence_beats_temp(outline_dir: Path, act_num: int, seq_num: int, beats: list) -> None:
+    """保存单个序列的 beats 到临时文件。
+
+    Args:
+        outline_dir: outline 目录路径
+        act_num: 幕编号
+        seq_num: 序列编号
+        beats: beats 数据列表
+    """
+    beats_temp_dir = outline_dir / "beats_temp"
+    beats_temp_dir.mkdir(exist_ok=True)
+    beats_temp_file = beats_temp_dir / f"act{act_num}_seq{seq_num}.yaml"
+    with open(beats_temp_file, "w", encoding="utf-8") as f:
+        yaml.dump(beats, f, allow_unicode=True, default_flow_style=False)
+
+
+def _load_sequence_beats_temp(outline_dir: Path, act_num: int, seq_num: int) -> list | None:
+    """加载单个序列的 beats 临时文件（断点续传）。
+
+    Args:
+        outline_dir: outline 目录路径
+        act_num: 幕编号
+        seq_num: 序列编号
+
+    Returns:
+        beats 列表，如果不存在返回 None
+    """
+    beats_temp_file = outline_dir / "beats_temp" / f"act{act_num}_seq{seq_num}.yaml"
+    if not beats_temp_file.exists():
+        return None
+    with open(beats_temp_file, "r", encoding="utf-8") as f:
+        return yaml.safe_load(f) or []
+
+
+def _save_outline_progress(outline_dir: Path, completed_seqs: list, total_sequences: int) -> None:
+    """保存大纲进度到临时文件。
+
+    Args:
+        outline_dir: outline 目录路径
+        completed_seqs: 已完成的序列标识列表（如 ["1_1", "1_2", "2_1"]）
+        total_sequences: 总序列数
+    """
+    progress_file = outline_dir / "_progress.yaml"
+    progress_data = {
+        "completed_sequences": completed_seqs,
+        "total_sequences": total_sequences,
+        "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S")
+    }
+    with open(progress_file, "w", encoding="utf-8") as f:
+        yaml.dump(progress_data, f, allow_unicode=True, default_flow_style=False)
+
+
+def _load_outline_progress(outline_dir: Path) -> dict:
+    """加载大纲进度（断点续传）。
+
+    Args:
+        outline_dir: outline 目录路径
+
+    Returns:
+        dict: {"completed_sequences": [...], "total_sequences": int}
+    """
+    progress_file = outline_dir / "_progress.yaml"
+    if not progress_file.exists():
+        return {"completed_sequences": [], "total_sequences": 0}
+    with open(progress_file, "r", encoding="utf-8") as f:
+        return yaml.safe_load(f) or {"completed_sequences": [], "total_sequences": 0}
+
+
+def _cleanup_outline_temp_files(outline_dir: Path) -> None:
+    """清理 outline 临时文件。
+
+    Args:
+        outline_dir: outline 目录路径
+    """
+    # 清理 acts_temp.yaml
+    acts_temp = outline_dir / "acts_temp.yaml"
+    if acts_temp.exists():
+        acts_temp.unlink()
+
+    # 清理 beats_temp 目录
+    beats_temp_dir = outline_dir / "beats_temp"
+    if beats_temp_dir.exists():
+        for f in beats_temp_dir.glob("*.yaml"):
+            f.unlink()
+        beats_temp_dir.rmdir()
+
+    # 清理 _progress.yaml
+    progress_file = outline_dir / "_progress.yaml"
+    if progress_file.exists():
+        progress_file.unlink()
+
+
 def _extract_outline_stats(chapters_data: list) -> dict:
     """统计大纲相关数据：张力分布、悬念章节、章节功能。
 
@@ -397,25 +522,52 @@ def generate_outline(material_id, progress_callback: Callable[[int, int, str], N
     logger.info(f"[{material_id}] 已生成前提: {meta['premise']}")
     time.sleep(rate_limit)
 
-    # ── 第二轮：生成幕 + 序列（不含 beats）（容错）──
-    logger.info(f"[{material_id}] 生成幕/序列结构（共 {chapter_count} 章）...")
-    acts = []
-    try:
-        acts = _generate_acts_sequences(chapter_count, meta, context_text, outline_stats, config, material_id=material_id)
-        time.sleep(rate_limit)
-        # 检查返回是否有效（空列表或无序列视为失败）
-        if not acts or not any(act.get("sequences") for act in acts):
-            logger.warning(f"[{material_id}] LLM 返回空结构，使用简单划分")
+    # ── 第二轮：生成幕 + 序列（不含 beats）（断点续传 + 容错）──
+    # 检查是否已有幕/序列划分（断点续传）
+    acts = _load_acts_temp(outline_dir)
+    if acts and any(act.get("sequences") for act in acts):
+        logger.info(f"[{material_id}] 断点续传：加载已完成的幕/序列划分")
+    else:
+        acts = []
+        logger.info(f"[{material_id}] 生成幕/序列结构（共 {chapter_count} 章）...")
+        try:
+            acts = _generate_acts_sequences(chapter_count, meta, context_text, outline_stats, config, material_id=material_id)
+            time.sleep(rate_limit)
+            # 检查返回是否有效（空列表或无序列视为失败）
+            if not acts or not any(act.get("sequences") for act in acts):
+                logger.warning(f"[{material_id}] LLM 返回空结构，使用简单划分")
+                acts = generate_simple_acts(chapter_count, result.get("structure_type", "三幕式"))
+        except Exception as e:
+            logger.error(f"[{material_id}] 幕/序列生成失败: {e}")
+            logger.warning(f"[{material_id}] 使用简单划分继续，不中断流程")
             acts = generate_simple_acts(chapter_count, result.get("structure_type", "三幕式"))
-    except Exception as e:
-        logger.error(f"[{material_id}] 幕/序列生成失败: {e}")
-        logger.warning(f"[{material_id}] 使用简单划分继续，不中断流程")
-        acts = generate_simple_acts(chapter_count, result.get("structure_type", "三幕式"))
 
-    # ── 第三轮：逐序列生成 beats（每个序列容错）──
+        # 立即保存幕/序列划分中间结果（增量写入）
+        _save_acts_temp(outline_dir, acts)
+        logger.info(f"[{material_id}] 已保存幕/序列划分中间结果")
+
+    # ── 第三轮：逐序列生成 beats（每个序列容错，断点续传）──
     total_sequences = sum(len(act.get("sequences", [])) for act in acts)
+
+    # 加载已完成的序列进度（断点续传）
+    progress = _load_outline_progress(outline_dir)
+    completed_seqs = progress.get("completed_sequences", [])
+
+    # 如果已有进度，检查是否匹配当前 acts 结构
+    if completed_seqs:
+        prev_total = progress.get("total_sequences", 0)
+        if prev_total == total_sequences:
+            logger.info(f"[{material_id}] 断点续传：已完成 {len(completed_seqs)}/{total_sequences} 个序列")
+        else:
+            # 结构变化，清理临时文件并重置进度
+            logger.warning(f"[{material_id}] acts 结构变化（{prev_total}→{total_sequences}序列），清理临时文件并重置进度")
+            _cleanup_outline_temp_files(outline_dir)
+            # 重新保存 acts_temp（清理时已删除）
+            _save_acts_temp(outline_dir, acts)
+            completed_seqs = []
+
     if progress_callback:
-        progress_callback(0, total_sequences, f"逐序列生成 beats（共 {total_sequences} 个）")
+        progress_callback(len(completed_seqs), total_sequences, f"逐序列生成 beats（共 {total_sequences} 个）")
     else:
         logger.info(f"[{material_id}] 逐序列生成 beats（共 {total_sequences} 个序列）...")
 
@@ -427,6 +579,27 @@ def generate_outline(material_id, progress_callback: Callable[[int, int, str], N
         for seq in act.get("sequences", []):
             seq_global += 1
             seq_title = seq.get("title", "")
+            seq_key = f"{act['act_number']}_{seq['sequence_number']}"
+
+            # 断点续传：跳过已完成的序列
+            if seq_key in completed_seqs:
+                # 从临时文件加载已完成的 beats
+                beats = _load_sequence_beats_temp(outline_dir, act["act_number"], seq["sequence_number"]) or []
+                seq["beats"] = beats
+                for beat in beats:
+                    beats_data.append({
+                        "material_id": material_id,
+                        "act": act["act_number"],
+                        "sequence": seq["sequence_number"],
+                        "beat": beat.get("beat_number", 0),
+                        "title": beat.get("title", ""),
+                        "chapter": beat.get("chapter", 0),
+                        "description": beat.get("description", ""),
+                        "tension": beat.get("tension", 1)
+                    })
+                if not progress_callback:
+                    logger.info(f"[{material_id}] [{seq_global}/{total_sequences}] 跳过已完成: {seq_title}")
+                continue
 
             # 序列开始时的日志（非回调模式）
             if not progress_callback:
@@ -449,21 +622,34 @@ def generate_outline(material_id, progress_callback: Callable[[int, int, str], N
                 failed_sequences += 1
 
             seq["beats"] = beats
-            for beat in beats:
-                beats_data.append({
-                    "material_id": material_id,
-                    "act": act["act_number"],
-                    "sequence": seq["sequence_number"],
-                    "beat": beat["beat_number"],
-                    "title": beat.get("title", ""),
-                    "chapter": beat.get("chapter", 0),
-                    "description": beat.get("description", ""),
-                    "tension": beat.get("tension", 1)
-                })
 
-            # 进度更新：在序列完成后更新
+            # 只有成功生成 beats 才保存和标记完成
+            if beats:
+                # 立即保存该序列的 beats 到临时文件（增量写入）
+                _save_sequence_beats_temp(outline_dir, act["act_number"], seq["sequence_number"], beats)
+
+                # 更新进度记录
+                completed_seqs.append(seq_key)
+                _save_outline_progress(outline_dir, completed_seqs, total_sequences)
+
+                for beat in beats:
+                    beats_data.append({
+                        "material_id": material_id,
+                        "act": act["act_number"],
+                        "sequence": seq["sequence_number"],
+                        "beat": beat.get("beat_number", 0),
+                        "title": beat.get("title", ""),
+                        "chapter": beat.get("chapter", 0),
+                        "description": beat.get("description", ""),
+                        "tension": beat.get("tension", 1)
+                    })
+
+            # 进度更新：区分成功/失败状态
             if progress_callback:
-                progress_callback(seq_global, total_sequences, f"{act.get('name', '')} / {seq_title}")
+                if beats:
+                    progress_callback(seq_global, total_sequences, f"{act.get('name', '')} / {seq_title}")
+                else:
+                    progress_callback(seq_global, total_sequences, f"[失败] {act.get('name', '')} / {seq_title}")
 
             if seq_global < total_sequences:
                 time.sleep(rate_limit)
@@ -523,6 +709,9 @@ def generate_outline(material_id, progress_callback: Callable[[int, int, str], N
     # 空钩子网络（待 refine 阶段补充）
     with open(outline_dir / "hooks_network.yaml", "w", encoding="utf-8") as f:
         yaml.dump({"hooks": [], "subplots": []}, f, allow_unicode=True, default_flow_style=False)
+
+    # 清理临时文件
+    _cleanup_outline_temp_files(outline_dir)
 
     logger.info(
         f"[{material_id}] 大纲生成完成: {len(acts)}幕, {total_sequences}序列, {len(beats_data)}节拍"
