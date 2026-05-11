@@ -302,8 +302,9 @@ def cmd_full(
     end: int = typer.Option(None, "--end", "-e", help="结束章节号（不指定则到结尾）"),
     provider: str = typer.Option(None, "--provider", "-p", help="服务商名称"),
     use_window: bool = typer.Option(False, "--window", "-w", help="启用滑动窗口模式（自动执行总体评估）"),
+    skip_sync: bool = typer.Option(False, "--skip-sync", help="跳过数据库同步"),
 ):
-    """完整流水线：入库 → 章级分析 → 骨架分析 → 精调。
+    """完整流水线：入库 → 章级分析 → 骨架分析 → 精调 → 数据库同步。
 
     滑动窗口模式（--window）：
     - 自动执行总体评估阶段
@@ -456,6 +457,20 @@ def cmd_full(
         progress.update(task7, completed=2)
         progress.remove_task(task7)
 
+        # 数据库同步（不计入总阶段数）
+        sync_failed = False
+        if not skip_sync:
+            task_sync = progress.add_task("同步数据库", total=1)
+            with silent_console():
+                success = sync_novel(material_id, provider=provider, use_window=use_window)
+                if not success:
+                    sync_failed = True
+                    console.print("[red]数据库同步失败[/red]")
+                    console.print("[yellow]可手动执行 nm storage sync 重试[/yellow]")
+            if not sync_failed:
+                progress.update(task_sync, completed=1)
+                progress.remove_task(task_sync)
+
     # 结果表格
     # 如果指定了范围，警告后续阶段基于不完整数据
     if start is not None or end is not None:
@@ -465,9 +480,18 @@ def cmd_full(
     table.add_column("阶段", style="cyan")
     table.add_column("状态", style="green")
 
+    # 数据库同步不计入总阶段数，单独添加
+    stages = get_pipeline_stages(use_window)
+    stages.append(("数据库同步", "synced"))
+
     final_progress = get_pipeline_progress(material_id)
-    for name, key in get_pipeline_stages(use_window):
-        status = "✓ 完成" if final_progress.get(key) else "○ 未完成"
+    for name, key in stages:
+        if key == "synced" and skip_sync:
+            status = "○ 已跳过"
+        elif key == "synced" and sync_failed:
+            status = "✗ 失败"
+        else:
+            status = "✓ 完成" if final_progress.get(key) else "○ 未完成"
         table.add_row(name, status)
 
     console.print(table)

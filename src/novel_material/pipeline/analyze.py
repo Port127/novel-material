@@ -1217,6 +1217,11 @@ def chapter_analyze(
 
     update_meta_status(material_id, "analyzed")
 
+    # 章节向量化（延迟导入避免循环依赖）
+    from novel_material.storage.embedding import embed_chapters
+    logger.info(f"[{material_id}] 生成章节向量...")
+    embed_chapters(material_id)
+
     # 保存运行历史
     if runner:
         runner.save_history(status="success")
