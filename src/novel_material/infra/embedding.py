@@ -4,8 +4,8 @@ import os
 
 load_dotenv()
 
-from novel_material.infra.progress import get_pipeline_logger
-logger = get_pipeline_logger()
+from novel_material.infra.logging_config import get_embedding_logger
+logger = get_embedding_logger()
 
 
 def load_embedding_config():

@@ -15,9 +15,9 @@ import numpy as np
 
 from novel_material.infra.config import NOVELS_DIR
 from novel_material.infra.embedding import get_embedding, load_embedding_config
-from novel_material.infra.progress import get_pipeline_logger
+from novel_material.infra.logging_config import get_embedding_logger
 
-logger = get_pipeline_logger()
+logger = get_embedding_logger()
 
 _BATCH_SIZE = 20
 _RATE_LIMIT = 0.5

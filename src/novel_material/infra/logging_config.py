@@ -135,6 +135,44 @@ def _setup_search_logger() -> logging.Logger:
 
 
 # ============================================================================
+# Embedding 日志
+# ============================================================================
+
+_EMBEDDING_HANDLER: logging.StreamHandler | None = None
+
+
+def get_embedding_logger() -> logging.Logger:
+    """获取 embedding logger（独立日志文件，进程级隔离）。"""
+    return _setup_embedding_logger()
+
+
+def _setup_embedding_logger() -> logging.Logger:
+    """配置 embedding 日志记录器。"""
+    global _EMBEDDING_HANDLER
+    logger = logging.getLogger("embedding")
+    if _EMBEDDING_HANDLER is not None:
+        return logger
+
+    logger.setLevel(get_effective_level())
+    log_dir = ensure_log_dir()
+
+    log_file = log_dir / f"embedding_{time.strftime('%Y-%m-%d_%H-%M-%S')}_{os.getpid()}.log"
+    file_handler = logging.FileHandler(log_file, encoding="utf-8", mode="a", delay=True)
+    file_handler.setFormatter(
+        logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s", datefmt="%H:%M:%S")
+    )
+    file_handler.setLevel(logging.DEBUG)
+    logger.addHandler(file_handler)
+
+    _EMBEDDING_HANDLER = logging.StreamHandler(sys.stdout)
+    _EMBEDDING_HANDLER.setFormatter(logging.Formatter("%(message)s"))
+    _EMBEDDING_HANDLER.setLevel(get_effective_level())
+    logger.addHandler(_EMBEDDING_HANDLER)
+
+    return logger
+
+
+# ============================================================================
 # 控制台日志控制
 # ============================================================================
 
