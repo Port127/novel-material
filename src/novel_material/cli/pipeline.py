@@ -63,8 +63,9 @@ def cmd_analyze(
     end: int = typer.Option(None, "--end", "-e", help="结束章节号（不指定则到结尾）"),
     provider: str = typer.Option(None, "--provider", "-p", help="服务商名称（如 deepseek）"),
     use_window: bool = typer.Option(False, "--window", "-w", help="启用滑动窗口模式（需先运行 evaluate）"),
+    skip_embedding: bool = typer.Option(False, "--skip-embedding", help="跳过章节向量化"),
 ):
-    """章级分析：生成摘要、人物、标签。
+    """章级分析：生成摘要、人物、标签（可选章节向量化）。
 
     滑动窗口模式（--window）：
     - 需要先运行 `nm pipeline evaluate` 生成总体评估
@@ -137,6 +138,7 @@ def cmd_analyze(
                 progress_callback=update_progress,
                 provider=provider,
                 use_window=use_window,
+                skip_embedding=skip_embedding,
             )
 
     console.print("[green]章级分析完成[/green]")
@@ -303,6 +305,7 @@ def cmd_full(
     provider: str = typer.Option(None, "--provider", "-p", help="服务商名称"),
     use_window: bool = typer.Option(False, "--window", "-w", help="启用滑动窗口模式（自动执行总体评估）"),
     skip_sync: bool = typer.Option(False, "--skip-sync", help="跳过数据库同步"),
+    skip_embedding: bool = typer.Option(False, "--skip-embedding", help="跳过章节向量化"),
 ):
     """完整流水线：入库 → 章级分析 → 骨架分析 → 精调 → 数据库同步。
 
@@ -330,6 +333,8 @@ def cmd_full(
 
     console.print(f"[cyan]开始完整流水线{range_desc}{window_desc}[/cyan]")
     logger.info(_PIPELINE_SEPARATOR)
+
+    sync_failed = False  # 数据库同步状态（Progress 块外）
 
     with Progress(
         SpinnerColumn(),
@@ -403,6 +408,7 @@ def cmd_full(
                 progress_callback=update_progress,
                 provider=provider,
                 use_window=use_window,
+                skip_embedding=skip_embedding,
             )
         progress.remove_task(task2)
 
@@ -458,7 +464,6 @@ def cmd_full(
         progress.remove_task(task7)
 
         # 数据库同步（不计入总阶段数）
-        sync_failed = False
         if not skip_sync:
             task_sync = progress.add_task("同步数据库", total=1)
             with silent_console():
@@ -521,6 +526,7 @@ def cmd_continue(
     end: int = typer.Option(None, "--end", "-e", help="结束章节号（不指定则到结尾）"),
     provider: str = typer.Option(None, "--provider", "-p", help="服务商名称"),
     use_window: bool = typer.Option(False, "--window", "-w", help="启用滑动窗口模式（需先运行 evaluate）"),
+    skip_embedding: bool = typer.Option(False, "--skip-embedding", help="跳过章节向量化"),
 ):
     """自动从断点继续流水线。
 
@@ -615,6 +621,8 @@ def cmd_continue(
     ]
     range_total = len(chapters_in_range)
 
+    sync_failed = False  # 数据库同步状态（Progress 块外）
+
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
@@ -640,6 +648,7 @@ def cmd_continue(
                     progress_callback=update_progress,
                     provider=provider,
                     use_window=use_window,
+                    skip_embedding=skip_embedding,
                 )
             progress_bar.remove_task(task1)
             current_stage += 1
@@ -710,7 +719,6 @@ def cmd_continue(
             current_stage += 1
 
         # 数据库同步（不计入总阶段数）
-        sync_failed = False
         if not skip_sync and not progress.get("synced"):
             task7 = progress_bar.add_task(f"同步数据库", total=1)
             with silent_console():
