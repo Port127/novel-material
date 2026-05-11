@@ -862,6 +862,8 @@ def chapter_analyze(
         provider：服务商名称（可选，不指定则使用默认配置）
         use_window：是否启用滑动窗口模式（可选，默认 False）
                    启用时会加载 evaluation.yaml 和前章摘要作为上下文
+        skip_embedding：是否跳过章节向量化（可选，默认 False）
+                       设置为 True 时仅生成章级数据，不生成向量
 
     返回：
         True 表示成功，False 表示失败
