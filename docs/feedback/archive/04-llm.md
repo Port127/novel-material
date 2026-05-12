@@ -170,3 +170,36 @@ API 调用中出现降级（如 thinking 减少），但没有打印原因。
 
 ### 归档日期
 2026-05-10
+
+---
+
+## 人物提取数量过少
+
+### 问题
+nm_novel_20260510_y4fz/characters/profiles 只创建了 16 个人物，但这是一本 1300 多章的小说，人物数量不应如此少。同样的问题是否出现在 outline、worldbuilding？
+
+### 解决
+实现统计驱动的分层人物提取，基于章级分析数据累计提取主要人物和次要人物。
+
+### 相关文件
+- src/novel_material/pipeline/characters.py
+- src/novel_material/cli/pipeline.py
+
+### 归档日期
+2026-05-12
+
+---
+
+## summary 质量偏低
+
+### 问题
+分析大奉打更人时，summary 质量非常低，摘要过于简短。
+
+### 解决
+修复 summary 自动重试机制，短摘要自动重新生成直至达标。
+
+### 相关文件
+- src/novel_material/pipeline/analyze.py
+
+### 归档日期
+2026-05-12

@@ -18,6 +18,23 @@
 
 ---
 
+## continue 命令日志缺失
+
+### 问题
+执行 `nm pipeline continue nm_novel_20260510_y4fz` 时没有日志输出，无法判断是 continue 命令本身没有日志还是 outline 阶段没有日志。
+
+### 解决
+日志文件名加上时分秒便于排序，解决日志查找困难问题。
+
+### 相关文件
+- src/novel_material/infra/llm.py
+- src/novel_material/cli/pipeline.py
+
+### 归档日期
+2026-05-12
+
+---
+
 ## 日志警告缺失
 
 ### 问题
@@ -32,6 +49,23 @@
 
 ### 归档日期
 2026-05-10
+
+---
+
+## continue 命令日志缺失
+
+### 问题
+执行 `nm pipeline continue nm_novel_20260510_y4fz` 时没有日志输出，无法判断是 continue 命令本身没有日志还是 outline 阶段没有日志。
+
+### 解决
+日志文件名加上时分秒便于排序，解决日志查找困难问题。
+
+### 相关文件
+- src/novel_material/infra/llm.py
+- src/novel_material/cli/pipeline.py
+
+### 归档日期
+2026-05-12
 
 ---
 
@@ -52,6 +86,23 @@
 
 ---
 
+## continue 命令日志缺失
+
+### 问题
+执行 `nm pipeline continue nm_novel_20260510_y4fz` 时没有日志输出，无法判断是 continue 命令本身没有日志还是 outline 阶段没有日志。
+
+### 解决
+日志文件名加上时分秒便于排序，解决日志查找困难问题。
+
+### 相关文件
+- src/novel_material/infra/llm.py
+- src/novel_material/cli/pipeline.py
+
+### 归档日期
+2026-05-12
+
+---
+
 ## 日志内容只有启动信息
 
 ### 问题
@@ -66,6 +117,23 @@
 
 ### 归档日期
 2026-05-10
+
+---
+
+## continue 命令日志缺失
+
+### 问题
+执行 `nm pipeline continue nm_novel_20260510_y4fz` 时没有日志输出，无法判断是 continue 命令本身没有日志还是 outline 阶段没有日志。
+
+### 解决
+日志文件名加上时分秒便于排序，解决日志查找困难问题。
+
+### 相关文件
+- src/novel_material/infra/llm.py
+- src/novel_material/cli/pipeline.py
+
+### 归档日期
+2026-05-12
 
 ---
 
@@ -84,6 +152,23 @@
 
 ### 归档日期
 2026-05-10
+
+---
+
+## continue 命令日志缺失
+
+### 问题
+执行 `nm pipeline continue nm_novel_20260510_y4fz` 时没有日志输出，无法判断是 continue 命令本身没有日志还是 outline 阶段没有日志。
+
+### 解决
+日志文件名加上时分秒便于排序，解决日志查找困难问题。
+
+### 相关文件
+- src/novel_material/infra/llm.py
+- src/novel_material/cli/pipeline.py
+
+### 归档日期
+2026-05-12
 
 ---
 
@@ -105,6 +190,23 @@
 
 ---
 
+## continue 命令日志缺失
+
+### 问题
+执行 `nm pipeline continue nm_novel_20260510_y4fz` 时没有日志输出，无法判断是 continue 命令本身没有日志还是 outline 阶段没有日志。
+
+### 解决
+日志文件名加上时分秒便于排序，解决日志查找困难问题。
+
+### 相关文件
+- src/novel_material/infra/llm.py
+- src/novel_material/cli/pipeline.py
+
+### 归档日期
+2026-05-12
+
+---
+
 ## 日志警告缺失
 
 ### 问题
@@ -119,6 +221,23 @@
 
 ### 归档日期
 2026-05-10
+
+---
+
+## continue 命令日志缺失
+
+### 问题
+执行 `nm pipeline continue nm_novel_20260510_y4fz` 时没有日志输出，无法判断是 continue 命令本身没有日志还是 outline 阶段没有日志。
+
+### 解决
+日志文件名加上时分秒便于排序，解决日志查找困难问题。
+
+### 相关文件
+- src/novel_material/infra/llm.py
+- src/novel_material/cli/pipeline.py
+
+### 归档日期
+2026-05-12
 
 ---
 
@@ -139,6 +258,23 @@
 
 ---
 
+## continue 命令日志缺失
+
+### 问题
+执行 `nm pipeline continue nm_novel_20260510_y4fz` 时没有日志输出，无法判断是 continue 命令本身没有日志还是 outline 阶段没有日志。
+
+### 解决
+日志文件名加上时分秒便于排序，解决日志查找困难问题。
+
+### 相关文件
+- src/novel_material/infra/llm.py
+- src/novel_material/cli/pipeline.py
+
+### 归档日期
+2026-05-12
+
+---
+
 ## 日志内容只有启动信息
 
 ### 问题
@@ -153,6 +289,23 @@
 
 ### 归档日期
 2026-05-10
+
+---
+
+## continue 命令日志缺失
+
+### 问题
+执行 `nm pipeline continue nm_novel_20260510_y4fz` 时没有日志输出，无法判断是 continue 命令本身没有日志还是 outline 阶段没有日志。
+
+### 解决
+日志文件名加上时分秒便于排序，解决日志查找困难问题。
+
+### 相关文件
+- src/novel_material/infra/llm.py
+- src/novel_material/cli/pipeline.py
+
+### 归档日期
+2026-05-12
 
 ---
 
@@ -171,6 +324,23 @@
 
 ### 归档日期
 2026-05-10
+
+---
+
+## continue 命令日志缺失
+
+### 问题
+执行 `nm pipeline continue nm_novel_20260510_y4fz` 时没有日志输出，无法判断是 continue 命令本身没有日志还是 outline 阶段没有日志。
+
+### 解决
+日志文件名加上时分秒便于排序，解决日志查找困难问题。
+
+### 相关文件
+- src/novel_material/infra/llm.py
+- src/novel_material/cli/pipeline.py
+
+### 归档日期
+2026-05-12
 
 ---
 
@@ -191,6 +361,23 @@
 
 ---
 
+## continue 命令日志缺失
+
+### 问题
+执行 `nm pipeline continue nm_novel_20260510_y4fz` 时没有日志输出，无法判断是 continue 命令本身没有日志还是 outline 阶段没有日志。
+
+### 解决
+日志文件名加上时分秒便于排序，解决日志查找困难问题。
+
+### 相关文件
+- src/novel_material/infra/llm.py
+- src/novel_material/cli/pipeline.py
+
+### 归档日期
+2026-05-12
+
+---
+
 ## 日志警告缺失
 
 ### 问题
@@ -205,6 +392,23 @@
 
 ### 归档日期
 2026-05-10
+
+---
+
+## continue 命令日志缺失
+
+### 问题
+执行 `nm pipeline continue nm_novel_20260510_y4fz` 时没有日志输出，无法判断是 continue 命令本身没有日志还是 outline 阶段没有日志。
+
+### 解决
+日志文件名加上时分秒便于排序，解决日志查找困难问题。
+
+### 相关文件
+- src/novel_material/infra/llm.py
+- src/novel_material/cli/pipeline.py
+
+### 归档日期
+2026-05-12
 
 ---
 
@@ -225,6 +429,23 @@
 
 ---
 
+## continue 命令日志缺失
+
+### 问题
+执行 `nm pipeline continue nm_novel_20260510_y4fz` 时没有日志输出，无法判断是 continue 命令本身没有日志还是 outline 阶段没有日志。
+
+### 解决
+日志文件名加上时分秒便于排序，解决日志查找困难问题。
+
+### 相关文件
+- src/novel_material/infra/llm.py
+- src/novel_material/cli/pipeline.py
+
+### 归档日期
+2026-05-12
+
+---
+
 ## 日志内容只有启动信息
 
 ### 问题
@@ -239,6 +460,23 @@
 
 ### 归档日期
 2026-05-10
+
+---
+
+## continue 命令日志缺失
+
+### 问题
+执行 `nm pipeline continue nm_novel_20260510_y4fz` 时没有日志输出，无法判断是 continue 命令本身没有日志还是 outline 阶段没有日志。
+
+### 解决
+日志文件名加上时分秒便于排序，解决日志查找困难问题。
+
+### 相关文件
+- src/novel_material/infra/llm.py
+- src/novel_material/cli/pipeline.py
+
+### 归档日期
+2026-05-12
 
 ---
 
@@ -257,6 +495,23 @@
 
 ### 归档日期
 2026-05-10
+
+---
+
+## continue 命令日志缺失
+
+### 问题
+执行 `nm pipeline continue nm_novel_20260510_y4fz` 时没有日志输出，无法判断是 continue 命令本身没有日志还是 outline 阶段没有日志。
+
+### 解决
+日志文件名加上时分秒便于排序，解决日志查找困难问题。
+
+### 相关文件
+- src/novel_material/infra/llm.py
+- src/novel_material/cli/pipeline.py
+
+### 归档日期
+2026-05-12
 
 ---
 
@@ -278,6 +533,23 @@
 
 ---
 
+## continue 命令日志缺失
+
+### 问题
+执行 `nm pipeline continue nm_novel_20260510_y4fz` 时没有日志输出，无法判断是 continue 命令本身没有日志还是 outline 阶段没有日志。
+
+### 解决
+日志文件名加上时分秒便于排序，解决日志查找困难问题。
+
+### 相关文件
+- src/novel_material/infra/llm.py
+- src/novel_material/cli/pipeline.py
+
+### 归档日期
+2026-05-12
+
+---
+
 ## 日志警告缺失
 
 ### 问题
@@ -292,6 +564,23 @@
 
 ### 归档日期
 2026-05-10
+
+---
+
+## continue 命令日志缺失
+
+### 问题
+执行 `nm pipeline continue nm_novel_20260510_y4fz` 时没有日志输出，无法判断是 continue 命令本身没有日志还是 outline 阶段没有日志。
+
+### 解决
+日志文件名加上时分秒便于排序，解决日志查找困难问题。
+
+### 相关文件
+- src/novel_material/infra/llm.py
+- src/novel_material/cli/pipeline.py
+
+### 归档日期
+2026-05-12
 
 ---
 
@@ -312,6 +601,23 @@
 
 ---
 
+## continue 命令日志缺失
+
+### 问题
+执行 `nm pipeline continue nm_novel_20260510_y4fz` 时没有日志输出，无法判断是 continue 命令本身没有日志还是 outline 阶段没有日志。
+
+### 解决
+日志文件名加上时分秒便于排序，解决日志查找困难问题。
+
+### 相关文件
+- src/novel_material/infra/llm.py
+- src/novel_material/cli/pipeline.py
+
+### 归档日期
+2026-05-12
+
+---
+
 ## 日志内容只有启动信息
 
 ### 问题
@@ -326,6 +632,23 @@
 
 ### 归档日期
 2026-05-10
+
+---
+
+## continue 命令日志缺失
+
+### 问题
+执行 `nm pipeline continue nm_novel_20260510_y4fz` 时没有日志输出，无法判断是 continue 命令本身没有日志还是 outline 阶段没有日志。
+
+### 解决
+日志文件名加上时分秒便于排序，解决日志查找困难问题。
+
+### 相关文件
+- src/novel_material/infra/llm.py
+- src/novel_material/cli/pipeline.py
+
+### 归档日期
+2026-05-12
 
 ---
 
@@ -344,6 +667,23 @@
 
 ### 归档日期
 2026-05-10
+
+---
+
+## continue 命令日志缺失
+
+### 问题
+执行 `nm pipeline continue nm_novel_20260510_y4fz` 时没有日志输出，无法判断是 continue 命令本身没有日志还是 outline 阶段没有日志。
+
+### 解决
+日志文件名加上时分秒便于排序，解决日志查找困难问题。
+
+### 相关文件
+- src/novel_material/infra/llm.py
+- src/novel_material/cli/pipeline.py
+
+### 归档日期
+2026-05-12
 
 ---
 
@@ -375,6 +715,23 @@ API 调用日志分散在多行，信息重复：
 
 ---
 
+## continue 命令日志缺失
+
+### 问题
+执行 `nm pipeline continue nm_novel_20260510_y4fz` 时没有日志输出，无法判断是 continue 命令本身没有日志还是 outline 阶段没有日志。
+
+### 解决
+日志文件名加上时分秒便于排序，解决日志查找困难问题。
+
+### 相关文件
+- src/novel_material/infra/llm.py
+- src/novel_material/cli/pipeline.py
+
+### 归档日期
+2026-05-12
+
+---
+
 ## 日志警告缺失
 
 ### 问题
@@ -389,6 +746,23 @@ API 调用日志分散在多行，信息重复：
 
 ### 归档日期
 2026-05-10
+
+---
+
+## continue 命令日志缺失
+
+### 问题
+执行 `nm pipeline continue nm_novel_20260510_y4fz` 时没有日志输出，无法判断是 continue 命令本身没有日志还是 outline 阶段没有日志。
+
+### 解决
+日志文件名加上时分秒便于排序，解决日志查找困难问题。
+
+### 相关文件
+- src/novel_material/infra/llm.py
+- src/novel_material/cli/pipeline.py
+
+### 归档日期
+2026-05-12
 
 ---
 
@@ -409,6 +783,23 @@ API 调用日志分散在多行，信息重复：
 
 ---
 
+## continue 命令日志缺失
+
+### 问题
+执行 `nm pipeline continue nm_novel_20260510_y4fz` 时没有日志输出，无法判断是 continue 命令本身没有日志还是 outline 阶段没有日志。
+
+### 解决
+日志文件名加上时分秒便于排序，解决日志查找困难问题。
+
+### 相关文件
+- src/novel_material/infra/llm.py
+- src/novel_material/cli/pipeline.py
+
+### 归档日期
+2026-05-12
+
+---
+
 ## 日志内容只有启动信息
 
 ### 问题
@@ -423,6 +814,23 @@ API 调用日志分散在多行，信息重复：
 
 ### 归档日期
 2026-05-10
+
+---
+
+## continue 命令日志缺失
+
+### 问题
+执行 `nm pipeline continue nm_novel_20260510_y4fz` 时没有日志输出，无法判断是 continue 命令本身没有日志还是 outline 阶段没有日志。
+
+### 解决
+日志文件名加上时分秒便于排序，解决日志查找困难问题。
+
+### 相关文件
+- src/novel_material/infra/llm.py
+- src/novel_material/cli/pipeline.py
+
+### 归档日期
+2026-05-12
 
 ---
 
@@ -441,3 +849,20 @@ API 调用日志分散在多行，信息重复：
 
 ### 归档日期
 2026-05-10
+
+---
+
+## continue 命令日志缺失
+
+### 问题
+执行 `nm pipeline continue nm_novel_20260510_y4fz` 时没有日志输出，无法判断是 continue 命令本身没有日志还是 outline 阶段没有日志。
+
+### 解决
+日志文件名加上时分秒便于排序，解决日志查找困难问题。
+
+### 相关文件
+- src/novel_material/infra/llm.py
+- src/novel_material/cli/pipeline.py
+
+### 归档日期
+2026-05-12

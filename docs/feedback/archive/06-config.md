@@ -142,3 +142,37 @@ docs 目录有 RETRIEVAL_IMPROVEMENT.md 文件，需要讨论其用途。
 
 ### 归档日期
 2026-05-10
+
+---
+
+## feedback 归档功能实现
+
+### 问题
+需要一个 feedback 归档的 skill，用于个人工作流，将 docs/feedback.md 中已解决的问题归档到 docs/feedback/archive/。
+
+### 解决
+创建 feedback-archive skill，扫描删除线条目，推断相关 commit 和文件，转换为规范格式后追加到 archive 目录。
+
+### 相关文件
+- docs/feedback.md
+- docs/feedback/archive/
+- .claude/skills/feedback-archive/
+
+### 归档日期
+2026-05-12
+
+---
+
+## CLI 改动后是否需要重新打包
+
+### 问题
+CLI 改了很多东西，是否还能正常工作？是否需要重新打包？
+
+### 解决
+未定位到相关代码记录。建议执行 `nm --help` 验证 CLI 功能。
+
+### 相关文件
+- src/novel_material/cli/
+
+### 归档日期
+2026-05-12
