@@ -744,6 +744,8 @@ def _reanalyze_chapters(
 ) -> int:
     """重新分析指定章节（用于 summary 长度自动修复）。
 
+    调用后会自动合并 chapters.yaml，确保断点续传。
+
     返回成功重新分析的章节数。
     """
     novel_dir = NOVELS_DIR / material_id
@@ -819,19 +821,29 @@ def _reanalyze_chapters(
             _append_chapter(novel_dir, result)
             success_count += 1
 
+            # 进度回调（仅成功时）
+            if progress_callback:
+                progress_callback(
+                    success_count, total_to_reanalyze,
+                    f"重分析第 {ch_num} 章 ({success_count}/{total_to_reanalyze})"
+                )
+
             # 更新 done 字典（用于后续章节的窗口上下文）
             if use_window:
                 done[ch_num] = result
 
         except Exception as e:
             logger.warning(f"[{material_id}] 重新分析第 {ch_num} 章失败: {e}")
+            # 失败章节也报告进度，让用户知道处理到哪了
+            processed_count = success_count + 1  # 失败也算已处理
+            if progress_callback:
+                progress_callback(
+                    processed_count, total_to_reanalyze,
+                    f"重分析第 {ch_num} 章 [失败] ({processed_count}/{total_to_reanalyze})"
+                )
 
-        # 进度回调
-        if progress_callback:
-            progress_callback(
-                success_count, total_to_reanalyze,
-                f"重分析第 {ch_num} 章"
-            )
+    # 重分析完成后立即合并 chapters.yaml（确保断点续传）
+    _merge_chapters(novel_dir, material_id=material_id)
 
     return success_count
 
@@ -1182,6 +1194,11 @@ def chapter_analyze(
     max_summary_retries = 3
     final_passed = False
 
+    # 进度转发 wrapper（定义在循环外避免重复创建）
+    def reanalyze_progress_wrapper(done: int, total: int, desc: str):
+        if progress_callback:
+            progress_callback(done, total, desc)
+
     for retry_idx in range(max_summary_retries):
         logger.info(f"[{material_id}] 执行章级分析质量校验...")
         if run_quality_check(material_id, start_ch=start_ch, end_ch=end_ch):
@@ -1200,17 +1217,18 @@ def chapter_analyze(
             f"[{material_id}] 发现 {len(short_chapters)} 章 summary 长度不足，"
             f"自动重新分析（第 {retry_idx + 1}/{max_summary_retries} 次）"
         )
+
         success = _reanalyze_chapters(
             material_id, short_chapters,
             provider=provider,
             use_window=use_window,
             start_ch=start_ch,
             end_ch=end_ch,
-            progress_callback=progress_callback
+            progress_callback=reanalyze_progress_wrapper
         )
         if success < len(short_chapters):
             logger.warning(f"[{material_id}] 重分析部分失败：成功 {success}/{len(short_chapters)} 章")
-        _merge_chapters(novel_dir, material_id=material_id)
+        # 注：_reanalyze_chapters 内部已自动合并 chapters.yaml
 
     # 循环未通过时的最终校验
     if not final_passed:
@@ -1242,6 +1260,8 @@ def repair_short_summaries(
 ) -> tuple[bool, int, int]:
     """修复 summary 长度不足的章节（公开接口）。
 
+    调用后会自动合并 chapters.yaml。
+
     参数：
         material_id: 素材 ID
         short_chapters: 需要修复的章节列表（None 则自动检测）
@@ -1258,7 +1278,6 @@ def repair_short_summaries(
     if not short_chapters:
         return True, 0, 0
 
-    novel_dir = NOVELS_DIR / material_id
     success_count = _reanalyze_chapters(
         material_id,
         short_chapters,
@@ -1266,9 +1285,7 @@ def repair_short_summaries(
         use_window=use_window,
     )
     total = len(short_chapters)
-
-    # 合并章节文件
-    _merge_chapters(novel_dir, material_id=material_id)
+    # 注：_reanalyze_chapters 内部已自动合并 chapters.yaml
 
     # 判断是否成功（成功率 >= min_success_rate）
     success_rate = success_count / total if total > 0 else 1.0
