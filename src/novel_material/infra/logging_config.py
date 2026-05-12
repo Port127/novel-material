@@ -179,21 +179,35 @@ def _setup_embedding_logger() -> logging.Logger:
 def pause_console_logging() -> None:
     """暂停控制台日志输出（用于进度条显示期间）。
 
-    临时移除 handler 以避免与 spinner 线程的 stdout 竞态条件。
+    同时暂停 pipeline 和 embedding logger，防止日志干扰进度条。
+    embedding logger 主动初始化以确保延迟导入场景也能正确暂停。
     """
-    global _PIPELINE_HANDLER
-    if _PIPELINE_HANDLER is None:
-        return
-    logger = logging.getLogger("pipeline")
-    if _PIPELINE_HANDLER in logger.handlers:
-        logger.removeHandler(_PIPELINE_HANDLER)
+    global _PIPELINE_HANDLER, _EMBEDDING_HANDLER
+    # 确保 embedding logger 已初始化（延迟导入场景）
+    if _EMBEDDING_HANDLER is None:
+        get_embedding_logger()
+    # 暂停 pipeline logger
+    if _PIPELINE_HANDLER is not None:
+        logger = logging.getLogger("pipeline")
+        if _PIPELINE_HANDLER in logger.handlers:
+            logger.removeHandler(_PIPELINE_HANDLER)
+    # 暂停 embedding logger
+    if _EMBEDDING_HANDLER is not None:
+        emb_logger = logging.getLogger("embedding")
+        if _EMBEDDING_HANDLER in emb_logger.handlers:
+            emb_logger.removeHandler(_EMBEDDING_HANDLER)
 
 
 def resume_console_logging() -> None:
     """恢复控制台日志输出。"""
-    global _PIPELINE_HANDLER
-    if _PIPELINE_HANDLER is None:
-        return
-    logger = logging.getLogger("pipeline")
-    if _PIPELINE_HANDLER not in logger.handlers:
-        logger.addHandler(_PIPELINE_HANDLER)
+    global _PIPELINE_HANDLER, _EMBEDDING_HANDLER
+    # 恢复 pipeline logger
+    if _PIPELINE_HANDLER is not None:
+        logger = logging.getLogger("pipeline")
+        if _PIPELINE_HANDLER not in logger.handlers:
+            logger.addHandler(_PIPELINE_HANDLER)
+    # 恢复 embedding logger
+    if _EMBEDDING_HANDLER is not None:
+        emb_logger = logging.getLogger("embedding")
+        if _EMBEDDING_HANDLER not in emb_logger.handlers:
+            emb_logger.addHandler(_EMBEDDING_HANDLER)

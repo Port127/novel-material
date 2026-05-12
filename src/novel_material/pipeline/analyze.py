@@ -1185,8 +1185,9 @@ def chapter_analyze(
         if batch_start_idx + batch_size < len(pending):
             time.sleep(rate_limit)
 
+    # LLM 分析完成，更新进度描述（后续还有质量检查和向量化）
     if progress_callback:
-        progress_callback(total, total, f"完成: {completed} 章")
+        progress_callback(total, total, f"分析完成: 新增 {completed} 章")
     else:
         logger.info(f"[{material_id}] 章级分析完成: 新分析 {completed} 章，跳过已完成 {skipped} 章，共 {total} 章")
         if total_downgrades > 0:
@@ -1198,18 +1199,24 @@ def chapter_analyze(
             )
 
     # 合并所有章节文件
+    if progress_callback:
+        progress_callback(total, total, "合并章节数据...")
     _merge_chapters(novel_dir, material_id=material_id)
 
     # 质量检查（带 summary 长度自动修复）
     max_summary_retries = 3
     final_passed = False
 
-    # 进度转发 wrapper（定义在循环外避免重复创建）
-    def reanalyze_progress_wrapper(done: int, total: int, desc: str):
+    # 进度转发 wrapper（保持外层进度值，避免进度条跳跃）
+    # 内层的 done/total 是重分析章数（如 1/5），外层 total 是全书章数（如 1498）
+    def reanalyze_progress_wrapper(inner_done: int, inner_total: int, desc: str):
         if progress_callback:
-            progress_callback(done, total, desc)
+            # 固定传递外层 (total, total)，只更新描述（内层计数已在 desc 中）
+            progress_callback(total, total, desc)
 
     for retry_idx in range(max_summary_retries):
+        if progress_callback:
+            progress_callback(total, total, f"质量校验（第 {retry_idx + 1}/{max_summary_retries} 次）...")
         logger.info(f"[{material_id}] 执行章级分析质量校验...")
         if run_quality_check(material_id, start_ch=start_ch, end_ch=end_ch):
             final_passed = True
@@ -1232,6 +1239,8 @@ def chapter_analyze(
             f"[{material_id}] 发现 {len(short_chapters)} 章摘要过短 + {len(missing_chapters)} 章缺失，"
             f"合并 {len(chapters_to_reanalyze)} 章待重分析（第 {retry_idx + 1}/{max_summary_retries} 次）"
         )
+        if progress_callback:
+            progress_callback(total, total, f"重分析 {len(chapters_to_reanalyze)} 章...")
 
         success = _reanalyze_chapters(
             material_id, chapters_to_reanalyze,
@@ -1247,6 +1256,8 @@ def chapter_analyze(
 
     # 循环未通过时的最终校验
     if not final_passed:
+        if progress_callback:
+            progress_callback(total, total, "最终校验...")
         if not run_quality_check(material_id, start_ch=start_ch, end_ch=end_ch):
             update_meta_status(material_id, "failed")
             raise ValueError(f"章级分析质量校验未通过（已重试 {max_summary_retries} 次）：{material_id}")
@@ -1256,8 +1267,14 @@ def chapter_analyze(
     # 章节向量化（可选）
     if not skip_embedding:
         from novel_material.storage.embedding import embed_chapters
-        logger.info(f"[{material_id}] 生成章节向量...")
+        # 更新进度描述，让用户知道正在进行向量化（进度条仍显示100%，但描述变化）
+        if progress_callback:
+            progress_callback(total, total, "正在向量化章节摘要...")
+        else:
+            logger.info(f"[{material_id}] 生成章节向量...")
         embed_chapters(material_id)
+        if progress_callback:
+            progress_callback(total, total, f"向量化完成: 共 {total} 章")
 
     # 保存运行历史
     if runner:
