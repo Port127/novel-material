@@ -411,6 +411,12 @@ def call_llm(
                 thinking = getattr(comp_details, "reasoning_tokens", 0)
                 if thinking:
                     detail["thinking_tokens"] = thinking
+                    # 阈值检查：thinking tokens 异常低时发出警告
+                    threshold = int(get_settings().get("LLM_THINKING_TOKENS_MIN_THRESHOLD", 1000))
+                    if thinking < threshold:
+                        logger.warning(
+                            f"{prefix}thinking tokens 异常低: {thinking} < {threshold}，可能导致输出质量下降"
+                        )
 
             # INFO 级别日志：每次调用详情
             log_parts = [

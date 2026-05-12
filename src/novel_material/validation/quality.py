@@ -4,7 +4,15 @@ import yaml
 import re
 
 from novel_material.infra.config import NOVELS_DIR, get_settings
+from novel_material.infra.progress import get_pipeline_logger
 from .schema import validate_material
+
+logger = get_pipeline_logger()
+
+
+class ChapterIndexNotFoundError(Exception):
+    """chapter_index.yaml 不存在，无法检测缺失章节。"""
+    pass
 
 
 def _jaccard_similarity(text1: str, text2: str) -> float:
@@ -150,6 +158,70 @@ def get_short_summary_chapters(
             short_chapters.append(ch_num)
 
     return short_chapters
+
+
+def get_missing_chapters(
+    material_id: str,
+    start_ch: int | None = None,
+    end_ch: int | None = None,
+    strict: bool = True,
+) -> list[int]:
+    """返回缺失的章节号列表（用于自动重分析）。
+
+    对比 chapter_index.yaml（期望章节）和 chapters.yaml（已分析章节），
+    返回缺失的章节号。
+
+    参数：
+        material_id: 素材 ID
+        start_ch: 起始章节号（可选）
+        end_ch: 结束章节号（可选）
+        strict: 严格模式（True 时索引不存在抛异常，False 时返回空并记录警告）
+
+    返回：
+        list[int]: 缺失的章节号列表
+
+    Raises:
+        ChapterIndexNotFoundError: strict=True 且 chapter_index.yaml 不存在
+    """
+    novel_dir = NOVELS_DIR / material_id
+    index_file = novel_dir / "chapter_index.yaml"
+    chapters_file = novel_dir / "chapters.yaml"
+
+    if not index_file.exists():
+        if strict:
+            raise ChapterIndexNotFoundError(
+                f"chapter_index.yaml 不存在: {index_file}，无法检测缺失章节"
+            )
+        else:
+            logger.warning(f"chapter_index.yaml 不存在: {index_file}，跳过缺失检测")
+            return []
+
+    with open(index_file, "r", encoding="utf-8") as f:
+        index = yaml.safe_load(f) or []
+
+    if chapters_file.exists():
+        with open(chapters_file, "r", encoding="utf-8") as f:
+            chapters = yaml.safe_load(f) or []
+        analyzed = {
+            c.get("chapter") for c in chapters
+            if isinstance(c, dict) and "chapter" in c
+        }
+    else:
+        analyzed = set()
+
+    missing: list[int] = []
+    for ch_info in index:
+        ch_num = ch_info.get("chapter")
+        if not isinstance(ch_num, int):
+            continue
+        if start_ch is not None and ch_num < start_ch:
+            continue
+        if end_ch is not None and ch_num > end_ch:
+            continue
+        if ch_num not in analyzed:
+            missing.append(ch_num)
+
+    return sorted(missing)
 
 
 def check_summary_quality(material_id: str, start_ch: int | None = None, end_ch: int | None = None) -> tuple[list[str], list[str]]:

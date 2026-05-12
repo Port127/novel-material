@@ -24,7 +24,7 @@ from collections.abc import Callable
 
 from novel_material.infra.config import NOVELS_DIR, update_meta_status, get_settings
 from novel_material.infra.llm import load_config, call_llm, truncate_to_tokens, get_last_call_finish_reason, get_call_details
-from novel_material.validation.quality import run_quality_check, get_short_summary_chapters
+from novel_material.validation.quality import run_quality_check, get_short_summary_chapters, get_missing_chapters
 from novel_material.validation.pacing_normalize import normalize_pacing
 from novel_material.infra.progress import get_pipeline_logger, PipelineRunner, save_run_history
 from novel_material.infra.constants import TENSION_CHANGE_VALUES
@@ -557,7 +557,7 @@ def analyze_chapters_batch(
 
     # 解析返回结果：兼容 LLM 直接返回数组的情况
     if isinstance(result, list):
-        logger.warning(f"{prefix}批量返回为裸数组（非 {'chapters': [...]} 格式），自动适配")
+        logger.warning(f"{prefix}批量返回为裸数组（非 {{'chapters': [...]}} 格式），自动适配")
         chapters_list = result
     else:
         chapters_list = result.get("chapters", [])
@@ -1077,7 +1077,17 @@ def chapter_analyze(
                     )
                     batch_api_calls += 1
                 except Exception as e:
-                    logger.error(f"[{material_id}] 第 {ch_num} 章分析失败（已重试耗尽）: {e}")
+                    # 收集诊断信息
+                    ch_type = ch_info.get("type", "normal")
+                    content_len = len(chapter_text)
+                    thinking_budget = _should_use_thinking_mode(ch_progress_ratio, config)
+                    thinking_status = "启用" if thinking_budget is not None else "禁用"
+
+                    logger.error(
+                        f"[{material_id}] 第 {ch_num} 章分析失败（已重试耗尽）: {e} | "
+                        f"诊断: 类型={ch_type} | 内容={content_len}字 | "
+                        f"thinking={thinking_status} | 进度={ch_progress_ratio:.2f}"
+                    )
                     batch_errors += 1
                     continue
 
@@ -1205,29 +1215,34 @@ def chapter_analyze(
             final_passed = True
             break
 
-        # 检查是否有 summary 长度不够的章节（应用范围过滤）
+        # 检查短摘要章节和缺失章节（应用范围过滤）
         short_chapters = get_short_summary_chapters(material_id, start_ch=start_ch, end_ch=end_ch)
-        if not short_chapters:
-            # 不是 summary 问题，无法自动修复
+        missing_chapters = get_missing_chapters(material_id, start_ch=start_ch, end_ch=end_ch, strict=False)
+
+        # 合并需要重分析的章节
+        chapters_to_reanalyze = sorted(set(short_chapters) | set(missing_chapters))
+
+        if not chapters_to_reanalyze:
+            # 不是 summary 问题也不是缺失问题，无法自动修复
             update_meta_status(material_id, "failed")
             raise ValueError(f"章级分析质量校验未通过：{material_id}")
 
         # 自动重新分析这些章节
         logger.info(
-            f"[{material_id}] 发现 {len(short_chapters)} 章 summary 长度不足，"
-            f"自动重新分析（第 {retry_idx + 1}/{max_summary_retries} 次）"
+            f"[{material_id}] 发现 {len(short_chapters)} 章摘要过短 + {len(missing_chapters)} 章缺失，"
+            f"合并 {len(chapters_to_reanalyze)} 章待重分析（第 {retry_idx + 1}/{max_summary_retries} 次）"
         )
 
         success = _reanalyze_chapters(
-            material_id, short_chapters,
+            material_id, chapters_to_reanalyze,
             provider=provider,
             use_window=use_window,
             start_ch=start_ch,
             end_ch=end_ch,
             progress_callback=reanalyze_progress_wrapper
         )
-        if success < len(short_chapters):
-            logger.warning(f"[{material_id}] 重分析部分失败：成功 {success}/{len(short_chapters)} 章")
+        if success < len(chapters_to_reanalyze):
+            logger.warning(f"[{material_id}] 重分析部分失败：成功 {success}/{len(chapters_to_reanalyze)} 章")
         # 注：_reanalyze_chapters 内部已自动合并 chapters.yaml
 
     # 循环未通过时的最终校验
@@ -1251,40 +1266,41 @@ def chapter_analyze(
     return True
 
 
-def repair_short_summaries(
+def reanalyze_chapters(
     material_id: str,
-    short_chapters: list[int] | None = None,
+    chapters: list[int] | None = None,
     provider: str | None = None,
     use_window: bool = False,
     min_success_rate: float = 0.8,
 ) -> tuple[bool, int, int]:
-    """修复 summary 长度不足的章节（公开接口）。
+    """重新分析指定章节（公开接口）。
 
+    支持重分析短摘要章节、缺失章节或任意指定章节。
     调用后会自动合并 chapters.yaml。
 
     参数：
         material_id: 素材 ID
-        short_chapters: 需要修复的章节列表（None 则自动检测）
+        chapters: 需要重分析的章节列表（None 则自动检测短摘要章节）
         provider: LLM 服务商（应与原始分析一致）
         use_window: 是否使用滑动窗口（应与原始分析一致）
         min_success_rate: 最低成功率阈值（低于此值视为失败）
 
     返回：
-        tuple: (是否成功修复, 成功章数, 总需修复章数)
+        tuple: (是否成功, 成功章数, 总需重分析章数)
     """
-    if short_chapters is None:
-        short_chapters = get_short_summary_chapters(material_id)
+    if chapters is None:
+        chapters = get_short_summary_chapters(material_id)
 
-    if not short_chapters:
+    if not chapters:
         return True, 0, 0
 
     success_count = _reanalyze_chapters(
         material_id,
-        short_chapters,
+        chapters,
         provider=provider,
         use_window=use_window,
     )
-    total = len(short_chapters)
+    total = len(chapters)
     # 注：_reanalyze_chapters 内部已自动合并 chapters.yaml
 
     # 判断是否成功（成功率 >= min_success_rate）
@@ -1293,10 +1309,31 @@ def repair_short_summaries(
 
     if not success:
         logger.warning(
-            f"[{material_id}] 修复成功率 {success_rate:.1%} 低于阈值 {min_success_rate:.1%}"
+            f"[{material_id}] 重分析成功率 {success_rate:.1%} 低于阈值 {min_success_rate:.1%}"
         )
 
     return success, success_count, total
+
+
+# 向后兼容别名
+def repair_short_summaries(
+    material_id: str,
+    short_chapters: list[int] | None = None,
+    provider: str | None = None,
+    use_window: bool = False,
+    min_success_rate: float = 0.8,
+) -> tuple[bool, int, int]:
+    """修复 summary 长度不足的章节（向后兼容接口）。
+
+    已更名为 reanalyze_chapters，请使用新函数名。
+    """
+    return reanalyze_chapters(
+        material_id,
+        chapters=short_chapters,
+        provider=provider,
+        use_window=use_window,
+        min_success_rate=min_success_rate,
+    )
 
 
 if __name__ == "__main__":
