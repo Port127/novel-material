@@ -12,7 +12,7 @@ from novel_material.infra.config import NOVELS_DIR, VALID_STATUSES
 from novel_material.infra.logging_config import get_pipeline_logger
 from novel_material.tags.validate import validate_tag, validate_tags_batch
 from novel_material.validation.pacing_normalize import PACING_CORE, normalize_pacing
-from novel_material.infra.constants import KEY_PLOT_POINT_VALUES, TENSION_CHANGE_VALUES, HOOK_TYPE_VALUES
+from novel_material.infra.common import KEY_PLOT_POINT_VALUES, TENSION_CHANGE_VALUES, HOOK_TYPE_VALUES
 
 # 常量
 _MATERIAL_ID_PATTERN = re.compile(r"^nm_[a-z]+_\d{8}_[a-z0-9]{4}$")

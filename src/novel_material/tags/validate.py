@@ -127,10 +127,36 @@ def check_dimension_usage(dimension):
         print(f"维度 {dimension}: 所有标签均合法 (已用 {len(used_tags)} 个)")
 
 
+def check_dimension(dimension: str) -> None:
+    """检查某个维度在已有数据文件中的标签使用情况。
+
+    Args:
+        dimension: 维度名称
+    """
+    check_dimension_usage(dimension)
+
+
+def suggest_expand(dimension: str, new_tag: str) -> None:
+    """提示用户是否扩展标签字典。
+
+    Args:
+        dimension: 维度名称
+        new_tag: 待检查的标签
+    """
+    canonical = validate_tag(dimension, new_tag)
+
+    if not canonical:
+        print(f"\n标签 '{new_tag}' 不在维度 {dimension} 的字典中")
+        print(f"如需添加，请使用:")
+        print(f"  nm tags add {dimension} '{new_tag}' common")
+        print(f"或运行审核流程:")
+        print(f"  nm tags review list")
+
+
 if __name__ == "__main__":
     import sys
     if len(sys.argv) >= 2:
-        check_dimension_usage(sys.argv[1])
+        check_dimension(sys.argv[1])
     else:
         for dim in ["element", "style", "setting", "structure"]:
-            check_dimension_usage(dim)
+            check_dimension(dim)

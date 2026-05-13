@@ -21,7 +21,7 @@ from pathlib import Path
 
 from novel_material.infra.config import NOVELS_DIR
 from novel_material.infra.progress import get_pipeline_logger
-from novel_material.infra.constants import KEY_PLOT_POINT_VALUES
+from novel_material.infra.common import KEY_PLOT_POINT_VALUES
 
 logger = get_pipeline_logger()
 

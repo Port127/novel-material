@@ -10,33 +10,16 @@
 import sys
 import yaml
 import re
-import random
-import string
 from datetime import datetime
 from pathlib import Path
 from collections.abc import Callable
 
 from novel_material.infra.config import NOVELS_DIR, INDEX_FILE
+from novel_material.infra.common import generate_material_id
 from novel_material.infra.progress import get_pipeline_logger
 from .preprocess import preprocess
 
 logger = get_pipeline_logger()
-
-
-def generate_material_id() -> str:
-    """生成唯一的素材 ID，确保不与已有 ID 冲突。"""
-    date_str = datetime.now().strftime("%Y%m%d")
-    max_attempts = 10
-
-    for _ in range(max_attempts):
-        random_str = "".join(random.choices(string.ascii_lowercase + string.digits, k=4))
-        material_id = f"nm_novel_{date_str}_{random_str}"
-        if not (NOVELS_DIR / material_id).exists():
-            return material_id
-
-    # 极端情况：10 次都冲突，增加随机字符串长度
-    random_str = "".join(random.choices(string.ascii_lowercase + string.digits, k=6))
-    return f"nm_novel_{date_str}_{random_str}"
 
 
 def _detect_chapter_type(title: str) -> str:
@@ -188,7 +171,7 @@ def ingest_file(file_path, progress_callback: Callable[[int, int, str], None] | 
     else:
         logger.info(f"正在处理: {file_path.name}")
 
-    material_id = generate_material_id()
+    material_id = generate_material_id(novels_dir=NOVELS_DIR)
     novel_dir = NOVELS_DIR / material_id
     novel_dir.mkdir(parents=True, exist_ok=True)
 

@@ -1,4 +1,4 @@
-"""基础设施模块：LLM 调用、数据库连接、向量计算、进度追踪、配置管理。"""
+"""基础设施模块：LLM 调用、数据库连接、向量计算、进度追踪、配置管理、公共函数。"""
 
 from .config import (
     PROJECT_ROOT,
@@ -30,7 +30,20 @@ from .progress import (
     PipelineRunner,
     stage_context,
 )
-from .constants import KEY_PLOT_POINT_VALUES
+from .common import (
+    # 常量
+    KEY_PLOT_POINT_VALUES,
+    NOVEL_TYPE_VALUES,
+    TENSION_CHANGE_VALUES,
+    HOOK_TYPE_VALUES,
+    SPECIAL_CHAPTER_TYPES,
+    VALID_CHAPTER_TYPES,
+    # 公共函数
+    is_special_chapter_type,
+    is_valid_chapter_type,
+    filter_normal_chapters,
+    generate_material_id,
+)
 
 __all__ = [
     # config
@@ -59,6 +72,16 @@ __all__ = [
     "StageTracker",
     "PipelineRunner",
     "stage_context",
-    # constants
+    # common - 常量
     "KEY_PLOT_POINT_VALUES",
+    "NOVEL_TYPE_VALUES",
+    "TENSION_CHANGE_VALUES",
+    "HOOK_TYPE_VALUES",
+    "SPECIAL_CHAPTER_TYPES",
+    "VALID_CHAPTER_TYPES",
+    # common - 公共函数
+    "is_special_chapter_type",
+    "is_valid_chapter_type",
+    "filter_normal_chapters",
+    "generate_material_id",
 ]

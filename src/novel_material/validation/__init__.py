@@ -9,7 +9,6 @@ from .quality import (
     get_missing_chapters,
     ChapterIndexNotFoundError,
 )
-from .tag_rules import check_dimension, suggest_expand
 
 __all__ = [
     "validate_material",
@@ -23,6 +22,4 @@ __all__ = [
     "get_short_summary_chapters",
     "get_missing_chapters",
     "ChapterIndexNotFoundError",
-    "check_dimension",
-    "suggest_expand",
 ]

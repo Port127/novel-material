@@ -3,6 +3,7 @@
 核心功能：
 - load_chapters_data: 加载章节数据，支持分散文件和合并文件两种格式
 - build_summary_pool: 构建摘要池，大书自动采样以控制 token 消耗
+- build_analysis_context: 构建分析上下文（统一 worldbuilding/characters/outline 使用）
 
 数据格式：
 - 分散格式：novel_dir/chapters/*.yaml，每个文件包含单章分析结果
@@ -18,6 +19,7 @@ from pathlib import Path
 
 from novel_material.infra.llm import truncate_to_tokens
 from novel_material.infra.progress import get_pipeline_logger
+from novel_material.infra.common import filter_normal_chapters, is_valid_chapter_type
 
 logger = get_pipeline_logger()
 
@@ -218,3 +220,61 @@ def build_summary_pool(
     pool_text = header + "\n".join(lines)
 
     return truncate_to_tokens(pool_text, max_tokens, model)
+
+
+def build_analysis_context(
+    novel_dir: Path,
+    config: dict,
+    chapters_data: list | None = None,
+    material_id: str = "",
+    summary_tokens_key: str = "outline_summary_tokens",
+    fallback_chars: int = 8000,
+) -> tuple[str, str]:
+    """构建分析上下文，统一供 worldbuilding/characters/outline 使用。
+
+    优先使用章级摘要池，兜底读原文片段。
+    章数 > 200 时自动启用分层均匀采样，确保全书首尾及中间均有代表。
+    特殊类型章节（afterword/author_note）不参与摘要池构建。
+
+    Args:
+        novel_dir: 小说目录
+        config: LLM 配置字典
+        chapters_data: 可选的已加载章节数据（避免重复调用 load_chapters_data）
+        material_id: 素材 ID（用于日志）
+        summary_tokens_key: config["llm"] 中摘要池 token 配置的键名
+        fallback_chars: 原文兜底时的字符数
+
+    Returns:
+        tuple: (摘要池文本, 描述标签)
+    """
+    model = config["llm"]["model"]
+
+    if chapters_data is None:
+        chapters_data = load_chapters_data(novel_dir)
+
+    if chapters_data:
+        # 过滤特殊类型章节
+        filtered_chapters = filter_normal_chapters(chapters_data)
+        skipped_count = len(chapters_data) - len(filtered_chapters)
+
+        # 获取 token 配置
+        max_tokens = config["llm"].get(summary_tokens_key, 15000)
+        pool = build_summary_pool(filtered_chapters, max_tokens, model)
+
+        if skipped_count > 0:
+            label = f"章级摘要池（共 {len(filtered_chapters)} 章，跳过 {skipped_count} 章特殊类型）"
+        else:
+            label = f"章级摘要池（共 {len(filtered_chapters)} 章）"
+
+        return pool, label
+
+    # 兜底：读原文片段
+    prefix = f"[{material_id}] " if material_id else ""
+    logger.warning(f"{prefix}章节数据不存在或为空，回退到原文前 {fallback_chars} 字（质量受限）")
+
+    source_file = novel_dir / "source.txt"
+    if source_file.exists():
+        with open(source_file, "r", encoding="utf-8") as f:
+            return f.read()[:fallback_chars], f"原文摘录（前 {fallback_chars} 字）"
+
+    return "", "（无数据源）"

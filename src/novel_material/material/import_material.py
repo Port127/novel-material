@@ -4,19 +4,10 @@ import yaml
 import shutil
 import time
 from pathlib import Path
-from datetime import datetime
-import random
-import string
 
 from novel_material.infra.config import NOVELS_DIR, INDEX_FILE
+from novel_material.infra.common import generate_material_id
 from novel_material.tags.validate import validate_tag, validate_tags_batch
-
-
-def generate_material_id():
-    """生成唯一的 material_id: nm_novel_YYYYMMDD_xxxx"""
-    date_str = datetime.now().strftime("%Y%m%d")
-    random_str = "".join(random.choices(string.ascii_lowercase + string.digits, k=4))
-    return f"nm_novel_{date_str}_{random_str}"
 
 
 def validate_tags_with_db(tags):

@@ -16,7 +16,8 @@ from collections import Counter
 
 from novel_material.infra.config import NOVELS_DIR
 from novel_material.infra.llm import load_config, call_llm, get_last_call_finish_reason, get_call_details, clear_call_details
-from novel_material.pipeline.loader import load_chapters_data, build_summary_pool
+from novel_material.infra.common import is_special_chapter_type
+from novel_material.pipeline.loader import load_chapters_data, build_analysis_context
 from novel_material.infra.progress import get_pipeline_logger, save_run_history
 from novel_material.storage.embedding import embed_worldbuilding
 
@@ -51,8 +52,7 @@ def _aggregate_worldbuilding_stats(chapters_data: list) -> dict:
 
     for ch in chapters_data:
         # 跳过特殊类型章节
-        ch_type = ch.get("type", "normal")
-        if ch_type in ("afterword", "author_note"):
+        if is_special_chapter_type(ch.get("type", "normal")):
             continue
 
         # 从 characters_appear 中识别组织名
@@ -79,38 +79,6 @@ def _aggregate_worldbuilding_stats(chapters_data: list) -> dict:
         "organizations": dict(org_counts.most_common(30)),
         "locations": dict(location_counts.most_common(30))
     }
-
-
-def _build_context(novel_dir: Path, config: dict, chapters_data: list | None = None, material_id: str = "") -> tuple[str, str]:
-    """构建分析上下文，优先使用章级摘要池，兜底读原文片段。
-
-    章数 > 200 时自动启用分层均匀采样，确保全书首尾及中间均有代表。
-    特殊类型章节（afterword/author_note）不参与摘要池构建。
-
-    Args:
-        novel_dir: 小说目录
-        config: LLM配置
-        chapters_data: 可选的已加载章节数据（避免重复调用 load_chapters_data）
-        material_id: 素材ID
-    """
-    model = config["llm"]["model"]
-    if chapters_data is None:
-        chapters_data = load_chapters_data(novel_dir)
-    if chapters_data:
-        # 过滤特殊类型章节
-        filtered_chapters = [
-            ch for ch in chapters_data
-            if ch.get("type", "normal") in ("normal", "extra")
-        ]
-        skipped_count = len(chapters_data) - len(filtered_chapters)
-
-        pool = build_summary_pool(filtered_chapters, config["llm"]["worldbuilding_summary_tokens"], model)
-        return pool, f"章级摘要池（共 {len(filtered_chapters)} 章，跳过 {skipped_count} 章特殊类型）"
-
-    prefix = f"[{material_id}] " if material_id else ""
-    logger.warning(f"{prefix}章节数据不存在或为空，回退到原文前 10000 字（质量受限）")
-    with open(novel_dir / "source.txt", "r", encoding="utf-8") as f:
-        return f.read()[:10000], "原文摘录（前 10000 字）"
 
 
 def generate_worldbuilding(material_id, provider: str | None = None) -> bool:
@@ -167,7 +135,11 @@ def generate_worldbuilding(material_id, provider: str | None = None) -> bool:
     )
 
     # 构建分析上下文（章级摘要池 > 原文片段，传入已加载的 chapters_data）
-    context_text, context_label = _build_context(novel_dir, config, chapters_data, material_id=material_id)
+    context_text, context_label = build_analysis_context(
+        novel_dir, config, chapters_data, material_id=material_id,
+        summary_tokens_key="worldbuilding_summary_tokens",
+        fallback_chars=10000,
+    )
     context_chars = len(context_text)
     logger.info(f"[{material_id}] 输入: {context_chars} 字符 | {context_label}")
 

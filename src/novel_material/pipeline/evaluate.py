@@ -19,7 +19,7 @@ from collections.abc import Callable
 from novel_material.infra.config import NOVELS_DIR
 from novel_material.infra.llm import load_config, call_llm, truncate_to_tokens, get_last_call_tokens, get_last_call_finish_reason
 from novel_material.infra.progress import StageTracker, save_run_history, get_pipeline_logger
-from novel_material.infra.constants import NOVEL_TYPE_VALUES
+from novel_material.infra.common import NOVEL_TYPE_VALUES
 
 logger = get_pipeline_logger()
 
