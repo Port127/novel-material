@@ -1,52 +1,52 @@
-"""流水线模块：数据处理流水线。"""
+"""流水线模块：数据处理流水线。
 
-from .preprocess import preprocess, preprocess_text
-from .loader import load_chapters_data, build_summary_pool
-from .ingest import ingest_file, generate_material_id
+公共接口（推荐使用）：
+- ingest_file：素材导入入口
+- chapter_analyze：章节分析入口
+- generate_outline：大纲生成入口
+- generate_worldbuilding：世界观提取入口
+- generate_characters：人物提取入口
+- generate_tags：标签生成入口
+- refine：精修入口
+- run_evaluation：评估入口
+- get_pipeline_progress：进度查询
+- print_pipeline_status：进度打印
+- get_next_pending_stage：获取下一待处理阶段
+
+内部接口（从具体子模块导入）：
+- preprocess, preprocess_text: pipeline.preprocess
+- load_chapters_data, build_summary_pool: pipeline.loader
+- infer_key_plot_points: pipeline.infer
+- refine_outline, refine_characters, refine_tags: pipeline.refine
+- generate_simple_acts: pipeline.outline_acts
+- PIPELINE_STAGES, get_pipeline_stages: pipeline.progress
+"""
+
+from .ingest import ingest_file
 from .analyze import chapter_analyze
-from .infer import infer_key_plot_points
-from novel_material.infra.constants import KEY_PLOT_POINT_VALUES
-from .refine import refine, refine_outline, refine_characters, refine_tags
-from .outline import generate_outline, generate_simple_acts
+from .outline import generate_outline
 from .worldbuilding import generate_worldbuilding
 from .characters import generate_characters
 from .tags import generate_tags
+from .refine import refine
+from .evaluate import run_evaluation
 from .progress import (
     get_pipeline_progress,
     print_pipeline_status,
     get_next_pending_stage,
-    PIPELINE_STAGES,
-    get_pipeline_stages,
-    calculate_total_stages,
-    calculate_current_stage,
 )
-from .evaluate import run_evaluation
 
 __all__ = [
-    "preprocess",
-    "preprocess_text",
-    "load_chapters_data",
-    "build_summary_pool",
+    # 公共接口
     "ingest_file",
-    "generate_material_id",
     "chapter_analyze",
-    "infer_key_plot_points",
-    "KEY_PLOT_POINT_VALUES",
-    "refine",
-    "refine_outline",
-    "refine_characters",
-    "refine_tags",
     "generate_outline",
-    "generate_simple_acts",
     "generate_worldbuilding",
     "generate_characters",
     "generate_tags",
+    "refine",
+    "run_evaluation",
     "get_pipeline_progress",
     "print_pipeline_status",
     "get_next_pending_stage",
-    "PIPELINE_STAGES",
-    "get_pipeline_stages",
-    "calculate_total_stages",
-    "calculate_current_stage",
-    "run_evaluation",
 ]
