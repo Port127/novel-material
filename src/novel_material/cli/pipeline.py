@@ -1,11 +1,11 @@
 """Pipeline 子命令：数据处理流水线。"""
-import yaml
 import typer
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn, TimeRemainingColumn
 from rich.table import Table
 
 from novel_material.infra.config import NOVELS_DIR
+from novel_material.infra.yaml_io import load_yaml_list
 from novel_material.infra.progress import silent_console, get_pipeline_logger
 from novel_material.pipeline import (
     ingest_file,
@@ -24,6 +24,9 @@ from novel_material.pipeline.progress import (
     calculate_total_stages,
     calculate_current_stage,
     get_pipeline_stages,
+    EVALUATION_STAGES,
+    CHARACTERS_STAGES,
+    WORLDBUILDING_STAGES,
 )
 from novel_material.storage.sync import sync_novel
 
@@ -81,8 +84,7 @@ def cmd_analyze(
         raise typer.Exit(1)
 
     novel_dir = NOVELS_DIR / material_id
-    with open(novel_dir / "chapter_index.yaml", "r", encoding="utf-8") as f:
-        chapter_index = yaml.safe_load(f)
+    chapter_index = load_yaml_list(novel_dir / "chapter_index.yaml")
     total_chapters = len(chapter_index)
 
     # 验证范围不超出章节总数
@@ -163,7 +165,7 @@ def cmd_evaluate(
         TimeRemainingColumn(),
         console=console,
     ) as progress:
-        task = progress.add_task(f"总体评估: {material_id}", total=5)
+        task = progress.add_task(f"总体评估: {material_id}", total=EVALUATION_STAGES)
 
         def update_progress(done: int, total: int, desc: str):
             progress.update(task, completed=done, description=f"总体评估: {desc}")
@@ -220,7 +222,7 @@ def cmd_worldbuilding(
         TimeRemainingColumn(),
         console=console,
     ) as progress:
-        task = progress.add_task(f"提取世界观 + 向量化: {material_id}", total=2)
+        task = progress.add_task(f"提取世界观 + 向量化: {material_id}", total=WORLDBUILDING_STAGES)
         generate_worldbuilding(material_id, provider=provider)
         progress.update(task, completed=2)
 
@@ -241,7 +243,7 @@ def cmd_characters(
         TimeRemainingColumn(),
         console=console,
     ) as progress:
-        task = progress.add_task(f"提取人物: {material_id}", total=4)  # 核心/配角/次要/向量化
+        task = progress.add_task(f"提取人物: {material_id}", total=CHARACTERS_STAGES)  # 核心/配角/次要/向量化
 
         def update_chars_progress(done: int, total: int, desc: str):
             progress.update(task, completed=done, description=f"提取人物: {desc}")
@@ -375,8 +377,7 @@ def cmd_full(
         # 阶段 N: 章级分析（细粒度进度）
         analyze_stage = 2 if not use_window else 3
         novel_dir = NOVELS_DIR / material_id
-        with open(novel_dir / "chapter_index.yaml", "r", encoding="utf-8") as f:
-            chapter_index = yaml.safe_load(f)
+        chapter_index = load_yaml_list(novel_dir / "chapter_index.yaml")
         total_chapters = len(chapter_index)
 
         # 验证范围不超出章节总数（入库后才知道总章数）
@@ -579,8 +580,7 @@ def cmd_continue(
 
     # 加载章节信息（用于范围验证和显示）
     novel_dir = NOVELS_DIR / material_id
-    with open(novel_dir / "chapter_index.yaml", "r", encoding="utf-8") as f:
-        chapter_index = yaml.safe_load(f)
+    chapter_index = load_yaml_list(novel_dir / "chapter_index.yaml")
     total_chapters = len(chapter_index)
 
     # 验证参数范围

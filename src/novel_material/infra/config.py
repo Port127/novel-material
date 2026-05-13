@@ -3,8 +3,9 @@ import os
 from datetime import datetime
 from pathlib import Path
 from threading import Lock
-import yaml
 from dotenv import load_dotenv
+
+from novel_material.infra.yaml_io import load_yaml, save_yaml
 
 load_dotenv()
 
@@ -31,9 +32,7 @@ def _load_settings_yaml() -> dict:
     """加载 settings.yaml，返回所有键为字符串的平铺字典。"""
     if not _SETTINGS_FILE.exists():
         return {}
-    with open(_SETTINGS_FILE, "r", encoding="utf-8") as f:
-        data = yaml.safe_load(f) or {}
-    return {str(k): v for k, v in data.items()}
+    return load_yaml(_SETTINGS_FILE)
 
 
 def get_settings(*, reload: bool = False) -> dict:
@@ -138,11 +137,9 @@ def update_meta_status(material_id: str, status: str) -> None:
     if not meta_path.exists():
         raise FileNotFoundError(f"meta.yaml 不存在: {meta_path}")
 
-    with open(meta_path, "r", encoding="utf-8") as f:
-        meta = yaml.safe_load(f) or {}
+    meta = load_yaml(meta_path)
 
     meta["status"] = status
     meta["updated_at"] = datetime.now().isoformat()
 
-    with open(meta_path, "w", encoding="utf-8") as f:
-        yaml.dump(meta, f, allow_unicode=True, default_flow_style=False)
+    save_yaml(meta_path, meta)

@@ -1,5 +1,4 @@
 """Material 子命令：素材管理。"""
-import yaml
 import typer
 from rich.console import Console
 from rich.table import Table
@@ -7,6 +6,7 @@ from rich.table import Table
 from novel_material.material.import_material import import_material
 from novel_material.material.delete import delete_material
 from novel_material.infra.config import NOVELS_DIR, INDEX_FILE
+from novel_material.infra.yaml_io import load_yaml
 
 app = typer.Typer(help="素材管理")
 console = Console()
@@ -15,8 +15,7 @@ console = Console()
 def list_materials():
     """列出所有素材。"""
     if INDEX_FILE.exists():
-        with open(INDEX_FILE, "r", encoding="utf-8") as f:
-            index = yaml.safe_load(f) or {}
+        index = load_yaml(INDEX_FILE)
         return [
             {
                 "material_id": mid,

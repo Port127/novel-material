@@ -7,12 +7,12 @@
 """
 import os
 import sys
-import yaml
 import time
 import psycopg2
 from pathlib import Path
 
 from novel_material.infra.config import NOVELS_DIR
+from novel_material.infra.yaml_io import load_yaml, save_yaml, load_yaml_list
 from novel_material.infra.llm import load_config, call_llm, get_last_call_finish_reason, get_call_details, clear_call_details
 from novel_material.tags.load import load_tags_for_genre, format_tags_for_prompt, get_all_genres
 from novel_material.tags.validate import validate_tag, validate_tags_batch
@@ -54,8 +54,7 @@ def generate_tags(material_id, provider: str | None = None) -> bool:
         logger.error(f"[{material_id}] meta.yaml 不存在: {meta_file}")
         return False
 
-    with open(meta_file, "r", encoding="utf-8") as f:
-        meta = yaml.safe_load(f) or {}
+    meta = load_yaml(meta_file)
 
     title = meta.get("name", material_id)
     word_count = meta.get("word_count", "?")
@@ -68,9 +67,8 @@ def generate_tags(material_id, provider: str | None = None) -> bool:
     chapter_index_file = novel_dir / "chapter_index.yaml"
     chapter_count = 0
     if chapter_index_file.exists():
-        with open(chapter_index_file, "r", encoding="utf-8") as f:
-            chapter_index = yaml.safe_load(f) or []
-            chapter_count = len(chapter_index)
+        chapter_index = load_yaml_list(chapter_index_file)
+        chapter_count = len(chapter_index)
 
     # 输出小说基本信息
     logger.info(f"[{material_id}] 小说: {title} | {chapter_count} 章 | {word_count} 字 | 状态: {status}")
@@ -94,8 +92,7 @@ def generate_tags(material_id, provider: str | None = None) -> bool:
     outline_index_file = novel_dir / "outline" / "_index.yaml"
     structure_info = ""
     if outline_index_file.exists():
-        with open(outline_index_file, "r", encoding="utf-8") as f:
-            outline_index = yaml.safe_load(f) or {}
+        outline_index = load_yaml(outline_index_file)
         structure_info = f"结构类型：{outline_index.get('structure_type', '未知')}"
 
     # 构建 prompt（使用精简后的标签）
@@ -329,18 +326,15 @@ def validate_and_save_tags(material_id, llm_result, context_genre):
 
     # 保存到 tags.yaml
     novel_dir = NOVELS_DIR / material_id
-    with open(novel_dir / "tags.yaml", "w", encoding="utf-8") as f:
-        yaml.dump(tags, f, allow_unicode=True, default_flow_style=False)
+    save_yaml(novel_dir / "tags.yaml", tags)
 
     # 更新 meta.yaml
-    with open(novel_dir / "meta.yaml", "r", encoding="utf-8") as f:
-        meta = yaml.safe_load(f) or {}
+    meta = load_yaml(novel_dir / "meta.yaml")
 
     meta["genre"] = tags.get("genre_primary", [])
     meta["tags"] = tags
 
-    with open(novel_dir / "meta.yaml", "w", encoding="utf-8") as f:
-        yaml.dump(meta, f, allow_unicode=True, default_flow_style=False)
+    save_yaml(novel_dir / "meta.yaml", meta)
 
     return tags, new_candidates
 

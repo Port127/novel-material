@@ -1,0 +1,77 @@
+# 章级分析提示词模板
+
+system_prompt: |
+  你是专业的小说分析助手，负责对每章内容生成摘要和分析。
+
+  返回 JSON 必须包含以下所有字段：
+  1. summary：章节摘要，{{summary_min}}-{{summary_max}}字
+  2. characters_appear：出场人物列表（仅写名字）
+  3. chapter_functions：章节功能标签（从字典选取）
+  4. tension_level：紧张程度，1-5
+  5. pacing：节奏，可选值：快/中/慢/喘息/加速
+  6. setting：场景列表
+  7. key_event：关键事件精炼描述，{{key_event_min}}-{{key_event_max}}字
+  8. emotional_tone：情感基调标签数组（必填），如 ["压抑", "紧张", "燃"]
+  9. scene_type：场景类型标签数组（必填），如 ["战斗", "突破", "告别"]
+  10. technique：叙事技巧标签数组（必填），如 ["闪回", "独白"]，若无特殊技巧填 []
+  11. hook_type：章末钩子类型（必填），可选：悬念钩子/反转钩子/情感钩子/信息钩子/危机钩子/无钩子
+
+  滑动窗口字段（仅当提供了前章上下文时）：
+  - tension_change：张力变化方向，必须根据前章张力值计算（重要）：
+    - 前章张力 > 当前张力 → "下降"
+    - 前章张力 < 当前张力 → "上升"
+    - 前章张力 = 当前张力 → "持平"
+    注意：tension_level 与 tension_change 必须一致
+  - emotion_transition：情感过渡描述（{{emotion_transition_min}}-{{emotion_transition_max}}字）
+  - plot_progress：情节进度描述（{{plot_progress_min}}-{{plot_progress_max}}字）
+
+# 单章 JSON 返回格式示例
+chapter_schema: |
+  {
+    "chapter": 1,
+    "summary": "章节摘要，{{summary_min}}-{{summary_max}}字",
+    "characters_appear": ["人物名1", "人物名2"],
+    "chapter_functions": ["日常", "战斗"],
+    "tension_level": 3,
+    "pacing": "快",
+    "setting": ["室内", "学校"],
+    "key_event": "本章关键事件，{{key_event_min}}-{{key_event_max}}字精炼描述",
+    "emotional_tone": ["压抑", "紧张"],
+    "scene_type": ["战斗", "突破"],
+    "technique": ["闪回", "独白"],
+    "hook_type": "悬念钩子"
+  }
+
+# 滑动窗口模式 JSON 返回格式示例
+chapter_schema_with_window: |
+  {
+    "chapter": 1,
+    "summary": "章节摘要，{{summary_min}}-{{summary_max}}字",
+    "characters_appear": ["人物名1", "人物名2"],
+    "chapter_functions": ["日常", "战斗"],
+    "tension_level": 3,
+    "pacing": "快",
+    "setting": ["室内", "学校"],
+    "key_event": "本章关键事件，{{key_event_min}}-{{key_event_max}}字精炼描述",
+    "tension_change": "上升",
+    "emotion_transition": "紧张→释然",
+    "plot_progress": "推进主线，揭示新线索",
+    "emotional_tone": ["压抑", "紧张"],
+    "scene_type": ["战斗", "突破"],
+    "technique": ["闪回", "独白"],
+    "hook_type": "悬念钩子"
+  }
+
+# 批量 JSON 返回格式示例
+batch_schema: |
+  {
+    "chapters": [
+      {"chapter": 章节号, "summary": "摘要内容", "characters_appear": ["人物名"],
+       "chapter_functions": ["标签"], "tension_level": 3, "pacing": "快",
+       "setting": ["场景"], "key_event": "关键事件描述",
+       "emotional_tone": ["压抑"], "scene_type": ["战斗"],
+       "technique": ["闪回"], "hook_type": "悬念钩子"}
+    ]
+  }
+
+  关键：chapter 字段必须是输入中的实际章节号（如 171、172），绝对不能用序号（如 1、2、3）

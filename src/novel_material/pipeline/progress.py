@@ -1,6 +1,5 @@
 """流水线进度检查：检查各阶段完成情况，支持断点续传。"""
 import os
-import yaml
 import psycopg2
 from dotenv import load_dotenv
 from pathlib import Path
@@ -8,6 +7,7 @@ from rich.console import Console
 from rich.table import Table
 
 from novel_material.infra.config import NOVELS_DIR
+from novel_material.infra.yaml_io import load_yaml, load_yaml_list
 
 load_dotenv()
 console = Console()
@@ -25,6 +25,12 @@ PIPELINE_STAGES = [
     ("精调", "refined", True),
     ("数据库同步", "synced", False),      # 不计入总阶段数，仅用于进度状态表
 ]
+
+# 子流水线阶段数（供 CLI 和 pipeline 模块使用）
+EVALUATION_STAGES = 5          # 总体评估：5个阶段
+CHARACTERS_STAGES = 4          # 人物提取：核心/配角/次要/向量化
+WORLDBUILDING_STAGES = 2       # 世界观：提取+向量化
+OUTLINE_STAGES = 3             # 大纲：前提/幕序列/beats
 
 
 def get_pipeline_stages(include_evaluation: bool = False) -> list:
@@ -57,7 +63,7 @@ def get_pipeline_progress(material_id: str) -> dict:
     meta_file = novel_dir / "meta.yaml"
     meta = {}
     if meta_file.exists():
-        meta = yaml.safe_load(meta_file.read_text(encoding="utf-8")) or {}
+        meta = load_yaml(meta_file)
 
     # 检查章级分析是否完成
     # 优先检查 chapters/ 目录（分析过程中每章独立保存）
@@ -65,7 +71,7 @@ def get_pipeline_progress(material_id: str) -> dict:
     analyzed = False
     chapter_index_file = novel_dir / "chapter_index.yaml"
     if chapter_index_file.exists():
-        chapter_index = yaml.safe_load(chapter_index_file.read_text(encoding="utf-8")) or []
+        chapter_index = load_yaml_list(chapter_index_file)
         total_chapters = len(chapter_index)
 
         # 统计已分析的章节数量
@@ -75,7 +81,7 @@ def get_pipeline_progress(material_id: str) -> dict:
         else:
             chapters_file = novel_dir / "chapters.yaml"
             if chapters_file.exists():
-                chapters_data = yaml.safe_load(chapters_file.read_text(encoding="utf-8")) or []
+                chapters_data = load_yaml_list(chapters_file)
                 analyzed_count = len(chapters_data)
             else:
                 analyzed_count = 0

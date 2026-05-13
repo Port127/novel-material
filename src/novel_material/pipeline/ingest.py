@@ -8,13 +8,13 @@
 5. 更新全局索引
 """
 import sys
-import yaml
 import re
 from datetime import datetime
 from pathlib import Path
 from collections.abc import Callable
 
 from novel_material.infra.config import NOVELS_DIR, INDEX_FILE
+from novel_material.infra.yaml_io import load_yaml, save_yaml
 from novel_material.infra.common import generate_material_id
 from novel_material.infra.progress import get_pipeline_logger
 from .preprocess import preprocess
@@ -246,8 +246,7 @@ def ingest_file(file_path, progress_callback: Callable[[int, int, str], None] | 
         current_line = end_line + 1
 
     # 写入 chapter_index.yaml
-    with open(novel_dir / "chapter_index.yaml", "w", encoding="utf-8") as f:
-        yaml.dump(chapter_index, f, allow_unicode=True, default_flow_style=False)
+    save_yaml(novel_dir / "chapter_index.yaml", chapter_index)
 
     # 写入 source.txt（章节之间保留空行分隔）
     clean_content = "\n\n".join(source_lines)
@@ -269,8 +268,7 @@ def ingest_file(file_path, progress_callback: Callable[[int, int, str], None] | 
         "created_at": datetime.now().isoformat(),
         "updated_at": datetime.now().isoformat()
     }
-    with open(novel_dir / "meta.yaml", "w", encoding="utf-8") as f:
-        yaml.dump(meta, f, allow_unicode=True, default_flow_style=False)
+    save_yaml(novel_dir / "meta.yaml", meta)
 
     # ── 步骤 5：更新全局索引 ──
     if progress_callback:
@@ -287,11 +285,7 @@ def ingest_file(file_path, progress_callback: Callable[[int, int, str], None] | 
 def update_global_index(material_id, meta):
     """更新全局索引文件。"""
     index_file = INDEX_FILE
-    if index_file.exists():
-        with open(index_file, "r", encoding="utf-8") as f:
-            index = yaml.safe_load(f) or {}
-    else:
-        index = {}
+    index = load_yaml(index_file)
 
     index[material_id] = {
         "name": meta["name"],
@@ -299,8 +293,7 @@ def update_global_index(material_id, meta):
         "path": f"data/novels/{material_id}"
     }
 
-    with open(index_file, "w", encoding="utf-8") as f:
-        yaml.dump(index, f, allow_unicode=True, default_flow_style=False)
+    save_yaml(index_file, index)
 
 
 if __name__ == "__main__":

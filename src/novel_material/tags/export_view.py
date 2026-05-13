@@ -4,7 +4,6 @@
 数据库是唯一数据源。
 """
 import os
-import yaml
 import psycopg2
 import psycopg2.extras
 from pathlib import Path
@@ -13,6 +12,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from novel_material.infra.config import PROJECT_ROOT, DATA_DIR
+from novel_material.infra.yaml_io import save_yaml
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
@@ -98,8 +98,7 @@ def export_tags_view(output_path="data/tags_view.yaml"):
 
     # 写入 YAML
     output_file = PROJECT_ROOT / output_path
-    with open(output_file, "w", encoding="utf-8") as f:
-        yaml.dump(result, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+    save_yaml(output_file, result)
 
     print(f"已导出到 {output_file}")
     print(f"  标签总数: {len(tags)}")

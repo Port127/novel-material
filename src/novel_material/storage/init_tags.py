@@ -1,9 +1,10 @@
 """初始化标签数据：从 data/tags.yaml 导入到数据库。"""
 import os
-import yaml
 import psycopg2
 from pathlib import Path
 from dotenv import load_dotenv
+
+from novel_material.infra.yaml_io import load_yaml
 
 load_dotenv()
 
@@ -242,8 +243,7 @@ def init_tags():
         return
 
     print(f"读取标签文件: {TAGS_FILE}")
-    with open(TAGS_FILE, "r", encoding="utf-8") as f:
-        old_tags = yaml.safe_load(f) or {}
+    old_tags = load_yaml(TAGS_FILE)
 
     print("连接数据库...")
     conn = psycopg2.connect(DATABASE_URL)

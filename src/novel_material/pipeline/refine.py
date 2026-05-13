@@ -4,10 +4,10 @@
 最后生成大纲向量（premise + beats）。
 """
 import sys
-import yaml
 import time
 
 from novel_material.infra.config import NOVELS_DIR
+from novel_material.infra.yaml_io import load_yaml, save_yaml, load_yaml_list
 from novel_material.infra.progress import get_pipeline_logger
 from novel_material.pipeline.infer import infer_key_plot_points
 from novel_material.storage.embedding import embed_outline
@@ -25,11 +25,8 @@ def refine_outline(material_id, chapters_data):
         logger.info(f"[{material_id}] 跳过大纲精调：outline/_index.yaml 不存在")
         return False
 
-    with open(outline_index_file, "r", encoding="utf-8") as f:
-        outline_index = yaml.safe_load(f) or {}
-
-    with open(outline_dir / "structure.yaml", "r", encoding="utf-8") as f:
-        structure = yaml.safe_load(f) or {}
+    outline_index = load_yaml(outline_index_file)
+    structure = load_yaml(outline_dir / "structure.yaml")
 
     function_counts = {}
     tension_avg = 0
@@ -47,8 +44,7 @@ def refine_outline(material_id, chapters_data):
     outline_index["avg_tension"] = round(tension_avg, 2)
     outline_index["refined_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
 
-    with open(outline_index_file, "w", encoding="utf-8") as f:
-        yaml.dump(outline_index, f, allow_unicode=True, default_flow_style=False)
+    save_yaml(outline_index_file, outline_index)
 
     logger.info(f"[{material_id}] 大纲精调完成: {hooks_count} 个钩子, 平均张力 {tension_avg:.2f}")
     return True
@@ -65,8 +61,7 @@ def refine_characters(material_id, chapters_data):
         logger.info(f"[{material_id}] 跳过人物精调：characters/_index.yaml 不存在")
         return False
 
-    with open(char_index_file, "r", encoding="utf-8") as f:
-        char_index = yaml.safe_load(f) or {}
+    char_index = load_yaml(char_index_file)
 
     appearance_counts = {}
     chapter_appearances = {}
@@ -81,8 +76,7 @@ def refine_characters(material_id, chapters_data):
             chapter_appearances[c].append(ch_num)
 
     for profile_file in profiles_dir.glob("*.yaml"):
-        with open(profile_file, "r", encoding="utf-8") as f:
-            profile = yaml.safe_load(f) or {}
+        profile = load_yaml(profile_file)
 
         name = profile.get("name", "")
         if name in appearance_counts:
@@ -90,13 +84,11 @@ def refine_characters(material_id, chapters_data):
             profile["first_appearance_chapter"] = min(chapter_appearances[name])
             profile["last_appearance_chapter"] = max(chapter_appearances[name])
 
-        with open(profile_file, "w", encoding="utf-8") as f:
-            yaml.dump(profile, f, allow_unicode=True, default_flow_style=False)
+        save_yaml(profile_file, profile)
 
     char_index["refined_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
 
-    with open(char_index_file, "w", encoding="utf-8") as f:
-        yaml.dump(char_index, f, allow_unicode=True, default_flow_style=False)
+    save_yaml(char_index_file, char_index)
 
     logger.info(f"[{material_id}] 人物精调完成: 更新了 {len(appearance_counts)} 个人物的出场统计")
     return True
@@ -111,8 +103,7 @@ def refine_tags(material_id, chapters_data):
         logger.info(f"[{material_id}] 跳过标签精调：tags.yaml 不存在")
         return False
 
-    with open(tags_file, "r", encoding="utf-8") as f:
-        tags = yaml.safe_load(f) or {}
+    tags = load_yaml(tags_file)
 
     function_counts = {}
     for ch in chapters_data:
@@ -123,8 +114,7 @@ def refine_tags(material_id, chapters_data):
     tags["top_chapter_functions"] = [{"function": f, "count": c} for f, c in top_functions]
     tags["refined_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
 
-    with open(tags_file, "w", encoding="utf-8") as f:
-        yaml.dump(tags, f, allow_unicode=True, default_flow_style=False)
+    save_yaml(tags_file, tags)
 
     logger.info(f"[{material_id}] 标签精调完成: 更新了章节功能分布")
     return True
@@ -158,9 +148,7 @@ def refine(material_id) -> bool:
         return False
 
     # 加载小说基本信息
-    meta_file = novel_dir / "meta.yaml"
-    with open(meta_file, "r", encoding="utf-8") as f:
-        meta = yaml.safe_load(f) or {}
+    meta = load_yaml(novel_dir / "meta.yaml")
 
     title = meta.get("name", material_id)
     word_count = meta.get("word_count", "?")
@@ -171,17 +159,15 @@ def refine(material_id) -> bool:
     chapter_count = 0
     chapter_types = {}  # {章节号: 类型}
     if chapter_index_file.exists():
-        with open(chapter_index_file, "r", encoding="utf-8") as f:
-            chapter_index = yaml.safe_load(f) or []
-            chapter_count = len(chapter_index)
-            for ch in chapter_index:
-                ch_num = ch.get("chapter")
-                ch_type = ch.get("type", "normal")
-                if ch_num is not None:
-                    chapter_types[ch_num] = ch_type
+        chapter_index = load_yaml_list(chapter_index_file)
+        chapter_count = len(chapter_index)
+        for ch in chapter_index:
+            ch_num = ch.get("chapter")
+            ch_type = ch.get("type", "normal")
+            if ch_num is not None:
+                chapter_types[ch_num] = ch_type
 
-    with open(chapters_file, "r", encoding="utf-8") as f:
-        chapters_data = yaml.safe_load(f) or []
+    chapters_data = load_yaml_list(chapters_file)
 
     # 过滤特殊类型章节（不参与统计）
     filtered_chapters = [
@@ -201,13 +187,11 @@ def refine(material_id) -> bool:
     }
 
     meta_file = novel_dir / "meta.yaml"
-    with open(meta_file, "r", encoding="utf-8") as f:
-        meta = yaml.safe_load(f)
+    meta = load_yaml(meta_file)
 
     meta["refined_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
 
-    with open(meta_file, "w", encoding="utf-8") as f:
-        yaml.dump(meta, f, allow_unicode=True, default_flow_style=False)
+    save_yaml(meta_file, meta)
 
     logger.info(f"[{material_id}] 精调完成")
     for module, success in refined.items():

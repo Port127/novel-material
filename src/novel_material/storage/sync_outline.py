@@ -1,6 +1,6 @@
 """同步大纲结构和向量。"""
-import yaml
 
+from novel_material.infra.yaml_io import load_yaml
 from novel_material.storage.sync_utils import logger, _load_embeddings_npz
 
 
@@ -20,8 +20,7 @@ def sync_outline(conn, novel_dir, material_id):
     theme = []
     tone = []
     if meta_file.exists():
-        with open(meta_file, "r", encoding="utf-8") as f:
-            meta = yaml.safe_load(f) or {}
+        meta = load_yaml(meta_file)
         premise = meta.get("premise")
         theme = meta.get("theme", [])
         tone = meta.get("tone", [])
@@ -32,8 +31,7 @@ def sync_outline(conn, novel_dir, material_id):
 
     outline_index = novel_dir / "outline" / "_index.yaml"
     if outline_index.exists():
-        with open(outline_index, "r", encoding="utf-8") as f:
-            index_data = yaml.safe_load(f) or {}
+        index_data = load_yaml(outline_index)
 
         summary = index_data.get("structure_summary", {})
         hooks = index_data.get("hooks_stats", {})
@@ -90,8 +88,7 @@ def sync_outline(conn, novel_dir, material_id):
     if not structure_file.exists():
         return
 
-    with open(structure_file, "r", encoding="utf-8") as f:
-        structure_data = yaml.safe_load(f) or {}
+    structure_data = load_yaml(structure_file)
 
     acts = structure_data.get("acts", [])
     if not acts:

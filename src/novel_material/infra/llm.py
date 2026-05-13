@@ -8,12 +8,12 @@ import time
 from dotenv import load_dotenv
 import os
 from pathlib import Path
-import yaml
 
 load_dotenv()
 
 from .progress import get_pipeline_logger
 from .config import get_settings
+from .yaml_io import load_yaml
 logger = get_pipeline_logger()
 
 # 多服务商配置文件路径
@@ -81,86 +81,16 @@ def load_config(provider: str | None = None) -> dict:
     异常：
         ValueError：指定了 provider 但在 providers.yaml 中找不到
     """
-    s = get_settings()
-    base_config = {
-        "llm": {
-            "provider": s.get("LLM_PROVIDER", "openai"),
-            "model": s.get("LLM_MODEL", "qwen3.6-plus"),
-            "api_key": s.get("LLM_API_KEY", ""),
-            "base_url": s.get("LLM_BASE_URL"),
-            "max_tokens": int(s.get("LLM_MAX_TOKENS", 8000)),
-            "temperature": float(s.get("LLM_TEMPERATURE", 0.3)),
-            "rate_limit_seconds": int(s.get("LLM_RATE_LIMIT_SECONDS", 60)),
-            "analyze_timeout": int(s.get("LLM_ANALYZE_TIMEOUT", 180)),
-            "outline_timeout": int(s.get("LLM_OUTLINE_TIMEOUT", 300)),
-            "worldbuilding_timeout": int(s.get("LLM_WORLDBUILDING_TIMEOUT", 300)),
-            "characters_timeout": int(s.get("LLM_CHARACTERS_TIMEOUT", 300)),
-            "other_timeout": int(s.get("LLM_OTHER_TIMEOUT", 120)),
-            "outline_summary_tokens": int(s.get("LLM_OUTLINE_SUMMARY_TOKENS", 20000)),
-            "outline_seq_summary_tokens": int(s.get("LLM_OUTLINE_SEQ_SUMMARY_TOKENS", 5000)),
-            "worldbuilding_summary_tokens": int(s.get("LLM_WORLDBUILDING_SUMMARY_TOKENS", 15000)),
-            "characters_summary_tokens": int(s.get("LLM_CHARACTERS_SUMMARY_TOKENS", 15000)),
-            "chapter_batch_size": int(s.get("LLM_CHAPTER_BATCH_SIZE", 5)),
-            "pricing": {
-                "input_per_1k": float(s.get("LLM_PRICE_INPUT_1K", 0.0004)),
-                "output_per_1k": float(s.get("LLM_PRICE_OUTPUT_1K", 0.0012)),
-            },
-            # 多样性控制配置（解决后期敷衍问题）
-            "dynamic_prompt_enabled": s.get("LLM_DYNAMIC_PROMPT_ENABLED", True),
-            "diversity_reminder_interval": int(s.get("LLM_DIVERSITY_REMINDER_INTERVAL", 10)),
-            "late_chapter_threshold": float(s.get("LLM_LATE_CHAPTER_THRESHOLD", 0.6)),
-            "late_temperature_boost": float(s.get("LLM_LATE_TEMPERATURE_BOOST", 0.15)),
-            "temperature_max": float(s.get("LLM_TEMPERATURE_MAX", 0.6)),
-            "dynamic_temperature_enabled": s.get("LLM_DYNAMIC_TEMPERATURE_ENABLED", True),
-            "similarity_window": int(s.get("LLM_SIMILARITY_WINDOW", 10)),
-            "similarity_threshold": float(s.get("LLM_SIMILARITY_WARNING_THRESHOLD", 0.7)),
-        }
-    }
-
-    providers_yaml = _load_providers_yaml()
-    if not providers_yaml:
-        return base_config
-
-    providers = providers_yaml.get("providers", [])
-    target_name = provider or providers_yaml.get("default_provider")
-
-    if not target_name:
-        return base_config
-
-    provider_config = None
-    for p in providers:
-        if p.get("name") == target_name:
-            provider_config = p
-            break
-
-    if not provider_config:
-        available = list_available_providers()
-        raise ValueError(f"服务商 '{target_name}' 不存在。可用服务商: {available}")
-
-    api_key_env = provider_config.get("api_key_env", "")
-    api_key = os.getenv(api_key_env, "")
-
-    if not api_key:
-        logger.warning(f"服务商 '{target_name}' 的 API Key 未配置（环境变量 {api_key_env}）")
-
-    return {
-        "llm": {
-            **base_config["llm"],
-            "provider": target_name,
-            "model": provider_config.get("model", base_config["llm"]["model"]),
-            "api_key": api_key,
-            "base_url": provider_config.get("base_url", base_config["llm"]["base_url"]),
-            "thinking_format": provider_config.get("thinking_format", "openai"),
-        }
-    }
+    from novel_material.infra.config_service import load_app_config
+    app_config = load_app_config(provider)
+    return {"llm": app_config["llm"]}
 
 
 def _load_providers_yaml() -> dict | None:
     """加载 providers.yaml 配置文件，返回 None 表示文件不存在。"""
     if not PROVIDERS_CONFIG_FILE.exists():
         return None
-    with open(PROVIDERS_CONFIG_FILE, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f) or {}
+    return load_yaml(PROVIDERS_CONFIG_FILE)
 
 
 def list_available_providers() -> list[str]:
@@ -271,6 +201,27 @@ def _format_prefix(context: str | None) -> str:
         parts = context.split(" ", 1)
         return f"[{parts[0]}] {parts[1]} "
     return f"[{context}] "
+
+
+def call_llm_with_args(args) -> dict:
+    """调用 LLM API（参数对象版本），返回 JSON 结果。
+
+    参数：
+        args: LLMCallArgs 参数对象
+
+    返回：
+        dict: JSON 结果
+    """
+    return call_llm(
+        system_prompt=args.system_prompt,
+        user_prompt=args.user_prompt,
+        config=args.config,
+        max_tokens_override=args.max_tokens_override,
+        timeout_override=args.timeout_override,
+        context=args.context,
+        thinking_budget=args.thinking_budget,
+        temperature_override=args.temperature_override,
+    )
 
 
 def call_llm(

@@ -1,0 +1,40 @@
+# 大纲生成提示词模板
+
+# 前提提炼提示词
+premise_prompt:
+  system_prompt: |
+    你是专业的小说结构分析师。请根据提供的内容，生成以下 JSON：
+    {
+      "premise": "一句话核心前提（{{premise_max}}字以内）",
+      "structure_type": "三幕式/英雄之旅/多线叙事",
+      "total_acts": 3,
+      "theme": ["主题1", "主题2"],
+      "tone": ["基调1", "基调2"]
+    }
+
+# 幕序列划分提示词（在 outline_acts.py 中定义）
+acts_prompt: null
+
+# 节拍生成提示词
+beats_prompt:
+  system_prompt: |
+    你是专业的小说结构分析师。请为指定序列生成节拍（beats）列表。
+    返回 JSON 格式：
+    {
+      "beats": [
+        {
+          "beat_number": 1,
+          "title": "节拍标题",
+          "chapter": 1,
+          "description": "节拍描述（{{beat_description_max}}字内）",
+          "tension": 1
+        }
+      ]
+    }
+
+    注意：
+    1. 每个序列生成 3-10 个节拍（根据序列长度决定）
+    2. 节拍 tension 从 1-5，应与该章节的实际张力一致
+    3. chapter 填写该节拍对应的最关键章节号
+    4. 节拍应覆盖序列的开头、中间和结尾
+    5. 高张力章节（张力≥4）应是序列内的关键转折点

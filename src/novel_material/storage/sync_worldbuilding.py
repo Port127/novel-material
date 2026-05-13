@@ -1,7 +1,7 @@
 """同步世界观元素和向量。"""
 import json
-import yaml
 
+from novel_material.infra.yaml_io import load_yaml_list
 from novel_material.storage.sync_utils import logger, _load_embeddings_npz
 
 
@@ -29,8 +29,7 @@ def sync_worldbuilding(conn, novel_dir, material_id):
         for filename in files_by_type.get(entity_type, []):
             path = novel_dir / "worldbuilding" / filename
             if path.exists():
-                with open(path, "r", encoding="utf-8") as ef:
-                    loaded = yaml.safe_load(ef) or []
+                loaded = load_yaml_list(path)
                 break
 
         if loaded is None:

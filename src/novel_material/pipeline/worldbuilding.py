@@ -8,13 +8,13 @@
 - 传入聚合统计给 LLM，增强提取准确性
 """
 import sys
-import yaml
 import time
 import re
 from pathlib import Path
 from collections import Counter
 
 from novel_material.infra.config import NOVELS_DIR
+from novel_material.infra.yaml_io import load_yaml, save_yaml, load_yaml_list
 from novel_material.infra.llm import load_config, call_llm, get_last_call_finish_reason, get_call_details, clear_call_details
 from novel_material.infra.common import is_special_chapter_type
 from novel_material.pipeline.loader import load_chapters_data, build_analysis_context
@@ -104,10 +104,7 @@ def generate_worldbuilding(material_id, provider: str | None = None) -> bool:
     wb_dir.mkdir(exist_ok=True)
 
     # 读取 meta
-    meta_file = novel_dir / "meta.yaml"
-    with open(meta_file, "r", encoding="utf-8") as f:
-        meta = yaml.safe_load(f) or {}
-
+    meta = load_yaml(novel_dir / "meta.yaml")
     title = meta.get("name", material_id)
     word_count = meta.get("word_count", "?")
     status = meta.get("status", "raw")
@@ -116,9 +113,8 @@ def generate_worldbuilding(material_id, provider: str | None = None) -> bool:
     chapter_index_file = novel_dir / "chapter_index.yaml"
     chapter_count = 0
     if chapter_index_file.exists():
-        with open(chapter_index_file, "r", encoding="utf-8") as f:
-            chapter_index = yaml.safe_load(f) or []
-            chapter_count = len(chapter_index)
+        chapter_index = load_yaml_list(chapter_index_file)
+        chapter_count = len(chapter_index)
 
     # 输出小说基本信息
     logger.info(f"[{material_id}] 小说: {title} | {chapter_count} 章 | {word_count} 字 | 状态: {status}")
@@ -230,28 +226,23 @@ def generate_worldbuilding(material_id, provider: str | None = None) -> bool:
         "llm_success": bool(result.get("power_system") or result.get("factions"))
     }
 
-    with open(wb_dir / "_index.yaml", "w", encoding="utf-8") as f:
-        yaml.dump(wb_index, f, allow_unicode=True, default_flow_style=False)
+    save_yaml(wb_dir / "_index.yaml", wb_index)
 
     # 写入力量体系
     if result.get("power_system"):
-        with open(wb_dir / "power_system.yaml", "w", encoding="utf-8") as f:
-            yaml.dump(result["power_system"], f, allow_unicode=True, default_flow_style=False)
+        save_yaml(wb_dir / "power_system.yaml", result["power_system"])
 
     # 写入地理空间
     if result.get("geography"):
-        with open(wb_dir / "geography.yaml", "w", encoding="utf-8") as f:
-            yaml.dump(result["geography"], f, allow_unicode=True, default_flow_style=False)
+        save_yaml(wb_dir / "geography.yaml", result["geography"])
 
     # 写入势力
     if result.get("factions"):
-        with open(wb_dir / "factions.yaml", "w", encoding="utf-8") as f:
-            yaml.dump(result["factions"], f, allow_unicode=True, default_flow_style=False)
+        save_yaml(wb_dir / "factions.yaml", result["factions"])
 
     # 写入背景知识
     if result.get("lore"):
-        with open(wb_dir / "lore.yaml", "w", encoding="utf-8") as f:
-            yaml.dump(result["lore"], f, allow_unicode=True, default_flow_style=False)
+        save_yaml(wb_dir / "lore.yaml", result["lore"])
 
     logger.info(
         f"[{material_id}] 世界观提取完成:\n"

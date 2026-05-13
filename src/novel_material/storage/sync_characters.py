@@ -1,7 +1,7 @@
 """同步人物档案和向量。"""
 import json
-import yaml
 
+from novel_material.infra.yaml_io import load_yaml
 from novel_material.storage.sync_utils import logger, _load_embeddings_npz
 from novel_material.storage.sync_chapters import sync_character_appearances
 
@@ -24,8 +24,7 @@ def sync_characters(conn, novel_dir, material_id):
 
     with conn.cursor() as cur:
         for profile_file in profile_files:
-            with open(profile_file, "r", encoding="utf-8") as pf:
-                profile = yaml.safe_load(pf)
+            profile = load_yaml(profile_file)
 
             if not profile:
                 continue

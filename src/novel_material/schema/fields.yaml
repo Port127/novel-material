@@ -1,0 +1,120 @@
+# 字段契约：所有校验阈值的单一数据源
+# 修改此文件自动同步到提示词、schema.py、quality.py
+
+# ============================================================
+# 字段定义（validate_in 指定哪些地方需要校验）
+# ============================================================
+
+summary:
+  description: 章节摘要
+  min_length: 50
+  max_length: 500
+  validate_in: ["prompt", "schema", "quality"]
+  # 为什么是这个值：摘要需要足够长度描述章节核心内容，但不能过长失去精炼性
+
+key_event:
+  description: 关键事件描述
+  min_length: 10
+  max_length: 100
+  validate_in: ["schema", "quality"]
+
+emotion_transition:
+  description: 情感过渡描述
+  min_length: 10
+  max_length: 100
+  validate_in: ["schema"]
+
+plot_progress:
+  description: 情节进度描述
+  min_length: 20
+  max_length: 200
+  validate_in: ["schema"]
+
+main_thread_summary:
+  description: 主线情节概要
+  min_length: 100
+  max_length: 500
+  validate_in: ["schema"]
+  # ROADMAP: 200-300字，放宽边界
+
+core_characters_hint:
+  description: 核心人物名单
+  min_length: 3
+  max_length: 10
+  validate_in: ["schema"]
+
+novel_type:
+  description: 小说类型列表
+  min_length: 1
+  max_length: 3
+  validate_in: ["schema"]
+
+# 人物档案字段（按角色层级区分）
+character_description_core:
+  description: 核心人物描述
+  min_length: 50
+  max_length: 150
+  validate_in: ["prompt"]
+
+character_description_supporting:
+  description: 配角描述
+  min_length: 30
+  max_length: 100
+  validate_in: ["prompt"]
+
+character_description_minor:
+  description: 次要人物描述
+  min_length: 10
+  max_length: 50
+  validate_in: ["prompt"]
+
+arc_summary:
+  description: 角色弧线概述
+  min_length: 20
+  max_length: 100
+  validate_in: ["prompt"]
+
+beat_description:
+  description: 节拍描述
+  min_length: 5
+  max_length: 50
+  validate_in: ["prompt"]
+
+premise:
+  description: 核心前提
+  min_length: 10
+  max_length: 100
+  validate_in: ["prompt"]
+
+# ============================================================
+# 非字段阈值（常量统一）
+# ============================================================
+
+character_thresholds:
+  description: 人物分层出场章数阈值
+  # 为什么是这个值：实测数据，核心人物通常出场50章以上
+  core: 50
+  supporting: 10
+  minor: 5
+
+sample_threshold:
+  description: 章节数阈值，超过此数量启用分层采样
+  # 为什么是这个值：200章以上的小说摘要池超过8000 tokens，超出LLM上下文窗口限制
+  value: 200
+
+avg_tokens_per_entry:
+  description: 平均每条摘要的token数（实测数据：中文摘要25-50 tokens）
+  # 用于估算采样数量，确保摘要池不超限
+  value: 40
+
+character_batch_size:
+  description: 人物分批提取时的每批处理数量
+  value: 25
+
+evaluation_sample_tokens:
+  description: 单批次评估样本输入截断上限
+  value: 8000
+
+max_chapter_tokens:
+  description: 单章输入截断上限
+  value: 5000

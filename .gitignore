@@ -40,3 +40,6 @@ data/index.yaml
 
 # 根目录 material（外部素材）
 /material/
+
+# Claude Code worktrees
+.claude/worktrees/

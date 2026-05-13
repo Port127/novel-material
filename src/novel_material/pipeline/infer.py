@@ -16,10 +16,10 @@
 - resolution: 最后 10% 章节，张力 ≤ 2
 """
 import sys
-import yaml
 from pathlib import Path
 
 from novel_material.infra.config import NOVELS_DIR
+from novel_material.infra.yaml_io import load_yaml, save_yaml, load_yaml_list
 from novel_material.infra.progress import get_pipeline_logger
 from novel_material.infra.common import KEY_PLOT_POINT_VALUES
 
@@ -129,8 +129,7 @@ def infer_key_plot_points(material_id: str) -> bool:
     chapter_types: dict[int, str] = {}
     total_chapters = 0
     if chapter_index_file.exists():
-        with open(chapter_index_file, "r", encoding="utf-8") as f:
-            chapter_index = yaml.safe_load(f) or []
+        chapter_index = load_yaml_list(chapter_index_file)
         total_chapters = len(chapter_index)
         for ch in chapter_index:
             ch_num = ch.get("chapter")
@@ -150,15 +149,14 @@ def infer_key_plot_points(material_id: str) -> bool:
     if chapters_dir.exists():
         for f in sorted(chapters_dir.glob("*.yaml")):
             try:
-                data = yaml.safe_load(f.read_text(encoding="utf-8"))
+                data = load_yaml(f)
                 if isinstance(data, dict) and "chapter" in data:
                     all_chapters.append(data)
-            except yaml.YAMLError:
+            except Exception:
                 logger.warning(f"[{material_id}] 跳过异常文件: {f.name}")
 
     if not all_chapters and chapters_file.exists():
-        with open(chapters_file, "r", encoding="utf-8") as f:
-            all_chapters = yaml.safe_load(f) or []
+        all_chapters = load_yaml_list(chapters_file)
 
     if not all_chapters:
         logger.error(f"[{material_id}] 无章节数据")
@@ -199,13 +197,11 @@ def infer_key_plot_points(material_id: str) -> bool:
             if ch_num is None:
                 continue
             chapter_file = chapters_dir / f"{ch_num:04d}.yaml"
-            with open(chapter_file, "w", encoding="utf-8") as f:
-                yaml.dump(ch_data, f, allow_unicode=True, default_flow_style=False)
+            save_yaml(chapter_file, ch_data)
 
     # 重写合并文件
     all_chapters.sort(key=lambda x: x.get("chapter", 0))
-    with open(chapters_file, "w", encoding="utf-8") as f:
-        yaml.dump(all_chapters, f, allow_unicode=True, default_flow_style=False)
+    save_yaml(chapters_file, all_chapters)
 
     logger.info(
         f"[{material_id}] 结构角色推断完成: {inferred_count} 章标记 | "

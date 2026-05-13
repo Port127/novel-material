@@ -1,7 +1,7 @@
 """同步章节分析结果和向量。"""
-import yaml
 
 from novel_material.infra.common import is_special_chapter_type
+from novel_material.infra.yaml_io import load_yaml, load_yaml_list
 from novel_material.storage.sync_utils import logger, _load_embeddings_npz
 
 
@@ -11,8 +11,7 @@ def sync_chapters(conn, novel_dir, material_id):
     if not chapters_file.exists():
         return
 
-    with open(chapters_file, "r", encoding="utf-8") as f:
-        chapters = yaml.safe_load(f) or []
+    chapters = load_yaml_list(chapters_file)
 
     if not chapters:
         return
@@ -28,8 +27,7 @@ def sync_chapters(conn, novel_dir, material_id):
         embeddings = {int(k): v for k, v in embeddings.items()}
         logger.info(f"加载向量 (.npz): {len(embeddings)} 章")
     elif embeddings_yaml.exists():
-        with open(embeddings_yaml, "r", encoding="utf-8") as f:
-            embeddings = yaml.safe_load(f) or {}
+        embeddings = load_yaml(embeddings_yaml)
         logger.info(f"加载向量 (.yaml 旧格式): {len(embeddings)} 章")
 
     BATCH_SIZE = 50
@@ -143,8 +141,7 @@ def sync_character_appearances(conn, novel_dir, material_id):
     if not chapters_file.exists():
         return
 
-    with open(chapters_file, "r", encoding="utf-8") as f:
-        chapters = yaml.safe_load(f) or []
+    chapters = load_yaml_list(chapters_file)
 
     with conn.cursor() as cur:
         cur.execute("DELETE FROM character_appearances WHERE material_id = %s", (material_id,))

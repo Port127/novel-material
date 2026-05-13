@@ -3,9 +3,10 @@
 此模块包含人物档案生成函数和增量写入辅助函数，
 供 characters_core.py 使用。
 """
-import yaml
 import re
 from pathlib import Path
+
+from novel_material.infra.yaml_io import load_yaml, save_yaml
 
 
 def _build_basic_profile_from_stats(name: str, count: int, role: str, chapters_data: list) -> dict:
@@ -98,8 +99,7 @@ def _save_character_profile(profiles_dir: Path, idx: int, profile: dict, name: s
     # slug 化文件名：只保留字母、数字、中文，其他替换为下划线
     slug = re.sub(r'[^\w一-鿿]', '_', name)
     filename = f"{slug}_{idx:03d}.yaml"
-    with open(profiles_dir / filename, "w", encoding="utf-8") as f:
-        yaml.dump(profile, f, allow_unicode=True, default_flow_style=False)
+    save_yaml(profiles_dir / filename, profile)
 
 
 def _load_existing_profiles(char_dir: Path) -> tuple[list, set]:
@@ -120,7 +120,7 @@ def _load_existing_profiles(char_dir: Path) -> tuple[list, set]:
 
     for f in profiles_dir.glob("*.yaml"):
         try:
-            profile = yaml.safe_load(f.read_text(encoding="utf-8")) or {}
+            profile = load_yaml(f)
             if profile.get("name"):
                 existing_profiles.append(profile)
                 existing_names.add(profile["name"])

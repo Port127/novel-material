@@ -23,12 +23,12 @@
 - analyze.py：统一入口
 """
 import sys
-import yaml
 import time
 from pathlib import Path
 from collections.abc import Callable
 
 from novel_material.infra.config import NOVELS_DIR, update_meta_status, get_settings
+from novel_material.infra.yaml_io import load_yaml, load_yaml_list
 from novel_material.infra.llm import load_config, get_last_call_finish_reason, get_call_details
 from novel_material.validation.quality import run_quality_check, get_short_summary_chapters, get_missing_chapters
 from novel_material.validation.schema import get_schema_error_chapters
@@ -42,8 +42,12 @@ from novel_material.pipeline.analyze_utils import (
     _fmt_duration,
     _get_batch_size,
     build_sliding_window_context,
+)
+from novel_material.pipeline.analyze_validators import (
     validate_window_fields,
-    validate_chapter_analysis,
+    _validate_chapter_analysis,
+)
+from novel_material.pipeline.analyze_files import (
     _load_existing_chapters,
     _append_chapter,
     _merge_chapters,
@@ -79,8 +83,7 @@ def _reanalyze_chapters(
             ch_file.unlink()
 
     # 读取章节索引和原文
-    with open(novel_dir / "chapter_index.yaml", "r", encoding="utf-8") as f:
-        chapter_index = yaml.safe_load(f)
+    chapter_index = load_yaml_list(novel_dir / "chapter_index.yaml")
 
     with open(novel_dir / "source.txt", "r", encoding="utf-8") as f:
         full_text = f.read()
@@ -212,15 +215,13 @@ def chapter_analyze(
     meta_file = novel_dir / "meta.yaml"
     meta = {}
     if meta_file.exists():
-        with open(meta_file, "r", encoding="utf-8") as f:
-            meta = yaml.safe_load(f) or {}
+        meta = load_yaml(meta_file)
 
     title = meta.get("name", material_id)
     word_count = meta.get("word_count", "?")
     status = meta.get("status", "raw")
 
-    with open(novel_dir / "chapter_index.yaml", "r", encoding="utf-8") as f:
-        chapter_index = yaml.safe_load(f)
+    chapter_index = load_yaml_list(novel_dir / "chapter_index.yaml")
 
     chapter_count = len(chapter_index)
 
@@ -399,7 +400,7 @@ def chapter_analyze(
                     batch_api_calls += 1
                 except Exception as e:
                     # 收集诊断信息
-                    from novel_material.pipeline.analyze_utils import _should_use_thinking_mode
+                    from novel_material.pipeline.analyze_temperature import _should_use_thinking_mode
                     ch_type = ch_info.get("type", "normal")
                     content_len = len(chapter_text)
                     thinking_budget = _should_use_thinking_mode(ch_progress_ratio, config)
@@ -414,7 +415,7 @@ def chapter_analyze(
                     continue
 
             # 检查结果质量
-            errors = validate_chapter_analysis(result, ch_info)
+            errors = _validate_chapter_analysis(result, ch_info)
             for err in errors:
                 logger.warning(f"[{material_id}] [质量] {err}")
                 batch_errors += 1

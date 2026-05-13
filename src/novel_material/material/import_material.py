@@ -1,12 +1,12 @@
 """导入外部已分析好的素材目录，重新生成 material_id 并注册。"""
 import sys
-import yaml
 import shutil
 import time
 from pathlib import Path
 
 from novel_material.infra.config import NOVELS_DIR, INDEX_FILE
 from novel_material.infra.common import generate_material_id
+from novel_material.infra.yaml_io import load_yaml, save_yaml
 from novel_material.tags.validate import validate_tag, validate_tags_batch
 
 
@@ -57,22 +57,16 @@ def import_material(source_path):
     shutil.copytree(source_path, target_dir, dirs_exist_ok=True)
 
     meta_file = target_dir / "meta.yaml"
-    meta = {}
+    meta = load_yaml(meta_file)
     if meta_file.exists():
-        with open(meta_file, "r", encoding="utf-8") as f:
-            meta = yaml.safe_load(f) or {}
-
         meta["material_id"] = new_id
         meta["imported_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
         meta["imported_from"] = str(source_path)
-
-        with open(meta_file, "w", encoding="utf-8") as f:
-            yaml.dump(meta, f, allow_unicode=True, default_flow_style=False)
+        save_yaml(meta_file, meta)
 
     tags_file = target_dir / "tags.yaml"
     if tags_file.exists():
-        with open(tags_file, "r", encoding="utf-8") as f:
-            tags = yaml.safe_load(f) or {}
+        tags = load_yaml(tags_file)
 
         invalid = validate_tags_with_db(tags)
         if invalid:
@@ -84,11 +78,7 @@ def import_material(source_path):
             print("标签校验通过")
 
     index_file = INDEX_FILE
-    if index_file.exists():
-        with open(index_file, "r", encoding="utf-8") as f:
-            index = yaml.safe_load(f) or {}
-    else:
-        index = {}
+    index = load_yaml(index_file)
 
     index[new_id] = {
         "name": meta.get("name", source_path.name),
@@ -97,8 +87,7 @@ def import_material(source_path):
         "imported_at": meta.get("imported_at")
     }
 
-    with open(index_file, "w", encoding="utf-8") as f:
-        yaml.dump(index, f, allow_unicode=True, default_flow_style=False)
+    save_yaml(index_file, index)
 
     print(f"\n导入完成: {new_id}")
     print("请运行以下命令同步到数据库:")

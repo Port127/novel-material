@@ -1,7 +1,6 @@
 """删除素材及其所有关联资源。"""
 import os
 import sys
-import yaml
 import shutil
 import psycopg2
 from pathlib import Path
@@ -10,6 +9,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from novel_material.infra.config import NOVELS_DIR, INDEX_FILE
+from novel_material.infra.yaml_io import load_yaml, save_yaml
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
@@ -23,8 +23,7 @@ def delete_material(material_id, confirm=True):
         return False
 
     meta_file = novel_dir / "meta.yaml"
-    with open(meta_file, "r", encoding="utf-8") as f:
-        meta = yaml.safe_load(f) or {}
+    meta = load_yaml(meta_file)
 
     novel_name = meta.get("name", material_id)
 
@@ -72,13 +71,11 @@ def delete_material(material_id, confirm=True):
     # 3. 更新全局索引
     index_file = INDEX_FILE
     if index_file.exists():
-        with open(index_file, "r", encoding="utf-8") as f:
-            index = yaml.safe_load(f) or {}
+        index = load_yaml(index_file)
 
         if material_id in index:
             del index[material_id]
-            with open(index_file, "w", encoding="utf-8") as f:
-                yaml.dump(index, f, allow_unicode=True, default_flow_style=False)
+            save_yaml(index_file, index)
             print("全局索引已更新")
 
     print(f"\n删除完成: {material_id}")

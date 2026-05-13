@@ -1,7 +1,7 @@
 """同步 meta.yaml 到 novels 表。"""
 import json
-import yaml
 
+from novel_material.infra.yaml_io import load_yaml
 from novel_material.storage.sync_utils import logger
 
 
@@ -11,8 +11,7 @@ def sync_meta(conn, novel_dir, material_id):
     if not meta_file.exists():
         return
 
-    with open(meta_file, "r", encoding="utf-8") as f:
-        meta = yaml.safe_load(f)
+    meta = load_yaml(meta_file)
 
     tags_value = json.dumps(meta.get("tags", {}), ensure_ascii=False) if meta.get("tags") else None
 

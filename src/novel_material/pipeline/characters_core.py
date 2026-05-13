@@ -11,12 +11,12 @@
    - 次要层（>=5章）：精简档案（仅基础信息）
 """
 import sys
-import yaml
 import time
 from pathlib import Path
 from collections.abc import Callable
 
 from novel_material.infra.config import NOVELS_DIR
+from novel_material.infra.yaml_io import load_yaml, save_yaml, load_yaml_list
 from novel_material.infra.llm import load_config, get_last_call_finish_reason, get_call_details
 from novel_material.pipeline.loader import load_chapters_data, build_analysis_context
 from novel_material.infra.progress import get_pipeline_logger, PipelineRunner
@@ -63,8 +63,7 @@ def generate_characters(material_id, progress_callback: Callable[[int, int, str]
     profiles_dir.mkdir(exist_ok=True)
 
     # 读取 meta
-    with open(novel_dir / "meta.yaml", "r", encoding="utf-8") as f:
-        meta = yaml.safe_load(f) or {}
+    meta = load_yaml(novel_dir / "meta.yaml")
 
     title = meta.get("name", material_id)
     word_count = meta.get("word_count", "?")
@@ -74,9 +73,8 @@ def generate_characters(material_id, progress_callback: Callable[[int, int, str]
     chapter_index_file = novel_dir / "chapter_index.yaml"
     chapter_count = 0
     if chapter_index_file.exists():
-        with open(chapter_index_file, "r", encoding="utf-8") as f:
-            chapter_index = yaml.safe_load(f) or []
-            chapter_count = len(chapter_index)
+        chapter_index = load_yaml_list(chapter_index_file)
+        chapter_count = len(chapter_index)
 
     logger.info(f"[{material_id}] 小说: {title} | {chapter_count} 章 | {word_count} 字 | 状态: {status}")
 
@@ -140,7 +138,6 @@ def generate_characters(material_id, progress_callback: Callable[[int, int, str]
     idx = len(existing_profiles)
     total_batches = 3
 
-    # 第一层：核心人物（>=50章）
     new_core_count = 0
     core_base_len = len(get_call_details())
     if core_candidates:
@@ -206,7 +203,6 @@ def generate_characters(material_id, progress_callback: Callable[[int, int, str]
     if progress_callback:
         progress_callback(1, total_batches, f"核心人物完成 ({new_core_count} 人)")
 
-    # 第二层：配角（10-49章）
     new_supporting_count = 0
     supporting_base_len = len(get_call_details())
     if supporting_candidates:
@@ -268,7 +264,6 @@ def generate_characters(material_id, progress_callback: Callable[[int, int, str]
     if progress_callback:
         progress_callback(2, total_batches, f"配角完成 ({new_supporting_count} 人)")
 
-    # 第三层：次要人物（5-9章）
     new_minor_count = 0
     minor_base_len = len(get_call_details())
     if minor_candidates:
@@ -353,12 +348,10 @@ def generate_characters(material_id, progress_callback: Callable[[int, int, str]
         "created_at": time.strftime("%Y-%m-%dT%H:%M:%S")
     }
 
-    with open(char_dir / "_index.yaml", "w", encoding="utf-8") as f:
-        yaml.dump(char_index, f, allow_unicode=True, default_flow_style=False)
+    save_yaml(char_dir / "_index.yaml", char_index)
 
     # 写入关系网
-    with open(char_dir / "relationships.yaml", "w", encoding="utf-8") as f:
-        yaml.dump({"relationships": unique_relationships}, f, allow_unicode=True, default_flow_style=False)
+    save_yaml(char_dir / "relationships.yaml", {"relationships": unique_relationships})
 
     logger.info(
         f"[{material_id}] 人物提取完成:\n"

@@ -6,14 +6,11 @@
 from collections import Counter
 
 from novel_material.infra.common import is_special_chapter_type
+from novel_material.schema import get_threshold
 
 
-# 分层阈值（可配置）
-CHARACTER_THRESHOLDS = {
-    "core": 50,       # >= 50 章为核心人物
-    "supporting": 10,  # >= 10 章为配角
-    "minor": 5         # >= 5 章为次要人物
-}
+# 分层阈值（从契约加载）
+CHARACTER_THRESHOLDS = get_threshold("character_thresholds")
 
 # 分批大小
 CHARACTER_BATCH_SIZE = 25  # 每批处理 25 人

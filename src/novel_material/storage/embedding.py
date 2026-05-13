@@ -7,7 +7,6 @@
 - 大纲 premise（新增）
 """
 import sys
-import yaml
 import time
 from pathlib import Path
 
@@ -16,6 +15,7 @@ import numpy as np
 from novel_material.infra.config import NOVELS_DIR
 from novel_material.infra.embedding import get_embedding, load_embedding_config
 from novel_material.infra.logging_config import get_embedding_logger
+from novel_material.infra.yaml_io import load_yaml, load_yaml_list
 
 logger = get_embedding_logger()
 
@@ -110,8 +110,7 @@ def embed_chapters(material_id: str) -> None:
         logger.error("chapters.yaml 不存在，请先运行 chapter_analyze")
         return
 
-    with open(chapters_file, "r", encoding="utf-8") as f:
-        chapters = yaml.safe_load(f) or []
+    chapters = load_yaml_list(chapters_file)
 
     if not chapters:
         logger.warning("chapters.yaml 为空，跳过向量化")
@@ -230,8 +229,7 @@ def embed_characters(material_id: str) -> None:
 
     pending = []
     for f in profile_files:
-        with open(f, "r", encoding="utf-8") as pf:
-            profile = yaml.safe_load(pf) or {}
+        profile = load_yaml(f)
         name = profile.get("name")
         if name and name not in existing:
             text = _build_character_text(profile)
@@ -338,8 +336,7 @@ def embed_worldbuilding(material_id: str) -> None:
         for filename in filenames:
             filepath = wb_dir / filename
             if filepath.exists():
-                with open(filepath, "r", encoding="utf-8") as f:
-                    data = yaml.safe_load(f) or []
+                data = load_yaml_list(filepath)
 
                 # 处理不同格式
                 if isinstance(data, dict):
@@ -427,8 +424,7 @@ def embed_outline(material_id: str) -> None:
         premise_text = ""
 
         if meta_file.exists():
-            with open(meta_file, "r", encoding="utf-8") as f:
-                meta = yaml.safe_load(f) or {}
+            meta = load_yaml(meta_file)
 
             parts = []
             if meta.get("premise"):
@@ -461,8 +457,7 @@ def embed_outline(material_id: str) -> None:
     # 2. 向量化 beats（可选，低优先级）
     structure_file = outline_dir / "structure.yaml"
     if structure_file.exists():
-        with open(structure_file, "r", encoding="utf-8") as f:
-            structure = yaml.safe_load(f) or {}
+        structure = load_yaml(structure_file)
 
         beats = {}
         acts = structure.get("acts", [])

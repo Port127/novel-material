@@ -1,4 +1,4 @@
-"""基础设施模块：LLM 调用、数据库连接、向量计算、进度追踪、配置管理、公共函数。"""
+"""基础设施模块：LLM 调用、数据库连接、向量计算、进度追踪、配置管理、公共函数、服务层。"""
 
 from .config import (
     PROJECT_ROOT,
@@ -44,6 +44,12 @@ from .common import (
     filter_normal_chapters,
     generate_material_id,
 )
+# 服务层
+from .yaml_io import load_yaml, save_yaml, load_yaml_list
+from .path_service import PathService
+from .progress_manager import ProgressManager, ProgressStage
+from .logging_service import create_logger
+from .context import ExecutionContext
 
 __all__ = [
     # config
@@ -84,4 +90,13 @@ __all__ = [
     "is_valid_chapter_type",
     "filter_normal_chapters",
     "generate_material_id",
+    # 服务层
+    "load_yaml",
+    "save_yaml",
+    "load_yaml_list",
+    "PathService",
+    "ProgressManager",
+    "ProgressStage",
+    "create_logger",
+    "ExecutionContext",
 ]

@@ -9,6 +9,8 @@ from novel_material.pipeline.analyze_utils import (
     _CHAPTER_JSON_SCHEMA,
     _CHAPTER_JSON_SCHEMA_WITH_WINDOW,
     _get_max_chapter_tokens,
+)
+from novel_material.pipeline.analyze_temperature import (
     _build_dynamic_system_prompt,
     _should_use_thinking_mode,
     _calculate_dynamic_temperature,

@@ -1,11 +1,11 @@
 """进度跟踪器：为流水线提供实时进度、计时和健康状态反馈。"""
 import sys
-import yaml
 import time
 import threading
 from pathlib import Path
 from contextlib import contextmanager
 
+from novel_material.infra.yaml_io import load_yaml, save_yaml
 from .logging_config import (
     get_pipeline_logger,
     pause_console_logging,
@@ -47,8 +47,9 @@ def save_run_history(novel_dir: Path, pipeline_name: str, stage_times: list[dict
     history_file = novel_dir / "run_history.yaml"
 
     if history_file.exists():
-        with open(history_file, "r", encoding="utf-8") as f:
-            history = yaml.safe_load(f) or {"runs": []}
+        history = load_yaml(history_file)
+        if "runs" not in history:
+            history["runs"] = []
     else:
         history = {"runs": []}
 
@@ -98,8 +99,7 @@ def save_run_history(novel_dir: Path, pipeline_name: str, stage_times: list[dict
     if len(history["runs"]) > 50:
         history["runs"] = history["runs"][-50:]
 
-    with open(history_file, "w", encoding="utf-8") as f:
-        yaml.dump(history, f, allow_unicode=True, default_flow_style=False)
+    save_yaml(history_file, history)
 
     return history_file
 

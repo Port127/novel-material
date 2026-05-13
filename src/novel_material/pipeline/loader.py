@@ -14,22 +14,21 @@
 - outline.py: 大纲生成，需要张力/悬念统计数据
 - characters.py: 人物提取，需要章节人物列表用于合并
 """
-import yaml
 from pathlib import Path
 
 from novel_material.infra.llm import truncate_to_tokens
 from novel_material.infra.progress import get_pipeline_logger
 from novel_material.infra.common import filter_normal_chapters, is_valid_chapter_type
+from novel_material.infra.yaml_io import load_yaml, load_yaml_list
+from novel_material.schema import get_threshold
 
 logger = get_pipeline_logger()
 
-# 章节数阈值：超过此数量启用分层采样
-# 理由：200章以上的小说摘要池超过 8000 tokens，超出 LLM 上下文窗口限制
-_SAMPLE_THRESHOLD = 200
+# 章节数阈值：超过此数量启用分层采样（从契约加载）
+_SAMPLE_THRESHOLD = get_threshold("sample_threshold")
 
-# 平均每条摘要的 token 数（实测数据：中文摘要 25-50 tokens）
-# 用于估算采样数量，确保摘要池不超限
-_AVG_TOKENS_PER_ENTRY = 40
+# 平均每条摘要的 token 数（从契约加载）
+_AVG_TOKENS_PER_ENTRY = get_threshold("avg_tokens_per_entry")
 
 
 def load_chapters_data(novel_dir: Path) -> list[dict]:
@@ -59,14 +58,13 @@ def load_chapters_data(novel_dir: Path) -> list[dict]:
     chapter_types: dict[int, str] = {}
     if chapter_index_file.exists():
         try:
-            with open(chapter_index_file, "r", encoding="utf-8") as f:
-                chapter_index = yaml.safe_load(f) or []
+            chapter_index = load_yaml_list(chapter_index_file)
             for ch in chapter_index:
                 ch_num = ch.get("chapter")
                 ch_type = ch.get("type", "normal")
                 if ch_num is not None:
                     chapter_types[ch_num] = ch_type
-        except (yaml.YAMLError, IOError) as e:
+        except Exception as e:
             logger.warning(f"[{novel_dir.name}] chapter_index.yaml 加载失败: {e}")
 
     try:
@@ -78,7 +76,7 @@ def load_chapters_data(novel_dir: Path) -> list[dict]:
                 all_chapters = []
                 for f in individual_files:
                     try:
-                        data = yaml.safe_load(f.read_text(encoding="utf-8"))
+                        data = load_yaml(f)
                         if isinstance(data, dict):
                             # 合入 type 字段
                             ch_num = data.get("chapter")
@@ -87,7 +85,7 @@ def load_chapters_data(novel_dir: Path) -> list[dict]:
                             elif "type" not in data:
                                 data["type"] = "normal"
                             all_chapters.append(data)
-                    except (yaml.YAMLError, IOError) as e:
+                    except Exception as e:
                         logger.warning(f"[{novel_dir.name}] 跳过异常章节文件 {f.name}: {e}")
                         continue
 
@@ -104,7 +102,7 @@ def load_chapters_data(novel_dir: Path) -> list[dict]:
         # 兜底：读取合并文件
         if chapters_file.exists():
             try:
-                data = yaml.safe_load(chapters_file.read_text(encoding="utf-8"))
+                data = load_yaml_list(chapters_file)
                 if isinstance(data, list):
                     # 验证基本格式：必须是 dict 且有 chapter 和 summary 字段
                     valid_chapters = []
@@ -122,7 +120,7 @@ def load_chapters_data(novel_dir: Path) -> list[dict]:
                         logger.warning(f"[{novel_dir.name}] chapters.yaml 有 {invalid_count} 条无效数据")
                     return valid_chapters
                 return []
-            except (yaml.YAMLError, IOError) as e:
+            except Exception as e:
                 logger.warning(f"[{novel_dir.name}] chapters.yaml 加载失败: {e}")
 
         logger.warning(f"[{novel_dir.name}] 章节数据不存在")

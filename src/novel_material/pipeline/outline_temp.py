@@ -3,9 +3,10 @@
 此模块包含大纲生成过程中的临时文件读写函数，
 供 outline_core.py 使用。
 """
-import yaml
 import time
 from pathlib import Path
+
+from novel_material.infra.yaml_io import load_yaml, save_yaml, load_yaml_list
 
 
 def _save_acts_temp(outline_dir: Path, acts: list) -> None:
@@ -16,8 +17,7 @@ def _save_acts_temp(outline_dir: Path, acts: list) -> None:
         acts: 幕/序列数据列表
     """
     acts_temp_file = outline_dir / "acts_temp.yaml"
-    with open(acts_temp_file, "w", encoding="utf-8") as f:
-        yaml.dump({"acts": acts}, f, allow_unicode=True, default_flow_style=False)
+    save_yaml(acts_temp_file, {"acts": acts})
 
 
 def _load_acts_temp(outline_dir: Path) -> list | None:
@@ -32,8 +32,7 @@ def _load_acts_temp(outline_dir: Path) -> list | None:
     acts_temp_file = outline_dir / "acts_temp.yaml"
     if not acts_temp_file.exists():
         return None
-    with open(acts_temp_file, "r", encoding="utf-8") as f:
-        data = yaml.safe_load(f) or {}
+    data = load_yaml(acts_temp_file)
     return data.get("acts", [])
 
 
@@ -49,8 +48,7 @@ def _save_sequence_beats_temp(outline_dir: Path, act_num: int, seq_num: int, bea
     beats_temp_dir = outline_dir / "beats_temp"
     beats_temp_dir.mkdir(exist_ok=True)
     beats_temp_file = beats_temp_dir / f"act{act_num}_seq{seq_num}.yaml"
-    with open(beats_temp_file, "w", encoding="utf-8") as f:
-        yaml.dump(beats, f, allow_unicode=True, default_flow_style=False)
+    save_yaml(beats_temp_file, beats)
 
 
 def _load_sequence_beats_temp(outline_dir: Path, act_num: int, seq_num: int) -> list | None:
@@ -67,8 +65,7 @@ def _load_sequence_beats_temp(outline_dir: Path, act_num: int, seq_num: int) -> 
     beats_temp_file = outline_dir / "beats_temp" / f"act{act_num}_seq{seq_num}.yaml"
     if not beats_temp_file.exists():
         return None
-    with open(beats_temp_file, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f) or []
+    return load_yaml_list(beats_temp_file)
 
 
 def _save_outline_progress(outline_dir: Path, completed_seqs: list, total_sequences: int) -> None:
@@ -85,8 +82,7 @@ def _save_outline_progress(outline_dir: Path, completed_seqs: list, total_sequen
         "total_sequences": total_sequences,
         "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S")
     }
-    with open(progress_file, "w", encoding="utf-8") as f:
-        yaml.dump(progress_data, f, allow_unicode=True, default_flow_style=False)
+    save_yaml(progress_file, progress_data)
 
 
 def _load_outline_progress(outline_dir: Path) -> dict:
@@ -101,8 +97,7 @@ def _load_outline_progress(outline_dir: Path) -> dict:
     progress_file = outline_dir / "_progress.yaml"
     if not progress_file.exists():
         return {"completed_sequences": [], "total_sequences": 0}
-    with open(progress_file, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f) or {"completed_sequences": [], "total_sequences": 0}
+    return load_yaml(progress_file) or {"completed_sequences": [], "total_sequences": 0}
 
 
 def _cleanup_outline_temp_files(outline_dir: Path) -> None:
@@ -129,12 +124,4 @@ def _cleanup_outline_temp_files(outline_dir: Path) -> None:
         progress_file.unlink()
 
 
-__all__ = [
-    "_save_acts_temp",
-    "_load_acts_temp",
-    "_save_sequence_beats_temp",
-    "_load_sequence_beats_temp",
-    "_save_outline_progress",
-    "_load_outline_progress",
-    "_cleanup_outline_temp_files",
-]
+__all__ = []

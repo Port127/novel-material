@@ -1,13 +1,17 @@
 """质量校验脚本：结合结构校验与内容质量校验。"""
 import sys
-import yaml
 import re
 
 from novel_material.infra.config import NOVELS_DIR, get_settings
+from novel_material.infra.yaml_io import load_yaml, load_yaml_list
 from novel_material.infra.progress import get_pipeline_logger
+from novel_material.schema import FieldSchema
 from .schema import validate_material
 
 logger = get_pipeline_logger()
+
+# 从契约加载字段阈值
+_SUMMARY_SCHEMA = FieldSchema.load("summary")
 
 
 class ChapterIndexNotFoundError(Exception):
@@ -61,8 +65,7 @@ def check_summary_similarity(
     if not chapters_file.exists():
         return []
 
-    with open(chapters_file, "r", encoding="utf-8") as f:
-        chapters = yaml.safe_load(f) or []
+    chapters = load_yaml_list(chapters_file)
 
     warnings: list[str] = []
 
@@ -120,7 +123,7 @@ def check_summary_similarity(
 
 def get_short_summary_chapters(
     material_id: str,
-    min_length: int = 40,
+    min_length: int | None = None,
     start_ch: int | None = None,
     end_ch: int | None = None,
 ) -> list[int]:
@@ -130,16 +133,17 @@ def get_short_summary_chapters(
 
     参数：
         material_id: 素材 ID
-        min_length: 最小摘要长度阈值（默认 40）
+        min_length: 最小摘要长度阈值（默认从契约加载）
         start_ch: 起始章节号（可选，用于部分分析）
         end_ch: 结束章节号（可选，用于部分分析）
     """
+    if min_length is None:
+        min_length = _SUMMARY_SCHEMA.min_length
     chapters_file = NOVELS_DIR / material_id / "chapters.yaml"
     if not chapters_file.exists():
         return []
 
-    with open(chapters_file, "r", encoding="utf-8") as f:
-        chapters = yaml.safe_load(f) or []
+    chapters = load_yaml_list(chapters_file)
 
     short_chapters: list[int] = []
     for entry in chapters:
@@ -196,12 +200,10 @@ def get_missing_chapters(
             logger.warning(f"chapter_index.yaml 不存在: {index_file}，跳过缺失检测")
             return []
 
-    with open(index_file, "r", encoding="utf-8") as f:
-        index = yaml.safe_load(f) or []
+    index = load_yaml_list(index_file)
 
     if chapters_file.exists():
-        with open(chapters_file, "r", encoding="utf-8") as f:
-            chapters = yaml.safe_load(f) or []
+        chapters = load_yaml_list(chapters_file)
         analyzed = {
             c.get("chapter") for c in chapters
             if isinstance(c, dict) and "chapter" in c
@@ -236,8 +238,7 @@ def check_summary_quality(material_id: str, start_ch: int | None = None, end_ch:
     if not chapters_file.exists():
         return [], []
 
-    with open(chapters_file, "r", encoding="utf-8") as f:
-        chapters = yaml.safe_load(f) or []
+    chapters = load_yaml_list(chapters_file)
 
     errors: list[str] = []
     warnings: list[str] = []
@@ -262,9 +263,9 @@ def check_summary_quality(material_id: str, start_ch: int | None = None, end_ch:
             if len(summary) < 20:
                 errors.append(f"第{ch_num}章({ch_type}): 摘要过短（{len(summary)}字，要求 ≥20）")
         else:
-            # 正文/番外：标准检查（≥40字）
-            if len(summary) < 40:
-                errors.append(f"第{ch_num}章: 摘要过短（{len(summary)}字，要求 ≥40）")
+            # 正文/番外：标准检查（从契约加载阈值）
+            if len(summary) < _SUMMARY_SCHEMA.min_length:
+                errors.append(f"第{ch_num}章: 摘要过短（{len(summary)}字，要求 ≥{_SUMMARY_SCHEMA.min_length}）")
 
         if len(summary) > 200:
             warnings.append(f"第{ch_num}章: 摘要过长（{len(summary)}字，建议 ≤200）")
@@ -290,10 +291,8 @@ def check_coverage(material_id: str, start_ch: int | None = None, end_ch: int | 
     if not index_file.exists() or not chapters_file.exists():
         return []
 
-    with open(index_file, "r", encoding="utf-8") as f:
-        index = yaml.safe_load(f) or []
-    with open(chapters_file, "r", encoding="utf-8") as f:
-        chapters = yaml.safe_load(f) or []
+    index = load_yaml_list(index_file)
+    chapters = load_yaml_list(chapters_file)
 
     # 计算范围内的章节总数
     chapters_in_range = [
@@ -335,8 +334,7 @@ def run_quality_check(material_id: str, start_ch: int | None = None, end_ch: int
         novel_dir = NOVELS_DIR / material_id
         index_file = novel_dir / "chapter_index.yaml"
         if index_file.exists():
-            with open(index_file, "r", encoding="utf-8") as f:
-                index = yaml.safe_load(f) or []
+            index = load_yaml_list(index_file)
             range_start = start_ch or 1
             range_end = end_ch or len(index)
             range_desc = f"（第 {range_start}-{range_end} 章）"

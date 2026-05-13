@@ -9,6 +9,8 @@ from novel_material.infra.progress import get_pipeline_logger
 from novel_material.pipeline.analyze_utils import (
     _BATCH_JSON_SCHEMA,
     _get_max_chapter_tokens,
+)
+from novel_material.pipeline.analyze_temperature import (
     _build_dynamic_system_prompt,
     _should_use_thinking_mode,
     _calculate_dynamic_temperature,

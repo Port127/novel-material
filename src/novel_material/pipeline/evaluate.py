@@ -11,21 +11,22 @@
 - 样本策略：复用 loader.py 的分层采样逻辑
 """
 import sys
-import yaml
 import time
 from pathlib import Path
 from collections.abc import Callable
 
 from novel_material.infra.config import NOVELS_DIR
+from novel_material.infra.yaml_io import load_yaml, save_yaml, load_yaml_list
 from novel_material.infra.llm import load_config, call_llm, truncate_to_tokens, get_last_call_tokens, get_last_call_finish_reason
 from novel_material.infra.progress import StageTracker, save_run_history, get_pipeline_logger
+from novel_material.pipeline.progress import EVALUATION_STAGES
 from novel_material.infra.common import NOVEL_TYPE_VALUES
+from novel_material.schema import get_threshold
 
 logger = get_pipeline_logger()
 
-# 章节数阈值：超过此数量启用大样本策略
-# 与 loader.py 的 _SAMPLE_THRESHOLD 保持一致（分层采样阈值）
-_SAMPLE_THRESHOLD = 200
+# 章节数阈值：超过此数量启用大样本策略（从契约加载）
+_SAMPLE_THRESHOLD = get_threshold("sample_threshold")
 
 
 def _get_available_genres() -> list[str]:
@@ -139,8 +140,7 @@ def load_evaluation_progress(material_id: str) -> dict:
             "core_characters_hint": [],
         }
 
-    with open(progress_file, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f) or {}
+    return load_yaml(progress_file)
 
 
 def save_evaluation_progress(material_id: str, progress: dict) -> None:
@@ -149,8 +149,7 @@ def save_evaluation_progress(material_id: str, progress: dict) -> None:
     progress_file = novel_dir / "_evaluation_progress.yaml"
     progress["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
 
-    with open(progress_file, "w", encoding="utf-8") as f:
-        yaml.dump(progress, f, allow_unicode=True, default_flow_style=False)
+    save_yaml(progress_file, progress)
 
 
 def load_evaluation(material_id: str) -> dict | None:
@@ -164,8 +163,7 @@ def load_evaluation(material_id: str) -> dict | None:
     eval_file = NOVELS_DIR / material_id / "evaluation.yaml"
     if not eval_file.exists():
         return None
-    with open(eval_file, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f) or {}
+    return load_yaml(eval_file)
 
 
 def _build_sample_text(sample_chapters: list[dict], lines: list[str], max_tokens: int, model: str) -> str:
@@ -327,8 +325,7 @@ def run_evaluation(
     meta_file = novel_dir / "meta.yaml"
     meta = {}
     if meta_file.exists():
-        with open(meta_file, "r", encoding="utf-8") as f:
-            meta = yaml.safe_load(f) or {}
+        meta = load_yaml(meta_file)
 
     title = meta.get("name", material_id)
     word_count = meta.get("word_count", "?")
@@ -339,8 +336,7 @@ def run_evaluation(
     if not chapter_index_file.exists():
         logger.error(f"[{material_id}] chapter_index.yaml 不存在，请先执行入库")
         return False
-    with open(chapter_index_file, "r", encoding="utf-8") as f:
-        chapter_index = yaml.safe_load(f) or []
+    chapter_index = load_yaml_list(chapter_index_file)
 
     if not chapter_index:
         logger.error(f"[{material_id}] chapter_index.yaml 为空")
@@ -379,7 +375,7 @@ def run_evaluation(
 
     # 使用 StageTracker 进行进度跟踪
     tracker = StageTracker(
-        total_stages=5,
+        total_stages=EVALUATION_STAGES,
         stage_name="总体评估",
         material_id=material_id,
         novel_info={"name": title, "chapter_count": total_chapters, "word_count": word_count},
@@ -474,8 +470,7 @@ def run_evaluation(
 
     evaluation_file = novel_dir / "evaluation.yaml"
 
-    with open(evaluation_file, "w", encoding="utf-8") as f:
-        yaml.dump(evaluation, f, allow_unicode=True, default_flow_style=False)
+    save_yaml(evaluation_file, evaluation)
 
     logger.info(f"[{material_id}] 评估完成，已写入: {evaluation_file}")
 
