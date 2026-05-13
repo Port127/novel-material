@@ -1,18 +1,28 @@
 ---
 name: feedback-archive
-description: 归档已解决的 feedback 条目。扫描 docs/feedback.md 中带删除线的条目，推断相关 commit 和文件，转换为规范格式后追加到 docs/feedback/archive/，需整体审核确认后执行。仅手动触发。
+description: >-
+  归档已解决的 feedback 条目。扫描 docs/feedback.md 中带删除线的条目，推断相关 commit 和文件，转换为规范格式后追加到 docs/feedback/archive/，需整体审核确认后执行。
+  仅当用户明确说出"使用 feedback-archive"或"启动 feedback-archive"时触发。
+  不适用于任何隐式场景。
 ---
 
 # feedback-archive
 
 归档 docs/feedback.md 中已解决的问题到 docs/feedback/archive/。
 
-**注意：此 skill 仅手动触发，不会自动执行。**
+## 触发约束
 
-## 前置条件
+此 skill **仅通过显式调用触发**。
 
-- docs/feedback.md 存在且包含 `~~删除线~~` 条目
-- docs/feedback/archive/ 目录存在
+### ⛔ 不触发的场景
+- 用户提到"归档反馈"、"清理 feedback"等但未提及 feedback-archive
+- 完成任务后的"顺便"归档操作
+- 用户未显式引用 @feedback-archive
+
+### ✅ 触发条件
+必须同时满足：
+1. 用户明确说出"使用 feedback-archive"或"启动 feedback-archive"，或显式引用 @feedback-archive
+2. docs/feedback.md 存在且包含已解决条目
 
 ## 执行流程
 
@@ -20,23 +30,16 @@ description: 归档已解决的 feedback 条目。扫描 docs/feedback.md 中带
 
 读取 `docs/feedback.md`，提取所有带 `~~删除线~~` 的条目，保留其所属 section 上下文。
 
-### 2. 分类
+### 2. 自动推断分类
 
-根据关键词匹配 archive 文件：
+扫描 `docs/feedback/archive/` 目录（不存在则自动创建），基于条目内容与现有 archive 文件名的相似度自动匹配：
 
-| archive 文件 | 匹配关键词 |
-|-------------|-----------|
-| 01-progress.md | 进度、进度条、阶段、反馈、展示 |
-| 02-logging.md | 日志、打印、输出、时间戳 |
-| 03-pipeline.md | pipeline、流水线、流程、continue、入库、阶段 |
-| 04-llm.md | LLM、API、模型、向量化、embedding |
-| 05-tags.md | 标签、tag |
-| 06-config.md | 配置、cli、命令、参数、打包 |
-| 07-misc.md | 其他无法分类的 |
+- 提取条目关键词
+- 与 archive 文件名（去除编号）比对
+- 选择最相似的文件
+- 无法匹配时归入 `misc.md`（不存在则创建）
 
-无法匹配时创建新文件。新文件编号为 `{现有最大编号+1}`，如现有最大为 07，则新文件为 `08-{主题}.md`；若已有 08，则为 `09-{主题}.md`，以此类推。
-
-### 3. 推断
+### 3. 推断关联信息
 
 对每个条目依次执行：
 
@@ -62,16 +65,16 @@ description: 归档已解决的 feedback 条目。扫描 docs/feedback.md 中带
 共扫描到 X 个已解决条目
 
 --- 条目 1 ---
-原始: ~~执行nm pipeline continue时没有日志~~
+原始: ~~执行pipeline continue时没有日志~~
 归档: 02-logging.md
 commit: a613140 docs(feedback): 更新反馈文档
-文件: src/novel_material/cli/pipeline.py
+文件: src/cli/pipeline.py
 
 --- 条目 2 ---
 原始: ~~进度条一直卡在2%~~
 归档: 01-progress.md
 commit: 未定位到相关代码记录
-文件: src/novel_material/pipeline/progress.py
+文件: src/pipeline/progress.py
 
 --- 条目 3 ---
 ...
@@ -116,7 +119,7 @@ commit: 未定位到相关代码记录
 
 - **不去重**：archive 中允许重复内容，重复出现反映问题重要性
 - **section 保留**：移除条目后，如 section 变空则保留 section 标题（可能后续添加新条目）
-- **编号动态递增**：新 archive 文件编号不固定为 08，根据现有最大编号递增
+- **编号动态递增**：新 archive 文件编号为现有最大编号+1
 
 ## 输出示例
 
@@ -125,6 +128,6 @@ commit: 未定位到相关代码记录
 归档完成：
   - 01-progress.md: +2 条
   - 02-logging.md: +1 条
-  - 08-ui.md: +2 条（新建）
+  - 03-ui.md: +2 条（新建）
 feedback.md 已清理，移除 5 条
 ```
