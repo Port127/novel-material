@@ -24,20 +24,6 @@ description: >-
 
 ---
 
-## 问题
-
-用户反复要求 Git 操作（agent transcripts 中 17 次相关请求），且场景多样：
-
-- 只 commit，不 push
-- commit then push
-- 只 commit 当前对话修改的文件
-- commit 所有变更
-
-如果 agent 混淆场景，会：
-- 用户没说 push 却自动 push 了
-- 用户只想 commit 当前修改，却被 commit 了所有未提交文件
-- 提交了用户未确认的敏感文件
-
 ## 核心原则
 
 ### 默认行为
