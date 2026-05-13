@@ -279,6 +279,36 @@ def validate_chapters(material_id: str, start_ch: int | None = None, end_ch: int
     return errors
 
 
+def get_schema_error_chapters(material_id: str, start_ch: int | None = None, end_ch: int | None = None) -> list[int]:
+    """获取 schema 校验失败的章节号列表。
+
+    复用 validate_chapters 的返回值，提取错误信息中的章节号。
+
+    参数：
+        material_id：素材 ID
+        start_ch：起始章节号（可选）
+        end_ch：结束章节号（可选）
+
+    返回：
+        校验失败的章节号列表（按章节号排序，去重）
+    """
+    errors = validate_chapters(material_id, start_ch=start_ch, end_ch=end_ch)
+    if not errors:
+        return []
+
+    # 从 "第441章 [field]: msg" 提取章节号
+    chapters: set[int] = set()
+    for err in errors:
+        if err.startswith("第") and "章" in err:
+            try:
+                ch_str = err.split("第")[1].split("章")[0]
+                chapters.add(int(ch_str))
+            except (ValueError, IndexError):
+                continue
+
+    return sorted(chapters)
+
+
 def validate_novel_tags(material_id: str) -> list[str]:
     """校验 tags.yaml（小说级），返回错误描述列表。"""
     tags_file = NOVELS_DIR / material_id / "tags.yaml"

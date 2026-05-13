@@ -1,6 +1,6 @@
 """数据校验模块。"""
 
-from .schema import validate_material, validate_meta, validate_chapters, validate_novel_tags
+from .schema import validate_material, validate_meta, validate_chapters, validate_novel_tags, get_schema_error_chapters
 from .quality import (
     run_quality_check,
     check_summary_quality,
@@ -16,6 +16,7 @@ __all__ = [
     "validate_meta",
     "validate_chapters",
     "validate_novel_tags",
+    "get_schema_error_chapters",
     "run_quality_check",
     "check_summary_quality",
     "check_coverage",

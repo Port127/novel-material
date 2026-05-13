@@ -1,7 +1,7 @@
 """数据库同步：把本地 YAML 文件同步到 PostgreSQL。
 
 自动修复：
-- 检测到 summary 长度不足时会自动调用修复接口重试
+- 检测到 summary 长度不足、章节缺失或 schema 错误时会自动调用修复接口重试
 - 修复成功后继续同步，失败则返回 False
 """
 import os
@@ -18,7 +18,7 @@ load_dotenv()
 
 from novel_material.infra.config import NOVELS_DIR
 from novel_material.infra.progress import get_pipeline_logger
-from novel_material.validation.schema import validate_material
+from novel_material.validation.schema import validate_material, get_schema_error_chapters
 from novel_material.validation.quality import get_short_summary_chapters, get_missing_chapters
 from novel_material.pipeline.analyze import repair_short_summaries
 
@@ -69,17 +69,20 @@ class QualityCheckError(Exception):
         material_id: 素材 ID
         short_chapters: summary 长度不足的章节列表
         missing_chapters: 缺失的章节列表
+        schema_error_chapters: schema 校验失败的章节列表
     """
 
     def __init__(
         self,
         material_id: str,
         short_chapters: list[int] = None,
-        missing_chapters: list[int] = None
+        missing_chapters: list[int] = None,
+        schema_error_chapters: list[int] = None
     ):
         self.material_id = material_id
         self.short_chapters = short_chapters or []
         self.missing_chapters = missing_chapters or []
+        self.schema_error_chapters = schema_error_chapters or []
 
         # 构建消息
         msg = f"Schema 预检失败: {material_id}"
@@ -87,6 +90,8 @@ class QualityCheckError(Exception):
             msg += f"（{len(short_chapters)} 章 summary 长度不足）"
         if missing_chapters:
             msg += f"（{len(missing_chapters)} 章缺失）"
+        if schema_error_chapters:
+            msg += f"（{len(schema_error_chapters)} 章 schema 错误）"
         super().__init__(msg)
 
 
@@ -117,31 +122,35 @@ def _precheck_schema(material_id: str, verbose: bool = True) -> None:
 
     Raises:
         QualityCheckError: 检查失败，包含可修复的章节列表
-        SchemaValidationError: 检查失败且无法修复（非 summary 问题）
+        SchemaValidationError: 检查失败且无法修复（非 summary/schema 问题）
     """
     if validate_material(material_id, verbose=verbose, skip_tags=True):
         logger.info(f"Schema 预检通过: {material_id}")
         return
 
-    # 检查是否是 summary 长度问题或缺失章节问题
+    # 检查是否是 summary 长度问题、缺失章节问题或 schema 错误问题
     short_chapters = get_short_summary_chapters(material_id)
     missing_chapters = get_missing_chapters(material_id, strict=False)
+    schema_error_chapters = get_schema_error_chapters(material_id)
 
-    if short_chapters or missing_chapters:
-        # 是可修复问题（summary长度不足或章节缺失）
+    if short_chapters or missing_chapters or schema_error_chapters:
+        # 是可修复问题（summary长度不足、章节缺失或 schema 错误）
         if short_chapters:
             logger.warning(f"Schema 预检失败: {material_id}，{len(short_chapters)} 章 summary 长度不足")
         if missing_chapters:
             logger.warning(f"Schema 预检失败: {material_id}，{len(missing_chapters)} 章缺失")
+        if schema_error_chapters:
+            logger.warning(f"Schema 预检失败: {material_id}，{len(schema_error_chapters)} 章 schema 错误")
         raise QualityCheckError(
             material_id,
             short_chapters=short_chapters,
-            missing_chapters=missing_chapters
+            missing_chapters=missing_chapters,
+            schema_error_chapters=schema_error_chapters
         )
     else:
         # 不是可修复问题，无法自动修复
-        logger.error(f"Schema 预检失败（非 summary/缺失问题），无法自动修复: {material_id}")
-        raise SchemaValidationError(f"Schema 预检失败（非 summary/缺失问题），中止同步: {material_id}")
+        logger.error(f"Schema 预检失败（非 summary/缺失/schema 错误问题），无法自动修复: {material_id}")
+        raise SchemaValidationError(f"Schema 预检失败（非可修复问题），中止同步: {material_id}")
 
 
 def _execute_sync(conn, novel_dir: Path, material_id: str) -> bool:
@@ -208,8 +217,8 @@ def sync_novel(material_id: str, provider: str | None = None, use_window: bool =
     try:
         _precheck_schema(material_id, verbose=True)
     except QualityCheckError as e:
-        # 合并短摘要和缺失章节
-        chapters_to_fix = sorted(set(e.short_chapters) | set(e.missing_chapters))
+        # 合并短摘要、缺失章节和 schema 错误章节
+        chapters_to_fix = sorted(set(e.short_chapters) | set(e.missing_chapters) | set(e.schema_error_chapters))
         logger.info(f"[{material_id}] 自动修复 {len(chapters_to_fix)} 章...")
         success, repaired, total = repair_short_summaries(
             material_id,
@@ -229,10 +238,11 @@ def sync_novel(material_id: str, provider: str | None = None, use_window: bool =
             # 修复后仍有问题
             remaining_short = get_short_summary_chapters(material_id)
             remaining_missing = get_missing_chapters(material_id, strict=False)
-            total_remaining = len(remaining_short) + len(remaining_missing)
+            remaining_schema_error = get_schema_error_chapters(material_id)
+            total_remaining = len(remaining_short) + len(remaining_missing) + len(remaining_schema_error)
             logger.warning(
                 f"[{material_id}] 修复后仍有 {total_remaining} 章问题"
-                f"（{len(remaining_short)} 章短摘要，{len(remaining_missing)} 章缺失），需人工干预"
+                f"（{len(remaining_short)} 章短摘要，{len(remaining_missing)} 章缺失，{len(remaining_schema_error)} 章 schema 错误），需人工干预"
             )
             return False
         except SchemaValidationError:

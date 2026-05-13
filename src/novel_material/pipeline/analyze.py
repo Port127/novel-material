@@ -25,6 +25,7 @@ from collections.abc import Callable
 from novel_material.infra.config import NOVELS_DIR, update_meta_status, get_settings
 from novel_material.infra.llm import load_config, call_llm, truncate_to_tokens, get_last_call_finish_reason, get_call_details
 from novel_material.validation.quality import run_quality_check, get_short_summary_chapters, get_missing_chapters
+from novel_material.validation.schema import get_schema_error_chapters
 from novel_material.validation.pacing_normalize import normalize_pacing
 from novel_material.infra.progress import get_pipeline_logger, PipelineRunner, save_run_history
 from novel_material.infra.constants import TENSION_CHANGE_VALUES
@@ -1222,21 +1223,22 @@ def chapter_analyze(
             final_passed = True
             break
 
-        # 检查短摘要章节和缺失章节（应用范围过滤）
+        # 检查短摘要章节、缺失章节和 schema 错误章节（应用范围过滤）
         short_chapters = get_short_summary_chapters(material_id, start_ch=start_ch, end_ch=end_ch)
         missing_chapters = get_missing_chapters(material_id, start_ch=start_ch, end_ch=end_ch, strict=False)
+        schema_error_chapters = get_schema_error_chapters(material_id, start_ch=start_ch, end_ch=end_ch)
 
         # 合并需要重分析的章节
-        chapters_to_reanalyze = sorted(set(short_chapters) | set(missing_chapters))
+        chapters_to_reanalyze = sorted(set(short_chapters) | set(missing_chapters) | set(schema_error_chapters))
 
         if not chapters_to_reanalyze:
-            # 不是 summary 问题也不是缺失问题，无法自动修复
+            # 不是 summary 问题也不是缺失问题，也不是 schema 问题，无法自动修复
             update_meta_status(material_id, "failed")
             raise ValueError(f"章级分析质量校验未通过：{material_id}")
 
         # 自动重新分析这些章节
         logger.info(
-            f"[{material_id}] 发现 {len(short_chapters)} 章摘要过短 + {len(missing_chapters)} 章缺失，"
+            f"[{material_id}] 发现 {len(short_chapters)} 章摘要过短 + {len(missing_chapters)} 章缺失 + {len(schema_error_chapters)} 章 schema 错误，"
             f"合并 {len(chapters_to_reanalyze)} 章待重分析（第 {retry_idx + 1}/{max_summary_retries} 次）"
         )
         if progress_callback:
@@ -1292,7 +1294,7 @@ def reanalyze_chapters(
 ) -> tuple[bool, int, int]:
     """重新分析指定章节（公开接口）。
 
-    支持重分析短摘要章节、缺失章节或任意指定章节。
+    支持重分析短摘要章节、缺失章节、schema 错误章节或任意指定章节。
     调用后会自动合并 chapters.yaml。
 
     参数：
