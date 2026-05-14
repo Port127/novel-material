@@ -9,6 +9,8 @@
    - 核心层（>=50章）：完整档案（心理分析、弧线、关键事件）
    - 配角层（>=10章）：标准档案（基础信息 + 关系）
    - 次要层（>=5章）：精简档案（仅基础信息）
+
+注意：人物向量化已移至 embed_all.py 统一处理。
 """
 import sys
 import time
@@ -20,7 +22,6 @@ from novel_material.infra.yaml_io import load_yaml, save_yaml, load_yaml_list
 from novel_material.infra.llm import load_config, get_last_call_finish_reason, get_call_details
 from novel_material.pipeline.loader import load_chapters_data, build_analysis_context
 from novel_material.infra.progress import get_pipeline_logger, PipelineRunner
-from novel_material.storage.embedding import embed_characters  # 批次3后移至 embed_all.py
 
 from novel_material.pipeline.characters_stats import CHARACTER_THRESHOLDS, VALID_ROLES, _extract_appearance_stats
 from novel_material.pipeline.characters_selector import _select_candidate_characters

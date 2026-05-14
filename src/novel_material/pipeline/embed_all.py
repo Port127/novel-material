@@ -1,6 +1,9 @@
 """统一向量化入口：集中管理所有向量化调用并记录历史。
 
 处理顺序：chapters → characters → worldbuilding → outline
+
+注意：embedding API 不按 token 计费，stage_times 中 tokens 记录为 0。
+api_calls 记录处理条数而非实际 API 调用次数（底层 embed 函数内部批量处理）。
 """
 import time
 
@@ -44,16 +47,13 @@ def embed_all(material_id: str) -> dict:
         logger.info(f"[{material_id}] 章节向量已存在，跳过")
         results["chapters"] = True
     else:
+        ch_start = time.monotonic()
         try:
             embed_chapters(material_id)
             results["chapters"] = True
             stage_times.append({
                 "name": "章节向量",
-                "elapsed_sec": time.monotonic() - wall_start,
-                "api_calls": 1,
-                "api_errors": 0,
-                "tokens_in": 0,
-                "tokens_out": 0,
+                "elapsed_sec": time.monotonic() - ch_start,
             })
         except Exception as e:
             logger.warning(f"[{material_id}] 章节向量化失败: {e}")
@@ -67,10 +67,6 @@ def embed_all(material_id: str) -> dict:
         stage_times.append({
             "name": "人物向量",
             "elapsed_sec": time.monotonic() - char_start,
-            "api_calls": 1,
-            "api_errors": 0,
-            "tokens_in": 0,
-            "tokens_out": 0,
         })
     except Exception as e:
         logger.warning(f"[{material_id}] 人物向量化失败: {e}")
@@ -84,10 +80,6 @@ def embed_all(material_id: str) -> dict:
         stage_times.append({
             "name": "世界观向量",
             "elapsed_sec": time.monotonic() - wb_start,
-            "api_calls": 1,
-            "api_errors": 0,
-            "tokens_in": 0,
-            "tokens_out": 0,
         })
     except Exception as e:
         logger.warning(f"[{material_id}] 世界观向量化失败: {e}")
@@ -101,10 +93,6 @@ def embed_all(material_id: str) -> dict:
         stage_times.append({
             "name": "大纲向量",
             "elapsed_sec": time.monotonic() - outline_start,
-            "api_calls": 1,
-            "api_errors": 0,
-            "tokens_in": 0,
-            "tokens_out": 0,
         })
     except Exception as e:
         logger.warning(f"[{material_id}] 大纲向量化失败: {e}")
@@ -112,7 +100,7 @@ def embed_all(material_id: str) -> dict:
 
     total_elapsed = time.monotonic() - wall_start
 
-    # 保存运行历史
+    # 保存运行历史（tokens/api_calls 对于 embedding API 不适用）
     all_success = all(results.values())
     save_run_history(
         novel_dir=novel_dir,

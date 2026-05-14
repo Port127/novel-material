@@ -186,13 +186,8 @@ def refine(material_id) -> bool:
         "tags": refine_tags(material_id, filtered_chapters)
     }
 
-    meta_file = novel_dir / "meta.yaml"
-    meta = load_yaml(meta_file)
-
-    meta["refined_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
-
-    save_yaml(meta_file, meta)
-    update_meta_status(material_id, "finalized")
+    # 一次性更新状态和 refined_at（避免重复 IO）
+    update_meta_status(material_id, "finalized", {"refined_at": time.strftime("%Y-%m-%dT%H:%M:%S")})
 
     logger.info(f"[{material_id}] 精调完成")
     for module, success in refined.items():

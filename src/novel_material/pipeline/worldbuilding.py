@@ -6,6 +6,8 @@
 - 从章级分析的 setting 字段聚合地点统计
 - 从 characters_appear 中识别组织名（如"XX成员"、"XX学生")
 - 传入聚合统计给 LLM，增强提取准确性
+
+注意：世界观向量化已移至 embed_all.py 统一处理。
 """
 import sys
 import time
@@ -19,7 +21,6 @@ from novel_material.infra.llm import load_config, call_llm, get_last_call_finish
 from novel_material.infra.common import is_special_chapter_type
 from novel_material.pipeline.loader import load_chapters_data, build_analysis_context
 from novel_material.infra.progress import get_pipeline_logger, save_run_history
-from novel_material.storage.embedding import embed_worldbuilding  # 批次3后移至 embed_all.py
 
 logger = get_pipeline_logger()
 

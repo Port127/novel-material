@@ -120,12 +120,13 @@ TAGS_VIEW_FILE = DATA_DIR / "tags_view.yaml"
 VALID_STATUSES = {"raw", "clean", "evaluated", "analyzed", "finalized", "failed"}
 
 
-def update_meta_status(material_id: str, status: str) -> None:
+def update_meta_status(material_id: str, status: str, extra_fields: dict | None = None) -> None:
     """统一更新 meta.yaml 状态，做合法性检查。
 
     Args:
         material_id: 素材 ID
         status: 新状态值，必须在 VALID_STATUSES 中
+        extra_fields: 额外需要同时更新的字段（如 refined_at）
 
     Raises:
         ValueError: 状态值不在合法集合中
@@ -141,5 +142,9 @@ def update_meta_status(material_id: str, status: str) -> None:
 
     meta["status"] = status
     meta["updated_at"] = datetime.now().isoformat()
+
+    if extra_fields:
+        for key, value in extra_fields.items():
+            meta[key] = value
 
     save_yaml(meta_path, meta)
