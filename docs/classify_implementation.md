@@ -1,12 +1,8 @@
 # 素材分类功能执行方案
 
 > 本文档记录素材分类功能的设计决策和实施步骤，用于指导后续开发。
-
-## 相关文档
-
-- [ARCHITECTURE.md](../ARCHITECTURE.md) — 系统架构与数据流
-- [REQUIREMENTS.md](REQUIREMENTS.md) — 项目需求边界
-- [USER_MANUAL.md](USER_MANUAL.md) — 使用手册
+>
+> **架构背景**：项目采用 YAML 作为本地数据格式，infra 模块提供 LLM 调用能力，classify 作为前置环节不依赖 pipeline/storage 等核心业务模块。
 
 ---
 
@@ -268,14 +264,14 @@ USER_PROMPT_TEMPLATE = """
 
 ### 7.1 开发任务清单
 
-| 序号 | 任务 | 预估时间 | 依赖 |
-|------|------|----------|------|
-| 1 | 创建 `material/classify.py` 核心逻辑 | 1h | 无 |
-| 2 | 创建 `material/classify_prompt.py` 提示词 | 0.5h | 无 |
-| 3 | 扩展 `cli/material.py` 添加命令 | 0.5h | 1 |
-| 4 | 编写单元测试 | 0.5h | 1,2,3 |
-| 5 | 手动测试（小批量） | 0.5h | 4 |
-| 6 | 全量执行分类 | 2-4h | 5 |
+| 序号 | 任务 | 具体操作 | 预估时间 | 依赖 |
+|------|------|----------|----------|------|
+| 1 | 创建 classify.py 核心逻辑 | 在 `material/` 创建 `classify.py`，实现 `classify_book(file_path)` 函数：读取前3章 → 调用 LLM → 解析 JSON → 返回分类结果 | 1h | 无 |
+| 2 | 创建 classify_prompt.py 提示词 | 在 `material/` 创建 `classify_prompt.py`，硬编码 SYSTEM_PROMPT 和 USER_PROMPT_TEMPLATE（不入 schema/ 契约层） | 0.5h | 无 |
+| 3 | 扩展 CLI 命令 | 在 `cli/material.py` 添加 `classify` 命令组：start/status/retry/clean 子命令，调用 classify.py | 0.5h | 1 |
+| 4 | 编写单元测试 | 在 `tests/` 创建 `test_classify.py`，覆盖：JSON 解析失败、confidence<0.6 标记、进度文件读写 | 0.5h | 1,2,3 |
+| 5 | 手动测试 | 执行 `nm classify start` 处理 10 本书，验证断点恢复、失败记录、进度显示 | 0.5h | 4 |
+| 6 | 全量执行 | `nm classify start` 处理 1849本，监控进度、记录失败、最终验证覆盖率 | 2-4h | 5 |
 
 **总开发时间：约 3小时**
 

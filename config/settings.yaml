@@ -92,3 +92,13 @@ LLM_PRICE_OUTPUT_1K: 0.0012
 
 NOVELS_DIR: ""
 GLOBAL_INDEX: ""
+
+# ──────────────────────────────────────────────
+# 素材分类配置
+# ──────────────────────────────────────────────
+
+# 素材索引 JSON 文件（相对于项目根目录）
+MATERIAL_INDEX_JSON: "material/知轩藏书/novel_index.json"
+
+# 素材源目录（相对于项目根目录）
+MATERIAL_SOURCE_DIR: "material/知轩藏书/仙草排行榜-前2000"
