@@ -26,6 +26,47 @@ description: >-
 
 ---
 
+## 文件命名约定
+
+格式：`{YY}-{MM}-{DD}-{分类}-{任务名}.md`
+
+### 日期
+
+创建日期，年份2位：`25-05-13`
+
+### 分类
+
+| 分类 | 含义 | 内容 |
+|------|------|------|
+| `issues` | 问题发现 | 痛点分析、现象描述、影响范围 |
+| `plan` | 解决计划 | 步骤、改动清单、验证方式 |
+| `resolved` | 解决记录 | 执行结果、实际改动、验证结果 |
+
+状态流转：`issues → plan → resolved`
+
+### 任务名
+
+kebab-case，跨文档保持一致，用于自动关联：
+
+```
+25-05-13-issues-status-embedding.md   # 发现问题
+25-05-13-plan-status-embedding.md     # 制定计划
+25-05-14-resolved-status-embedding.md # 解决完成（跨天）
+```
+
+### 版本区分
+
+同一天同任务多次迭代，用 `-v2`、`-v3`：
+
+```
+25-05-14-issues-refactor.md      # 第一次发现问题
+25-05-14-issues-refactor-v2.md   # 同天深入分析
+25-05-14-plan-refactor.md        # 第一次计划
+25-05-14-plan-refactor-v2.md     # 同天调整计划
+```
+
+---
+
 ## 核心原则
 
 ### 原则一：问题驱动深入分析
