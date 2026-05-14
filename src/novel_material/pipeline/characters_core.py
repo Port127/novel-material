@@ -20,7 +20,7 @@ from novel_material.infra.yaml_io import load_yaml, save_yaml, load_yaml_list
 from novel_material.infra.llm import load_config, get_last_call_finish_reason, get_call_details
 from novel_material.pipeline.loader import load_chapters_data, build_analysis_context
 from novel_material.infra.progress import get_pipeline_logger, PipelineRunner
-from novel_material.storage.embedding import embed_characters
+from novel_material.storage.embedding import embed_characters  # 批次3后移至 embed_all.py
 
 from novel_material.pipeline.characters_stats import CHARACTER_THRESHOLDS, VALID_ROLES, _extract_appearance_stats
 from novel_material.pipeline.characters_selector import _select_candidate_characters
@@ -365,14 +365,7 @@ def generate_characters(material_id, progress_callback: Callable[[int, int, str]
 
     runner.save_history(status="success")
 
-    # 生成人物向量
-    logger.info(f"[{material_id}] 生成人物向量...")
-    if progress_callback:
-        progress_callback(3, 4, "生成人物向量...")
-    embed_characters(material_id)
-    if progress_callback:
-        progress_callback(4, 4, "向量化完成")
-
+    # 人物向量已移至 embed_all.py 统一处理
     return True
 
 

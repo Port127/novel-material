@@ -117,7 +117,7 @@ TAGS_VIEW_FILE = DATA_DIR / "tags_view.yaml"
 # 统一 meta.yaml 状态管理
 # ──────────────────────────────────────────────
 
-VALID_STATUSES = {"raw", "clean", "analyzed", "indexed", "failed"}
+VALID_STATUSES = {"raw", "clean", "evaluated", "analyzed", "finalized", "failed"}
 
 
 def update_meta_status(material_id: str, status: str) -> None:

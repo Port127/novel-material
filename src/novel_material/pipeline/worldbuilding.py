@@ -19,7 +19,7 @@ from novel_material.infra.llm import load_config, call_llm, get_last_call_finish
 from novel_material.infra.common import is_special_chapter_type
 from novel_material.pipeline.loader import load_chapters_data, build_analysis_context
 from novel_material.infra.progress import get_pipeline_logger, save_run_history
-from novel_material.storage.embedding import embed_worldbuilding
+from novel_material.storage.embedding import embed_worldbuilding  # 批次3后移至 embed_all.py
 
 logger = get_pipeline_logger()
 
@@ -266,10 +266,7 @@ def generate_worldbuilding(material_id, provider: str | None = None) -> bool:
         status="success"
     )
 
-    # 生成世界观向量
-    logger.info(f"[{material_id}] 生成世界观向量...")
-    embed_worldbuilding(material_id)
-
+    # 世界观向量已移至 embed_all.py 统一处理
     return True
 
 

@@ -27,9 +27,9 @@ PIPELINE_STAGES = [
 ]
 
 # 子流水线阶段数（供 CLI 和 pipeline 模块使用）
-EVALUATION_STAGES = 5          # 总体评估：5个阶段
-CHARACTERS_STAGES = 4          # 人物提取：核心/配角/次要/向量化
-WORLDBUILDING_STAGES = 2       # 世界观：提取+向量化
+EVALUATION_STAGES = 5          # 总体评估：5个批次
+CHARACTERS_STAGES = 3          # 人物提取：核心/配角/次要（向量化单独阶段）
+WORLDBUILDING_STAGES = 1       # 世界观：提取（向量化单独阶段）
 OUTLINE_STAGES = 3             # 大纲：前提/幕序列/beats
 
 
@@ -104,9 +104,13 @@ def get_pipeline_progress(material_id: str) -> dict:
         "ingested": (novel_dir / "chapter_index.yaml").exists(),
         "evaluation": (novel_dir / "evaluation.yaml").exists(),
         "analyzed": analyzed,
+        "chapters_embedded": (novel_dir / "chapter_embeddings.npz").exists(),
         "outline": (novel_dir / "outline" / "_index.yaml").exists(),
+        "outline_embedded": (novel_dir / "outline" / "outline_embeddings.npz").exists(),
         "worldbuilding": (novel_dir / "worldbuilding" / "_index.yaml").exists(),
+        "worldbuilding_embedded": (novel_dir / "worldbuilding" / "wb_embeddings.npz").exists(),
         "characters": (novel_dir / "characters" / "_index.yaml").exists(),
+        "characters_embedded": (novel_dir / "characters" / "character_embeddings.npz").exists(),
         "tags": (novel_dir / "tags.yaml").exists(),
         "refined": meta.get("refined_at") is not None,
         "synced": synced,
@@ -140,6 +144,23 @@ def print_pipeline_status(progress: dict) -> None:
         table.add_row(name, status)
 
     console.print(table)
+
+    # 向量状态表格
+    embed_table = Table(title="向量状态")
+    embed_table.add_column("类型", style="cyan")
+    embed_table.add_column("状态", style="green")
+
+    embed_keys = [
+        ("章节", "chapters_embedded"),
+        ("人物", "characters_embedded"),
+        ("世界观", "worldbuilding_embedded"),
+        ("大纲", "outline_embedded"),
+    ]
+    for name, key in embed_keys:
+        status = "✓ 已生成" if progress.get(key) else "○ 未生成"
+        embed_table.add_row(name, status)
+
+    console.print(embed_table)
 
 
 def get_next_pending_stage(progress: dict) -> str | None:

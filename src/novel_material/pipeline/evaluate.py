@@ -479,6 +479,10 @@ def run_evaluation(
     if progress_file.exists():
         progress_file.unlink()
 
+    # 更新状态为 evaluated
+    from novel_material.infra.config import update_meta_status
+    update_meta_status(material_id, "evaluated")
+
     # 保存运行历史
     save_run_history(
         novel_dir=novel_dir,

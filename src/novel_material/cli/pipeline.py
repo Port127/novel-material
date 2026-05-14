@@ -222,9 +222,9 @@ def cmd_worldbuilding(
         TimeRemainingColumn(),
         console=console,
     ) as progress:
-        task = progress.add_task(f"提取世界观 + 向量化: {material_id}", total=WORLDBUILDING_STAGES)
+        task = progress.add_task(f"提取世界观: {material_id}", total=WORLDBUILDING_STAGES)
         generate_worldbuilding(material_id, provider=provider)
-        progress.update(task, completed=2)
+        progress.update(task, completed=1)
 
     console.print("[green]世界观提取完成[/green]")
 
@@ -243,7 +243,7 @@ def cmd_characters(
         TimeRemainingColumn(),
         console=console,
     ) as progress:
-        task = progress.add_task(f"提取人物: {material_id}", total=CHARACTERS_STAGES)  # 核心/配角/次要/向量化
+        task = progress.add_task(f"提取人物: {material_id}", total=CHARACTERS_STAGES)  # 核心/配角/次要
 
         def update_chars_progress(done: int, total: int, desc: str):
             progress.update(task, completed=done, description=f"提取人物: {desc}")
@@ -288,7 +288,7 @@ def cmd_refine(
         TimeRemainingColumn(),
         console=console,
     ) as progress:
-        task = progress.add_task(f"精调 + 大纲向量化: {material_id}", total=2)
+        task = progress.add_task(f"精调 + 向量化: {material_id}", total=2)
         with silent_console():
             if not refine(material_id):
                 progress.update(task, completed=2)
@@ -429,15 +429,15 @@ def cmd_full(
 
         # 阶段 N+2: 世界观
         world_stage = outline_stage + 1
-        task4 = progress.add_task(f"阶段 {world_stage}/{total_stages}: 世界观提取 + 向量化", total=2)
+        task4 = progress.add_task(f"阶段 {world_stage}/{total_stages}: 世界观提取", total=1)
         with silent_console():
             generate_worldbuilding(material_id, provider=provider)
-        progress.update(task4, completed=2)
+        progress.update(task4, completed=1)
         progress.remove_task(task4)
 
         # 阶段 N+3: 人物
         char_stage = world_stage + 1
-        task5 = progress.add_task(f"阶段 {char_stage}/{total_stages}: 人物提取", total=4)  # 核心/配角/次要/向量化
+        task5 = progress.add_task(f"阶段 {char_stage}/{total_stages}: 人物提取", total=3)  # 核心/配角/次要
 
         def update_chars_progress_full(done: int, total: int, desc: str):
             progress.update(task5, completed=done, description=f"阶段 {char_stage}/{total_stages}: {desc}")
@@ -456,7 +456,7 @@ def cmd_full(
 
         # 阶段 N+5: 精调
         refine_stage = tags_stage + 1
-        task7 = progress.add_task(f"阶段 {refine_stage}/{total_stages}: 数据精调 + 大纲向量化", total=2)
+        task7 = progress.add_task(f"阶段 {refine_stage}/{total_stages}: 精调 + 向量化", total=2)
         with silent_console():
             if not refine(material_id):
                 console.print("[red]精调失败，终止流水线[/red]")
@@ -676,17 +676,17 @@ def cmd_continue(
         # 世界观
         if not progress.get("worldbuilding"):
             console.print(f"[cyan]阶段 {current_stage}/{total_stages}: 世界观提取...[/cyan]")
-            task = progress_bar.add_task(f"阶段 {current_stage}/{total_stages}: 世界观 + 向量化", total=2)
+            task = progress_bar.add_task(f"阶段 {current_stage}/{total_stages}: 世界观提取", total=1)
             with silent_console():
                 generate_worldbuilding(material_id, provider=provider)
-            progress_bar.update(task, completed=2)
+            progress_bar.update(task, completed=1)
             progress_bar.remove_task(task)
             current_stage += 1
 
         # 人物（细粒度进度）
         if not progress.get("characters"):
             console.print(f"[cyan]阶段 {current_stage}/{total_stages}: 人物提取...[/cyan]")
-            task = progress_bar.add_task(f"阶段 {current_stage}/{total_stages}: 人物", total=4)  # 核心/配角/次要/向量化
+            task = progress_bar.add_task(f"阶段 {current_stage}/{total_stages}: 人物提取", total=3)  # 核心/配角/次要
 
             def update_chars_progress_continue(done: int, total: int, desc: str):
                 progress_bar.update(task, completed=done, description=f"阶段 {current_stage}/{total_stages}: {desc}")
@@ -709,7 +709,7 @@ def cmd_continue(
         # 精调
         if not progress.get("refined"):
             console.print(f"[cyan]阶段 {current_stage}/{total_stages}: 数据精调...[/cyan]")
-            task6 = progress_bar.add_task(f"阶段 {current_stage}/{total_stages}: 精调 + 大纲向量化", total=2)
+            task6 = progress_bar.add_task(f"阶段 {current_stage}/{total_stages}: 精调 + 向量化", total=2)
             with silent_console():
                 if not refine(material_id):
                     console.print("[red]精调失败[/red]")
