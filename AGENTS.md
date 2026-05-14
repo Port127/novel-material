@@ -5,8 +5,8 @@
 ## 相关文档
 
 - [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md) — 业务边界与不做什么
-- [ARCHITECTURE.md](ARCHITECTURE.md) — 系统架构与数据流
-- [docs/USER_MANUAL.md](docs/USER_MANUAL.md) — 详细使用手册（完整命令参考 + 场景指南）
+- [ARCHITECTURE.md](ARCHITECTURE.md) — 系统架构与契约层设计
+- [docs/USER_MANUAL.md](docs/USER_MANUAL.md) — 详细使用手册
 
 ## 项目定位
 
@@ -16,6 +16,28 @@ Novel Material V2 是一个**小说素材管理系统**：
 - **分析**：LLM 自动提取大纲、世界观、人物、标签
 - **存储**：YAML 本地存储 + PostgreSQL 查询层
 - **检索**：语义搜索 + 结构化查询
+
+## 核心架构
+
+### 契约层
+
+```
+prompts/  ← 提示词模板（YAML）
+schema/   ← 字段契约（fields.yaml）
+```
+
+**单一数据源原则**：所有阈值集中在 `schema/fields.yaml`，一处修改多处生效。
+
+### 服务层
+
+```
+infra/yaml_io.py        ← YAML 读写
+infra/path_service.py   ← 路径构建
+infra/progress_manager.py ← 进度管理
+infra/context.py        ← 执行上下文
+```
+
+Agent 操作应通过 CLI 或服务层，不直接调用底层模块。
 
 ## Agent 工作原则
 
@@ -34,23 +56,15 @@ Agent 应使用 `nm` 命令，而非直接调用 Python 模块。
 | 用户意图 | 正确命令 | 错误做法 |
 |---------|---------|---------|
 | "入库这本小说" | `nm pipeline full ./novel.txt` | 直接调用 `pipeline/ingest.py` |
-| "分析 nm_xxx" | `nm pipeline analyze nm_xxx` | 直接调用 `pipeline/outline.py` |
-| "搜索修仙宗门" | `nm search world --type faction --genre 修仙` | 直接调用 `search/world.py` |
-| "查看标签统计" | `nm tags stats` | 查询数据库 |
+| "分析 nm_xxx" | `nm pipeline analyze nm_xxx` | 直接调用 `pipeline/analyze.py` |
+| "搜索修仙宗门" | `nm search world "宗门" --dimension faction` | 直接调用 `search/world.py` |
 | "从断点继续" | `nm pipeline continue nm_xxx` | 手动检查进度 |
-| "同步数据库" | `nm storage sync nm_xxx` | 直接调用 `storage/sync.py` |
 
 ### 3. Skills 是上层入口
 
-Skills（`.claude/skills/*/SKILL.md`）封装了 CLI 调用，提供更完整的操作流程。Agent 应优先使用 Skills。
+Skills（`.claude/skills/*/SKILL.md`）封装了 CLI 调用。Agent 应优先使用 Skills。
 
-### 4. 标签数据源
-
-- ✓ 标签字典存储在 PostgreSQL `tags` 表
-- ✓ 使用 `nm tags stats/list/add` 管理标签
-- ✓ `data/tags_view.yaml` 是导出视图（人读格式，不参与逻辑）
-
-### 5. 状态流转
+### 4. 状态流转
 
 ```
 ingested/clean → evaluated → analyzed → finalized
@@ -58,12 +72,11 @@ ingested/clean → evaluated → analyzed → finalized
 
 | 状态 | 含义 | 可执行操作 |
 |------|------|-----------|
-| `ingested` | 已入库（ingest 直接输出 clean，不经过独立 ingested 状态） | 等待 |
 | `clean` | 已清洗，待评估 | `nm pipeline evaluate`（可选） |
 | `evaluated` | 已评估，待分析 | `nm pipeline analyze` |
 | `analyzed` | 已分析，待骨架 | `nm pipeline outline/world/char/tags` |
 | `finalized` | 已完成 | `nm storage sync` |
-| `failed` | 流水线执行失败 | 查看日志修复后执行 `nm pipeline continue` |
+| `failed` | 流水线失败 | 查看日志 → `nm pipeline continue` |
 
 **总体评估是可选步骤**：不强制要求，但为滑动窗口模式提供全局上下文。
 
@@ -71,38 +84,32 @@ Agent 不应：
 - 对 `analyzed` 状态执行 `analyze`（会覆盖）
 - 对 `clean` 状态执行 `refine`（无章级数据）
 
-**`failed` 状态处理**：
-1. 查看日志：`data/novels/{material_id}/pipeline_{date}_{PID}.log`
-2. 根据错误类型修复（API Key、网络、配置等）
-3. 修复后执行 `nm pipeline continue` 自动从断点继续
-4. 如需重新分析已完成章节，可手动修改 `meta.yaml` 状态为 `clean`
-
 ## CLI 命令速览
 
-> 完整命令参数和示例见 [docs/USER_MANUAL.md](docs/USER_MANUAL.md)。
+> 完整命令参数见 [docs/USER_MANUAL.md](docs/USER_MANUAL.md)。
 
 ### Pipeline 命令
 
 ```bash
 nm pipeline ingest <file>           # 入库：预处理 + 章节切分
 nm pipeline evaluate <id>           # 总体评估：类型/主线/阶段概要
-nm pipeline analyze <id> [--window] # 章级分析（支持范围、滑动窗口）
+nm pipeline analyze <id> [--window] # 章级分析（支持滑动窗口）
 nm pipeline outline <id>            # 大纲生成
 nm pipeline worldbuilding <id>      # 世界观提取
-nm pipeline characters <id>         # 人物提取（三层分层）
+nm pipeline characters <id>         # 人物提取
 nm pipeline tags <id>               # 标签生成
 nm pipeline refine <id>             # 精调统计 + 结构推断
-nm pipeline full <file>             # 完整流水线（入库→评估→分析→骨架→精调）
+nm pipeline full <file>             # 完整流水线
 nm pipeline status <id>             # 查看进度
-nm pipeline continue <id>           # 自动从断点继续（支持 --window）
+nm pipeline continue <id>           # 自动从断点继续
 ```
 
 ### Search 命令
 
 ```bash
 nm search chapter <keyword>         # 章节检索（向量语义）
-nm search outline [--query] [--genre]  # 大纲检索
-nm search character [--name] [--archetype]  # 人物检索
+nm search outline [--genre] [--query]  # 大纲检索
+nm search character [--archetype]   # 人物检索
 nm search world <keyword> [--dimension]  # 世界观检索
 nm search event <query> [--setting] [--emotion]  # 事件检索
 ```
@@ -111,14 +118,11 @@ nm search event <query> [--setting] [--emotion]  # 事件检索
 
 ```bash
 nm tags stats                       # 标签统计
-nm tags list [--dimension] [--domain]  # 标签列表
+nm tags list [--dimension]          # 标签列表
 nm tags add <dimension> <tag> <domain>  # 添加标签
 nm tags remove <dimension> <tag>    # 删除标签
 nm tags review [--auto]             # 审核待定标签
-nm tags move <dim> <tag> <new_domain>  # 移动标签领域
-nm tags set-synonym <dim> <tag> <standard>  # 设置同义词
 nm tags export                      # 导出 YAML 视图
-nm tags info <dimension> <tag>      # 标签详情
 ```
 
 ### Material 命令
@@ -133,11 +137,9 @@ nm material delete <id>             # 删除素材（危险）
 
 ```bash
 nm storage init-db                  # 初始化表结构
-nm storage init-data                # 初始化基础数据
 nm storage init-tags                # 导入标签字典
 nm storage sync <id>                # 同步 YAML → PostgreSQL
 nm storage sync-all                 # 同步所有素材
-nm storage reset                    # 重置数据库（危险）
 ```
 
 ### Validate 命令
@@ -150,35 +152,34 @@ nm validate all <id>                # 全量校验
 
 ## 常用操作流程
 
-> 完整场景示例见 [docs/USER_MANUAL.md](docs/USER_MANUAL.md) 第 14 章"常见场景"。
-
 ### 入库新小说
 
-1. 检查文件存在
-2. 调用 Skill: `material-add` 或执行 `nm pipeline full ./novel.txt`
-3. 等待完成（长篇可能数小时）
-4. 检查 `nm material list` 或 `data/novels/{id}/meta.yaml`
-
-### 分析已入库素材
-
-1. 检查 `meta.yaml` 状态是否为 `clean`
-2. 执行 `nm pipeline analyze <id>`
-3. 或分步执行 outline/worldbuilding/characters/tags
+```bash
+nm pipeline full ./novel.txt
+# 或分步执行
+nm pipeline ingest ./novel.txt
+nm pipeline analyze nm_xxx
+nm pipeline outline nm_xxx
+nm pipeline worldbuilding nm_xxx
+nm pipeline characters nm_xxx
+nm pipeline tags nm_xxx
+nm pipeline refine nm_xxx
+nm storage sync nm_xxx
+```
 
 ### 从断点继续
 
-1. `nm pipeline status <id>`（查看进度）
-2. `nm pipeline continue <id>`（自动执行未完成阶段）
+```bash
+nm pipeline status nm_xxx   # 查看进度
+nm pipeline continue nm_xxx  # 继续执行
+```
 
 ### 检索素材
 
-使用 `nm search <type> <query>` 对应检索命令。
-
-### 精调统计
-
 ```bash
-nm pipeline refine <id>
-nm storage sync <id>
+nm search chapter "开局困境" --limit 10
+nm search character --archetype 导师
+nm search world "宗门" --dimension faction
 ```
 
 ## 禁止操作
@@ -198,22 +199,26 @@ nm storage sync <id>
 
 1. 查看日志：`data/novels/{material_id}/pipeline.log`
 2. 检查错误类型：
-   - API Key 无效 → 修复 `.env` 或 `config/providers.yaml`
+   - API Key 无效 → 修复 `.env`
    - 网络错误 → 重试（有断点续传）
-   - `context_length_exceeded` → 检查截断逻辑
 3. 修复后执行 `nm pipeline continue`
 
 ### 标签校验失败
 
 标签不在字典中时：
 
-1. 添加新标签：`nm tags add element 新标签 xuanhuan --group 设定元素`
-2. 或等待频率自动批（出现 ≥3 次自动入库）
+```bash
+nm tags add element 新标签 xuanhuan --group 设定元素
+# 或等待频率自动批（出现 ≥3 次自动入库）
+nm tags review --auto
+```
 
 ### 数据库同步失败
 
-1. 先执行 `nm validate schema <id>`
-2. 修复错误后重新 `nm storage sync`
+```bash
+nm validate schema nm_xxx  # 先校验
+nm storage sync nm_xxx      # 修复后重新同步
+```
 
 ## 容错机制
 
@@ -226,85 +231,25 @@ nm storage sync <id>
 
 Agent 只需检查 `meta.yaml` 中的状态字段。
 
-## 模型基准：qwen3.6-plus
+## 模型基准
 
-本项目以 **qwen3.6-plus** 为基准模型，所有参数设计应以此为参照。
+本项目以 **qwen3.6-plus** 为基准模型：
 
-### 模型能力
+| 参数 | 数值 |
+|------|------|
+| 最大上下文 | 1,000,000 tokens |
+| 最大输出 | 65,536 tokens |
 
-| 参数 | 数值 | 说明 |
-|------|------|------|
-| 最大上下文 (context) | 1,000,000 tokens | 输入+输出总上限 |
-| 最大输出 (max_tokens) | 65,536 tokens | 单次响应输出上限 |
-| 思考预算 (thinking_budget) | 81,920 tokens | 深度思考模式上限 |
-
-### 本项目实际配置
-
-| 配置项 | 值 | 说明 |
-|--------|-----|------|
-| `_MAX_CHAPTER_TOKENS` (.env) | 5000 | 单章输入截断上限 |
-| `LLM_MAX_TOKENS` (.env) | 8000 | 单章输出兜底上限 |
-| 批量 max_tokens_override | `n * 1500` | 10 章批量 = 15000 tokens |
-| `thinking_budget` | 4000 | 批量分析启用思考模式 |
-
-### 多服务商配置
-
-支持通过 `config/providers.yaml` 配置多服务商：
-
-```yaml
-default_provider: deepseek
-providers:
-  - name: deepseek
-    model: deepseek-chat
-    base_url: https://api.deepseek.com/v1
-    api_key_env: DEEPSEEK_API_KEY
-    thinking_format: openai
-  - name: qwen
-    model: qwen3.6-plus
-    base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
-    api_key_env: DASHSCOPE_API_KEY
-    thinking_format: dashscope
-```
-
-使用方式：`nm pipeline analyze nm_xxx --provider deepseek`
-
-### 注意事项
-
-- 批量分析已启用 `thinking_budget=4000`，启用 thinking 时不应传 `temperature`
-- JSON 解析失败时自动翻倍 `max_tokens` 重试（最多 2 次，上限 65536）
-- 单章分析降级后使用 `LLM_MAX_TOKENS` 作为输出上限
+实际配置见 `schema/fields.yaml`（契约层）和 `config/settings.yaml`。
 
 ## 章节类型
 
-小说中存在非叙事性章节，系统在入库时自动识别类型：
-
 | 类型 | 说明 | 分析策略 |
 |------|------|---------|
-| `normal` | 正文章节 | 完整分析（摘要、张力、人物、功能） |
-| `afterword` | 后记/完本感言 | 放宽分析要求 |
-| `extra` | 番外 | 放宽分析要求 |
-| `author_note` | 作者说 | 放宽分析要求 |
-
-特殊章节不参与张力评估、人物识别等叙事分析，但在检索时可作为过滤维度。
-
-## 章节级标签
-
-章级分析新增字段：
-
-| 字段 | 说明 | 合法值来源 |
-|------|------|-----------|
-| emotional_tone | 情感基调 | tags.yaml → chapter_function |
-| scene_type | 场景类型 | tags.yaml → chapter_function |
-| technique | 叙事技巧 | tags.yaml → chapter_function |
-| hook_type | 章末钩子 | 悬念/反转/情感/信息/危机/无钩子 |
-
-滑动窗口模式新增字段：
-
-| 字段 | 说明 |
-|------|------|
-| tension_change | 张力变化方向（上升/持平/下降） |
-| emotion_transition | 情感过渡描述 |
-| plot_progress | 情节进度描述 |
+| `normal` | 正文章节 | 完整分析 |
+| `afterword` | 后记 | 放宽要求 |
+| `extra` | 番外 | 放宽要求 |
+| `author_note` | 作者说 | 放宽要求 |
 
 ## 结构角色字段
 
@@ -315,25 +260,34 @@ providers:
 | key_event | LLM生成 | 关键事件描述（10-30字） |
 | key_plot_point | 代码推断 | 结构角色标记 |
 
-key_plot_point 合法值：
-- `inciting_incident`：激励事件（前10%章节）
-- `first_turning_point`：第一转折点（前25%章节）
-- `midpoint`：中点（40-60%章节）
-- `second_turning_point`：第二转折点（60-80%章节）
-- `climax`：高潮（后20%章节）
-- `resolution`：结局（最后10%章节）
+key_plot_point 合法值：`inciting_incident`、`first_turning_point`、`midpoint`、`second_turning_point`、`climax`、`resolution`
 
 Agent 不应手动编辑 key_plot_point，由 refine 阶段自动推断。
 
+## 契约层接口
+
+Agent 如需修改阈值，应修改契约文件而非硬编码：
+
+```python
+# 修改 schema/fields.yaml
+summary:
+  min_length: 50  # 修改此值，自动同步到提示词、校验
+
+# 或加载契约
+from novel_material.schema import load_field
+field = load_field("summary")
+print(field.min_length)
+```
+
 ## LLM 分析质量动态调节
 
-LLM 在处理长篇小说后期可能出现输出质量下降（模式化、摘要变短）。系统采用以下机制：
+系统内置防御机制：
 
 | 机制 | 说明 |
 |------|------|
-| 动态温度 | 随批次递增逐步提高 temperature，防止收敛到稳定输出模式 |
+| 动态温度 | 随批次递增提高 temperature |
 | 动态提示词 | 每 10 批次唤醒独立性提醒 |
-| 相似度检测 | 检测 Jaccard 相似度，发现模式化输出时调整策略 |
-| Thinking 管理 | 前期使用 thinking 模式，后期关闭 thinking 启用动态温度 |
+| 相似度检测 | 检测 Jaccard 相似度 |
+| Thinking 管理 | 前期 thinking，后期动态温度 |
 
-Agent 无需干预这些机制，只需关注 `meta.yaml` 中的最终状态。
+Agent 无需干预，只需关注最终状态。

@@ -1,12 +1,48 @@
 # Novel Material V2
 
-小说素材管理系统。通过 LLM 对小说进行结构化解析（大纲、世界观、人物、章级分析），存储到 YAML + PostgreSQL，提供语义检索服务。
+小说素材管理系统。通过 LLM 对小说进行结构化解析，存储到 YAML + PostgreSQL，提供语义检索服务。
 
-## 核心设计理念
+## 设计理念
 
-1. **AI 协作优先**：本项目为 AI Agent 提供检索服务，而非 Web 界面。详见 [AGENTS.md](AGENTS.md)。
-2. **YAML 为 Source of Truth**：分析结果优先落盘为 YAML，数据库是可重建的查询层。
-3. **章节为最小粒度**：不拆分难以定义边界的"事件"或"场景"。详见 [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md)。
+### 契约驱动设计
+
+本项目采用**契约驱动设计**（Contract-Driven Design）：
+
+```
+fields.yaml（单一数据源）
+    │
+    ├──→ prompts/*.yaml（提示词引用 {{summary_min}}）
+    │
+    ├──→ validation/models.py（Pydantic 模型读取阈值）
+    │
+    └──→ validation/quality.py（质量校验读取阈值）
+```
+
+一处修改，多处生效：修改 `fields.yaml` 中的阈值，自动同步到提示词、schema 校验、质量校验。
+
+### YAML 为 Source of Truth
+
+分析结果优先落盘为 YAML，数据库是可重建的查询层。
+
+### 章节为最小粒度
+
+不拆分难以定义边界的"事件"或"场景"。详见 [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md)。
+
+## 目录结构（核心层）
+
+```
+src/novel_material/
+├── cli/           # CLI 入口（nm 命令）
+├── prompts/       # [契约层] 提示词模板（YAML）
+├── schema/        # [契约层] 字段契约（fields.yaml）
+├── infra/         # 基础设施 + 服务层
+├── pipeline/      # 流水线逻辑
+├── search/        # 检索逻辑
+├── storage/       # 数据库层
+├── tags/          # 标签系统
+├── validation/    # 校验层
+└── material/      # 素材管理
+```
 
 ## 功能概览
 
@@ -14,19 +50,15 @@
 |------|------|------|
 | 入库 | `nm pipeline ingest <file>` | 文本清洗 + 章节切分 |
 | 总体评估 | `nm pipeline evaluate <id>` | 类型/主线/阶段概要 |
-| 完整流水线 | `nm pipeline full <file>` | 入库 → 评估 → 分析 → 骨架 → 精调 |
-| 章级分析 | `nm pipeline analyze <id> [--window]` | 摘要、张力、人物、功能（支持滑动窗口） |
+| 章级分析 | `nm pipeline analyze <id>` | 摘要、张力、人物、功能 |
 | 骨架分析 | `nm pipeline outline/world/char/tags <id>` | 大纲、世界观、人物、标签 |
 | 断点续传 | `nm pipeline continue <id>` | 自动从上次进度继续 |
-| 精调 | `nm pipeline refine <id>` | 统计精调 + 结构推断 + 数据库同步 |
 | 检索 | `nm search <type> <query>` | 章节/人物/世界观/大纲/事件 |
 | 标签管理 | `nm tags stats/list/add` | 查看/添加/审核标签 |
-| 素材管理 | `nm material list/import/delete` | 查看/导入/删除素材 |
-| 数据校验 | `nm validate schema/quality <id>` | 结构校验/质量校验 |
 
 ## 快速开始
 
-完整操作指南见 [docs/USER_MANUAL.md](docs/USER_MANUAL.md)。以下为骨架流程：
+完整操作指南见 [docs/USER_MANUAL.md](docs/USER_MANUAL.md)。
 
 ### 1. 安装
 
@@ -39,7 +71,6 @@ pip install -e .
 ```bash
 cp .env.example .env
 # 必须填入 DATABASE_URL、LLM_API_KEY、EMBEDDING_API_KEY
-# 非敏感参数在 config/settings.yaml，多服务商配置在 config/providers.yaml
 ```
 
 ### 3. 启动数据库
@@ -64,20 +95,35 @@ nm search chapter "开局困境" --limit 10
 
 | 文档 | 给谁看 | 解决什么问题 |
 |------|--------|-------------|
+| **[ARCHITECTURE.md](ARCHITECTURE.md)** | 开发者 | 系统架构、契约层、服务层、数据流 |
+| **[USER_MANUAL.md](docs/USER_MANUAL.md)** | 使用者 | 命令参考、场景指南、故障排查 |
+| **[AGENTS.md](AGENTS.md)** | AI Agent | 操作规则、约束、CLI 速览 |
 | **[REQUIREMENTS.md](docs/REQUIREMENTS.md)** | 决策者 | 做什么、不做什么、为什么 |
-| **[ARCHITECTURE.md](ARCHITECTURE.md)** | 开发者 | 系统怎么构建的、数据流向 |
-| **[USER_MANUAL.md](docs/USER_MANUAL.md)** | 使用者 | 怎么用、命令参考、故障排查 |
-| **[AGENTS.md](AGENTS.md)** | AI Agent | 操作本项目的规则和约束 |
 
 推荐阅读顺序：REQUIREMENTS → ARCHITECTURE → USER_MANUAL → AGENTS。
 
-其他：
-- **[data/schemas/](data/schemas/)**：YAML Schema 定义
-- **[data/tag-system/](data/tag-system/)**：标签分类学体系
+## 契约层使用示例
 
-## 容错特性
+### 加载提示词
 
-内置断点续传、自动重试、默认值兜底。详见 [docs/USER_MANUAL.md](docs/USER_MANUAL.md) 第 16 章。
+```python
+from novel_material.prompts import load_prompt
+
+prompt = load_prompt("analyze")
+print(prompt.system_prompt)  # 已完成模板变量替换
+```
+
+### 加载字段契约
+
+```python
+from novel_material.schema import load_field, get_threshold
+
+field = load_field("summary")
+print(field.min_length)  # 50
+
+threshold = get_threshold("character_thresholds")
+print(threshold["core"])  # 50
+```
 
 ## 数据产物
 
@@ -86,45 +132,18 @@ nm search chapter "开局困境" --limit 10
 ```
 data/novels/nm_novel_YYYYMMDD_xxxx/
 ├── source.txt           # 清洗后的原文
-├── meta.yaml            # 元信息（状态、题材、字数）
-├── chapter_index.yaml   # 章节索引
-├── evaluation.yaml      # 总体评估（类型/主线/阶段概要）
-├── chapters.yaml        # 章级分析（摘要、张力、功能、人物）
-├── chapter_embeddings.npz  # 向量缓存
+├── meta.yaml            # 元信息
+├── chapters.yaml        # 章级分析
 ├── outline/             # 大纲结构
-│   ├── structure.yaml   # 三幕结构 + 序列节拍
-│   ├── plotlines.yaml   # 副线追踪
-│   ├── hooks_network.yaml  # 钩子网络
-│   └── _index.yaml      # 大纲索引
 ├── characters/          # 人物档案
-│   ├── profiles/*.yaml  # 人物详情
-│   └── relations.yaml   # 人物关系
 ├── worldbuilding/       # 世界观
-│   ├── factions.yaml    # 势力设定
-│   ├── regions.yaml     # 地域设定
-│   ├── power_systems.yaml  # 力量体系
-│   └── _index.yaml      # 世界观索引
 ├── tags.yaml            # 小说级标签
-└── pipeline.log         # 流水线日志
+└── chapter_embeddings.npz  # 向量缓存
 ```
 
-## Makefile 命令
+## 容错特性
 
-仅用于 Docker 管理：
-
-```bash
-make db-up      # 启动数据库容器
-make db-down    # 停止容器
-make db-init    # 初始化表结构
-make db-shell   # 进入 psql
-make db-reset   # 重置数据库（危险）
-```
-
-其他操作使用 `nm` CLI。
-
-## 多服务商支持
-
-支持配置多个 LLM 服务商。详见 `config/providers.yaml`。使用时通过 `--provider` 参数切换。
+内置断点续传、自动重试、默认值兜底。详见 [docs/USER_MANUAL.md](docs/USER_MANUAL.md)。
 
 ## 测试
 

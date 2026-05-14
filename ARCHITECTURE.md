@@ -9,137 +9,314 @@
 - [AGENTS.md](AGENTS.md) — Agent 操作规则
 - [README.md](README.md) — 项目入口与快速开始
 
-## 整体架构
+---
+
+## 架构总览
+
+### 设计理念
+
+本项目采用**契约驱动设计**（Contract-Driven Design），核心原则：
+
+1. **单一数据源**：所有校验阈值、提示词参数集中在 YAML 契约文件，一处修改多处生效
+2. **服务层抽象**：IO 操作封装为服务类，业务逻辑与基础设施解耦
+3. **模块边界清晰**：每个模块有明确的职责和导出接口
+
+### 层次结构
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                         Novel Material V2                                    │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                              │
+│  ┌─────────────┐                                                            │
+│  │ CLI 入口    │  nm pipeline / nm search / nm tags / nm material           │
+│  │ (cli/)      │                                                            │
+│  └─────────────┘                                                            │
+│         │                                                                    │
+│         ↓                                                                    │
 │  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐                      │
-│  │ 原始文本    │ →  │ CLI 入口    │ →  │ YAML 存储   │                      │
-│  │ (.txt)      │    │ nm          │    │ data/novels │                      │
+│  │ Pipeline    │    │ Search      │    │ Tags        │                      │
+│  │ (pipeline/) │    │ (search/)   │    │ (tags/)     │                      │
 │  └─────────────┘    └─────────────┘    └─────────────┘                      │
-│                            │                   │                            │
-│                            ↓                   ↓                            │
-│                     ┌─────────────┐    ┌─────────────┐                      │
-│                     │ Pipeline    │    │ Search      │                      │
-│                     │ (pipeline/) │    │ (search/)   │                      │
-│                     └─────────────┘    └─────────────┘                      │
-│                            │                   │                            │
-│                            ↓                   ↓                            │
-│                     ┌─────────────┐    ┌─────────────┐                      │
-│                     │ Tags        │    │ Validation  │                      │
-│                     │ (tags/)     │    │ (validation/)│                      │
-│                     └─────────────┘    └─────────────┘                      │
-│                            │                   │                            │
-│                            ↓                   ↓                            │
-│                     ┌─────────────────────────────────┐                     │
-│                     │      PostgreSQL + pgvector      │                     │
-│                     │  novels / chapters / tags / ... │                     │
-│                     └─────────────────────────────────┘                     │
+│         │                   │                   │                            │
+│         ↓                   ↓                   ↓                            │
+│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐                      │
+│  │ Validation  │    │ Material    │    │ Storage     │                      │
+│  │ (validation/)│   │ (material/) │    │ (storage/)  │                      │
+│  └─────────────┘    └─────────────┘    └─────────────┘                      │
+│         │                   │                   │                            │
+│         └───────────────────┴───────────────────┘                            │
+│                             │                                                │
+│                             ↓                                                │
+│  ┌───────────────────────────────────────────────────────────────────────┐  │
+│  │                          契约层 (Contract Layer)                        │  │
+│  │  ┌─────────────┐  ┌─────────────┐                                      │  │
+│  │  │ Prompts     │  │ Schema      │  字段阈值 + 提示词模板                │  │
+│  │  │ (prompts/)  │  │ (schema/)   │  YAML 契约文件为单一数据源            │  │
+│  │  └─────────────┘  └─────────────┘                                      │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+│                             │                                                │
+│                             ↓                                                │
+│  ┌───────────────────────────────────────────────────────────────────────┐  │
+│  │                          服务层 (Service Layer)                         │  │
+│  │  ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌────────────┐          │  │
+│  │  │ PathService│ │YAMLService │ │ProgressMngr│ │Context     │          │  │
+│  │  └────────────┘ └────────────┘ └────────────┘ └────────────┘          │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+│                             │                                                │
+│                             ↓                                                │
+│  ┌───────────────────────────────────────────────────────────────────────┐  │
+│  │                          基础设施层 (Infra Layer)                       │  │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐                    │  │
+│  │  │ LLM         │  │ Embedding   │  │ Config      │                    │  │
+│  │  │ (llm.py)    │  │ (embedding) │  │ (config.py) │                    │  │
+│  │  └─────────────┘  └─────────────┘  └─────────────┘                    │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+│                             │                                                │
+│                             ↓                                                │
+│  ┌───────────────────────────────────────────────────────────────────────┐  │
+│  │      PostgreSQL + pgvector                                              │  │
+│  │  novels / chapters / tags / characters / worldbuilding / outline       │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
 │                                                                              │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
+
+---
 
 ## 目录结构
 
 ```
 novel-material/
 ├── src/novel_material/           # 核心代码
-│   ├── cli/                      # CLI 入口 (nm)
+│   ├── cli/                      # CLI 入口
 │   │   ├── main.py               # 主入口：注册所有子命令
-│   │   ├── pipeline.py           # 流水线命令：ingest/analyze/outline/refine/...
-│   │   ├── search.py             # 检索命令：chapter/outline/character/world
-│   │   ├── tags.py               # 标签管理：stats/list/add/remove/review
-│   │   ├── material.py           # 素材管理：list/import/delete
-│   │   ├── storage.py            # 数据库管理：init/sync/reset
-│   │   └── validate.py           # 校验命令：schema/quality
+│   │   ├── pipeline.py           # 流水线命令
+│   │   ├── search.py             # 检索命令
+│   │   ├── tags.py               # 标签管理
+│   │   ├── material.py           # 素材管理
+│   │   ├── storage.py            # 数据库管理
+│   │   └── validate.py           # 校验命令
+│   │
+│   ├── prompts/                  # [契约层] 提示词模板
+│   │   ├── __init__.py           # 导出 Prompt, load_prompt
+│   │   ├── prompt_loader.py      # Prompt 类 + 模板变量替换
+│   │   ├── analyze.yaml          # 章级分析提示词
+│   │   ├── characters.yaml       # 人物提取提示词（含子提示词）
+│   │   ├── evaluate.yaml         # 总体评估提示词
+│   │   ├── outline.yaml          # 大纲生成提示词
+│   │   └── worldbuilding.yaml    # 世界观提取提示词
+│   │
+│   ├── schema/                   # [契约层] 字段契约
+│   │   ├── __init__.py           # 导出 FieldSchema, load_field, get_threshold
+│   │   ├── fields_loader.py      # FieldSchema 类
+│   │   ├── fields.yaml           # 所有字段定义 + 阈值（单一数据源）
+│   │   └── thresholds.py         # 非字段阈值获取
+│   │
+│   ├── infra/                    # 基础设施 + 服务层
+│   │   ├── __init__.py           # 统一导出
+│   │   ├── config.py             # 路径常量 + meta 状态更新
+│   │   ├── config_service.py     # 配置加载服务
+│   │   ├── llm.py                # LLM 调用客户端（多服务商 + 重试）
+│   │   ├── llm_args.py           # LLM 参数构建
+│   │   ├── embedding.py          # Embedding API
+│   │   ├── common.py             # 公共常量 + 公共函数
+│   │   ├── yaml_io.py            # [服务层] YAML IO
+│   │   ├── path_service.py       # [服务层] 路径服务
+│   │   ├── progress_manager.py   # [服务层] 进度管理
+│   │   ├── progress.py           # 进度追踪 + PipelineRunner
+│   │   ├── logging_service.py    # [服务层] 日志创建
+│   │   ├── logging_config.py     # 日志配置
+│   │   └── context.py            # [服务层] 执行上下文
+│   │
 │   ├── pipeline/                 # 流水线逻辑
 │   │   ├── ingest.py             # 入库：预处理 + 章节切分
-│   │   ├── preprocess.py         # 文本清洗：NFC归一化/去广告/数字转换
-│   │   ├── loader.py             # 章节数据加载 + 摘要池构建
-│   │   ├── evaluate.py           # 总体评估：5批次采样生成类型/主线/阶段概要
-│   │   ├── analyze.py            # 章级分析：摘要/张力/人物/功能
-│   │   ├── infer.py              # 结构角色推断：key_plot_point 标记
-│   │   ├── outline.py            # 大纲生成：三幕结构 + 序列节拍
-│   │   ├── worldbuilding.py      # 世界观提取：势力/地域/体系
-│   │   ├── characters.py         # 人物提取：原型/弧线/心理
-│   │   ├── tags.py               # 标签生成：element/style/structure
-│   │   ├── refine.py             # 统计精调：出场次数/钩子数 + 结构推断
-│   │   └── progress.py           # 进度跟踪 + 断点检测
+│   │   ├── preprocess.py         # 文本清洗
+│   │   ├── loader.py             # 章节加载 + 摘要池构建
+│   │   ├── loader_args.py        # loader 参数构建
+│   │   ├── evaluate.py           # 总体评估
+│   │   ├── analyze.py            # 章级分析主入口
+│   │   ├── analyze_batch.py      # 批量分析逻辑
+│   │   ├── analyze_single.py     # 单章分析逻辑
+│   │   ├── analyze_utils.py      # 分析公共函数
+│   │   ├── analyze_context.py    # 分析上下文构建
+│   │   ├── analyze_files.py      # 分析文件处理
+│   │   ├── analyze_temperature.py # 动态温度调节
+│   │   ├── analyze_validators.py # 分析结果校验
+│   │   ├── infer.py              # 结构角色推断
+│   │   ├── outline_core.py       # 大纲生成核心逻辑
+│   │   ├── outline_io.py         # 大纲 IO 处理
+│   │   ├── outline_logic.py      # 大纲业务逻辑
+│   │   ├── outline_temp.py       # 大纲模板生成
+│   │   ├── worldbuilding.py      # 世界观提取
+│   │   ├── characters.py         # 人物提取入口
+│   │   ├── characters_core.py    # 人物提取核心
+│   │   ├── characters_profile.py # 人物档案生成
+│   │   ├── characters_stats.py   # 人物统计
+│   │   ├── characters_layer.py   # 人物分层逻辑
+│   │   ├── characters_selector.py # 人物选择器
+│   │   ├── tags.py               # 标签生成
+│   │   ├── refine.py             # 统计精调
+│   │   └── progress.py           # 进度追踪
+│   │
 │   ├── search/                   # 检索逻辑
-│   │   ├── chapter.py            # 章节检索：向量语义搜索
-│   │   ├── outline.py            # 大纲检索：题材/前提筛选
-│   │   ├── character.py          # 人物检索：原型/角色定位
-│   │   ├── world.py              # 世界观检索：维度筛选
-│   │   ├── event.py              # 事件检索：场景/情绪过滤
-│   │   ├── detail.py             # 细节检索（内部模块，未暴露 CLI 入口）
-│   │   └── common.py             # 共享工具：关键词提取/数据库连接
+│   │   ├── chapter.py            # 章节检索（向量）
+│   │   ├── outline.py            # 大纲检索
+│   │   ├── character.py          # 人物检索
+│   │   ├── world.py              # 世界观检索
+│   │   ├── event.py              # 事件检索
+│   │   ├── detail.py             # 细节检索（内部）
+│   │   └── common.py             # 共享工具
+│   │
 │   ├── storage/                  # 数据库层
 │   │   ├── init_db.py            # 表结构初始化
-│   │   ├── init_data.py          # 基础数据初始化（genre_domain_map）
+│   │   ├── init_data.py          # 基础数据初始化
 │   │   ├── init_tags.py          # 标签字典导入
-│   │   ├── sync.py               # YAML → PostgreSQL 同步
+│   │   ├── sync_chapters.py      # 章节同步
+│   │   ├── sync_characters.py    # 人物同步
+│   │   ├── sync_meta.py          # 元信息同步
+│   │   ├── sync_outline.py       # 大纲同步
+│   │   ├── sync_worldbuilding.py # 世界观同步
 │   │   ├── embedding.py          # 向量化存储
-│   │   └── schema.sql            # DDL 定义（外部引用）
+│   │   └── schema.sql            # DDL 定义
+│   │
 │   ├── tags/                     # 标签系统
-│   │   ├── load.py               # 动态加载：按题材加载相关标签
-│   │   ├── validate.py           # 校验 + 同义词映射
-│   │   ├── resolve.py            # 标签领域定位
-│   │   ├── export_view.py        # YAML 视图导出
+│   │   ├── load.py               # 动态加载
+│   │   ├── validate.py           # 校验 + 同义词
+│   │   ├── resolve.py            # 领域定位
+│   │   ├── export_view.py        # YAML 导出
 │   │   └── scheduled.py          # 批处理审核
-│   ├── infra/                    # 基础设施
-│   │   ├── config.py             # 配置加载（settings.yaml + providers.yaml）
-│   │   ├── llm.py                # LLM 调用客户端（多服务商）
-│   │   ├── embedding.py          # Embedding API
-│   │   ├── constants.py          # 公共常量：KEY_PLOT_POINT_VALUES/NOVEL_TYPE_VALUES
-│   │   ├── progress.py           # 进度跟踪（SilentConsole + PipelineLogger）
-│   │   └── logging_config.py     # 日志配置（PID隔离 + 统一前缀）
+│   │
 │   ├── validation/               # 校验层
-│   │   ├── schema.py             # YAML Schema 校验（pydantic）
-│   │   ├── quality.py            # 内容质量校验
-│   │   └── tag_rules.py          # 标签规则
+│   │   ├── __init__.py           # 统一导出
+│   │   ├── schema.py             # Schema 校验入口
+│   │   ├── models.py             # Pydantic 数据模型
+│   │   ├── validators.py         # 校验逻辑
+│   │   ├── quality.py            # 质量校验
+│   │   └── pacing_normalize.py   # 节奏标准化
+│   │
 │   └── material/                 # 素材管理
 │       ├── import_material.py    # 导入外部素材
 │       └── delete.py             # 删除素材
+│
 ├── data/                         # 数据目录
 │   ├── novels/                   # 素材存储
-│   │   └── nm_novel_YYYYMMDD_xxxx/
-│   │       ├── source.txt        # 清洗后原文
-│   │       ├── meta.yaml         # 元信息
-│   │       ├── chapter_index.yaml  # 章节索引
-│   │       ├── evaluation.yaml     # 总体评估结果（类型/主线/阶段概要）
-│   │       ├── _evaluation_progress.yaml  # 评估进度（断点续传）
-│   │       ├── chapters.yaml     # 章级分析合并
-│   │       ├── chapters/         # 章级分析（独立文件，断点续传）
-│   │       ├── outline/          # 大纲结构
-│   │       │   ├── structure.yaml
-│   │       │   ├── plotlines.yaml
-│   │       │   ├── hooks_network.yaml
-│   │       │   └── _index.yaml   # 大纲索引
-│   │       ├── characters/       # 人物档案
-│   │       │   ├── profiles/*.yaml
-│   │       │   └── relations.yaml
-│   │       ├── worldbuilding/    # 世界观
-│   │       │   ├── factions.yaml
-│   │       │   ├── regions.yaml
-│   │       │   ├── power_systems.yaml
-│   │       │   └── _index.yaml
-│   │       ├── tags.yaml         # 小说级标签
-│   │       ├── chapter_embeddings.npz  # 向量缓存
-│   │       └── pipeline.log      # 流水线日志
 │   ├── schemas/                  # YAML Schema 定义
-│   └── tag-system/               # 标签分类学文档
+│   └── tag-system/               # 标签分类学
+│
 ├── config/                       # 配置目录
-│   ├── settings.yaml             # 主配置文件
+│   ├── settings.yaml             # 主配置
 │   └── providers.yaml            # 多服务商配置
-├── .claude/skills/               # Agent Skills
+│
 ├── docs/                         # 文档
 ├── tests/                        # 测试
-├── Makefile                      # Docker 管理
+├── .claude/skills/               # Agent Skills
 └── pyproject.toml                # Python 包配置
 ```
+
+---
+
+## 契约层详解
+
+### 设计原则
+
+契约层实现了**单一数据源**（Single Source of Truth）：
+
+```
+fields.yaml（单一数据源）
+    │
+    ├──→ prompts/*.yaml（提示词引用 {{summary_min}}）
+    │
+    ├──→ validation/models.py（Pydantic 模型读取阈值）
+    │
+    └──→ validation/quality.py（质量校验读取阈值）
+```
+
+**一处修改，多处生效**：修改 `fields.yaml` 中 `summary.min_length: 50` → 自动同步到提示词、schema 校验、质量校验。
+
+### Prompts 模块
+
+```python
+from novel_material.prompts import load_prompt
+
+# 加载提示词模板
+prompt = load_prompt("analyze")
+print(prompt.system_prompt)      # 已完成模板变量替换
+
+# 提示词可引用字段阈值
+# analyze.yaml 中写：{{summary_min}}
+# 实际替换为：50（从 fields.yaml 读取）
+```
+
+**支持子提示词**（如 characters.yaml）：
+
+```python
+prompt = load_prompt("characters")
+core_prompt = prompt.get_sub_prompt("core_prompt")
+supporting_prompt = prompt.get_sub_prompt("supporting_prompt")
+minor_prompt = prompt.get_sub_prompt("minor_prompt")
+```
+
+### Schema 模块
+
+```python
+from novel_material.schema import load_field, get_threshold
+
+# 加载字段契约
+field = load_field("summary")
+print(field.min_length)          # 50
+print(field.max_length)          # 500
+print(field.validate_in)         # ["prompt", "schema", "quality"]
+
+# 获取非字段阈值
+threshold = get_threshold("character_thresholds")
+print(threshold["core"])         # 50
+```
+
+**字段定义示例**（fields.yaml）：
+
+```yaml
+summary:
+  description: 章节摘要
+  min_length: 50
+  max_length: 500
+  validate_in: ["prompt", "schema", "quality"]
+  # 为什么是这个值：摘要需要足够长度描述章节核心内容
+
+character_thresholds:
+  description: 人物分层出场章数阈值
+  core: 50
+  supporting: 10
+  minor: 5
+```
+
+---
+
+## 服务层详解
+
+服务层封装 IO 操作，使业务逻辑与基础设施解耦。
+
+| 服务 | 职责 | 示例用法 |
+|------|------|---------|
+| `yaml_io` | YAML 读写 | `load_yaml(path)`, `save_yaml(path, data)` |
+| `PathService` | 路径构建 | `PathService(novel_dir).meta_path` |
+| `ProgressManager` | 进度管理 | `ProgressManager.load_progress()` |
+| `ExecutionContext` | 执行上下文 | `context.material_id`, `context.logger` |
+| `logging_service` | 日志创建 | `create_logger(material_id, module_name)` |
+
+**使用示例**：
+
+```python
+from novel_material.infra import PathService, load_yaml, save_yaml
+
+# 路径服务
+paths = PathService("data/novels/nm_novel_xxx")
+meta = load_yaml(paths.meta_path)
+meta["status"] = "analyzed"
+save_yaml(paths.meta_path, meta)
+```
+
+---
 
 ## 数据流
 
@@ -166,14 +343,6 @@ novel-material/
     └────────────────────────┴──→ 滑动窗口模式（--window）
 ```
 
-**采样策略**：
-- 小体量（<200章）：15章分5批，每批3章
-- 大体量（≥200章）：50章分5批，每批10章
-
-**用途**：
-- 为滑动窗口模式提供全局上下文
-- 输出：novel_type、main_thread_summary、core_characters_hint、stage_summaries
-
 ### 分析阶段（LLM 调用）
 
 ```
@@ -188,17 +357,6 @@ novel-material/
     │                                     outline_beats
 ```
 
-**滑动窗口模式**（--window）：
-- 需要先运行总体评估
-- 为每章注入前章摘要 + 全局评估作为上下文
-- 新增字段：tension_change、emotion_transition、plot_progress
-
-**章节级标签**（阶段四新增）：
-- emotional_tone：情感基调标签
-- scene_type：场景类型标签
-- technique：叙事技巧标签
-- hook_type：章末钩子类型
-
 ### 断点续传机制
 
 ```
@@ -211,6 +369,8 @@ novel-material/
 全部完成 → 合并为 chapters.yaml + 删除独立文件
 ```
 
+---
+
 ## 核心模块详解
 
 ### CLI 层 (`cli/`)
@@ -220,90 +380,89 @@ novel-material/
 | `nm pipeline ingest` | 入库 | `pipeline/ingest.py` |
 | `nm pipeline evaluate` | 总体评估 | `pipeline/evaluate.py` |
 | `nm pipeline analyze` | 章级分析 | `pipeline/analyze.py` |
-| `nm pipeline outline` | 大纲生成 | `pipeline/outline.py` |
+| `nm pipeline outline` | 大纲生成 | `pipeline/outline_core.py` |
 | `nm pipeline worldbuilding` | 世界观提取 | `pipeline/worldbuilding.py` |
 | `nm pipeline characters` | 人物提取 | `pipeline/characters.py` |
 | `nm pipeline tags` | 标签生成 | `pipeline/tags.py` |
-| `nm pipeline refine` | 精调同步 | `pipeline/refine.py` + `pipeline/infer.py` + `storage/sync.py` |
-| `nm pipeline full` | 完整流水线 | 组合调用 |
-| `nm pipeline continue` | 断点续传 | `pipeline/progress.py` + 组合调用 |
+| `nm pipeline refine` | 调同步 | `pipeline/refine.py` + `pipeline/infer.py` |
 | `nm search chapter` | 章节检索 | `search/chapter.py` |
-| `nm search outline` | 大纲检索 | `search/outline.py` |
-| `nm search character` | 人物检索 | `search/character.py` |
-| `nm search world` | 世界观检索 | `search/world.py` |
-| `nm search event` | 事件检索 | `search/event.py` |
-| `nm tags stats` | 标签统计 | 数据库查询 |
-| `nm tags list` | 标签列表 | 数据库查询 |
-| `nm tags add` | 添加标签 | 数据库写入 |
-| `nm storage init-db` | 初始化表 | `storage/init_db.py` |
-| `nm storage sync` | 数据库同步 | `storage/sync.py` |
+| `nm storage sync` | 数据库同步 | `storage/sync_*.py` |
 | `nm validate schema` | Schema 校验 | `validation/schema.py` |
 
 ### Pipeline 层 (`pipeline/`)
 
-| 模块 | 功能 | 容错策略 |
-|------|------|---------|
-| `ingest.py` | 入库 | 失败返回 None |
-| `preprocess.py` | 文本清洗 | 无 LLM，纯本地逻辑 |
-| `loader.py` | 数据加载 | 加载失败时返回空结构 |
-| `evaluate.py` | 总体评估 | 断点续传 + 5批次采样 |
-| `analyze.py` | 章级分析 | 断点续传 + 跳过失败章节 + 特殊章节类型识别 + 滑动窗口 |
-| `infer.py` | 结构角色推断 | 跳过特殊类型章节 |
-| `outline.py` | 大纲生成 | 3层容错 + `generate_simple_acts` 兜底 |
-| `worldbuilding.py` | 世界观提取 | 空结构兜底 + 统计聚合 |
-| `characters.py` | 人物提取 | 三层分层处理 + 出场统计驱动 |
-| `tags.py` | 标签生成 | 默认标签兜底 |
-| `refine.py` | 统计精调 | 增量更新 + 调用 infer_key_plot_points |
-| `progress.py` | 进度跟踪 | 检测各阶段完成状态 |
+**模块拆分**（analyze 为例）：
 
-### Search 层 (`search/`)
+| 子模块 | 职责 |
+|--------|------|
+| `analyze.py` | 主入口，流程编排 |
+| `analyze_batch.py` | 批量分析逻辑 |
+| `analyze_single.py` | 单章分析逻辑 |
+| `analyze_utils.py` | 公共函数 |
+| `analyze_context.py` | 上下文构建 |
+| `analyze_files.py` | 文件处理 |
+| `analyze_temperature.py` | 动态温度调节 |
+| `analyze_validators.py` | 结果校验 |
 
-| 模块 | 功能 | 搜索方式 |
-|------|------|---------|
-| `chapter.py` | 章节检索 | 向量语义 + 关键词 |
-| `outline.py` | 大纲检索 | 题材/前提筛选 |
-| `character.py` | 人物检索 | 原型/角色定位筛选 |
-| `world.py` | 世界观检索 | 维度筛选 + 关键词 |
-| `event.py` | 事件检索 | 向量语义 + 场景/情绪过滤 |
-| `detail.py` | 细节检索 | 内部模块，未暴露 CLI 入口 |
-| `common.py` | 共享工具 | 关键词提取/数据库连接 |
+**容错策略**：
 
-### Storage 层 (`storage/`)
-
-| 模块 | 功能 |
+| 模块 | 容错 |
 |------|------|
-| `init_db.py` | 执行 schema.sql 创建表 |
-| `init_data.py` | 初始化 genre_domain_map 映射表 |
-| `init_tags.py` | 导入标签字典（如 data/tags.yaml 存在） |
-| `sync.py` | YAML → PostgreSQL 同步（含 Schema 预检） |
-| `embedding.py` | 章节摘要向量化存储 |
-
-### Tags 层 (`tags/`)
-
-| 模块 | 功能 |
-|------|------|
-| `load.py` | 动态加载：按题材加载相关标签（600+ → ~100） |
-| `validate.py` | 校验标签合法性 + 同义词映射 |
-| `resolve.py` | 标签领域定位（检测标签属于哪个领域） |
-| `export_view.py` | CLI 管理：导出人读格式 YAML |
-| `scheduled.py` | 新标签候选审批（频率自动批） |
+| `ingest.py` | 失败返回 None |
+| `evaluate.py` | 断点续传 + 5批次采样 |
+| `analyze.py` | 断点续传 + 跳过失败章节 |
+| `outline_core.py` | 3层容错 + 简单划分兜底 |
+| `worldbuilding.py` | 空结构兜底 |
+| `characters_core.py` | 空列表兜底 |
+| `tags.py` | 默认标签兜底 |
 
 ### Validation 层 (`validation/`)
 
-| 模块 | 功能 |
-|------|------|
-| `schema.py` | Pydantic 结构校验：meta/chapters/tags |
-| `quality.py` | 内容质量校验：摘要长度/张力合理性 |
-| `tag_rules.py` | 标签规则校验 |
+**模块拆分**：
+
+| 子模块 | 职责 |
+|--------|------|
+| `schema.py` | 校验入口，调用 validators |
+| `models.py` | Pydantic 数据模型定义 |
+| `validators.py` | 校验逻辑实现 |
+| `quality.py` | 内容质量校验 |
+
+**校验阈值来源**：
+
+```python
+# models.py 中读取契约
+from novel_material.schema import load_field
+
+class ChapterModel(BaseModel):
+    summary: str = Field(min_length=load_field("summary").min_length)
+```
 
 ### Infra 层 (`infra/`)
 
-| 模块 | 功能 |
-|------|------|
-| `config.py` | 配置加载（settings.yaml + 环境变量） |
-| `llm.py` | LLM 调用客户端（多服务商 + 重试 + 统计） |
-| `embedding.py` | Embedding API 调用 |
-| `progress.py` | 进度跟踪（SilentConsole + PipelineLogger） |
+**导出分类**：
+
+```python
+# config - 路径常量
+PROJECT_ROOT, DATA_DIR, NOVELS_DIR, CONFIG_DIR, SCHEMAS_DIR
+
+# llm - LLM 调用
+load_config, call_llm, truncate_to_tokens, get_api_stats
+
+# embedding - 向量计算
+get_embedding, get_embeddings_batch
+
+# progress - 进度追踪
+get_pipeline_logger, StageTracker, PipelineRunner
+
+# common - 常量 + 公共函数
+KEY_PLOT_POINT_VALUES, NOVEL_TYPE_VALUES
+is_special_chapter_type, filter_normal_chapters
+
+# 服务层
+load_yaml, save_yaml, PathService, ProgressManager, ExecutionContext
+```
+
+---
 
 ## 数据库表结构
 
@@ -314,22 +473,14 @@ novel-material/
 novels (
   material_id TEXT PRIMARY KEY,
   name TEXT,
-  author TEXT,
   genre TEXT[],
   word_count INTEGER,
   chapter_count INTEGER,
   status TEXT,
   premise TEXT,
   theme TEXT[],
-  tone TEXT[],
-  act_count INTEGER,
-  sequence_count INTEGER,
-  hook_count INTEGER,
-  subplot_count INTEGER,
-  structure_type TEXT,
   tags JSONB,
-  created_at TIMESTAMP,
-  updated_at TIMESTAMP
+  created_at TIMESTAMP
 )
 
 -- 章节分析
@@ -337,50 +488,15 @@ chapters (
   material_id TEXT,
   chapter INTEGER,
   title TEXT,
-  chapter_type TEXT,        -- normal/afterword/extra/author_note
+  chapter_type TEXT,
   summary TEXT,
-  word_count INTEGER,
   tension_level INTEGER,
-  pacing TEXT,
-  setting TEXT[],
-  key_event TEXT,           -- 关键事件描述（LLM生成，10-30字）
-  key_plot_point TEXT,      -- 结构角色标记（代码推断）
-  chapter_functions TEXT[],
-  characters_appear TEXT[],
-  emotional_tone TEXT[],    -- 情感基调标签
-  scene_type TEXT[],        -- 场景类型标签
-  technique TEXT[],         -- 叙事技巧标签
-  hook_type TEXT,           -- 章末钩子类型
-  tension_change TEXT,      -- 张力变化方向（滑动窗口）
-  emotion_transition TEXT,  -- 情感过渡描述（滑动窗口）
-  plot_progress TEXT,       -- 情节进度描述（滑动窗口）
+  key_event TEXT,
+  key_plot_point TEXT,
+  emotional_tone TEXT[],
+  hook_type TEXT,
   summary_embedding vector(4096),
   PRIMARY KEY (material_id, chapter)
-)
-
--- 大纲序列
-outline_sequences (
-  material_id TEXT,
-  act INTEGER,
-  sequence INTEGER,
-  title TEXT,
-  description TEXT,
-  chapters_start INTEGER,
-  chapters_end INTEGER,
-  PRIMARY KEY (material_id, act, sequence)
-)
-
--- 大纲节拍
-outline_beats (
-  material_id TEXT,
-  act INTEGER,
-  sequence INTEGER,
-  beat INTEGER,
-  title TEXT,
-  description TEXT,
-  chapter INTEGER,
-  tension INTEGER,
-  PRIMARY KEY (material_id, act, sequence, beat)
 )
 
 -- 人物
@@ -389,118 +505,55 @@ characters (
   name TEXT,
   role TEXT,
   archetype TEXT,
-  moral_spectrum TEXT,
   arc_summary TEXT,
-  narrative_function TEXT,
-  psychology JSONB,
-  first_appearance INTEGER,
-  last_appearance INTEGER,
   appearance_count INTEGER,
-  description TEXT,
-  file_path TEXT,
   PRIMARY KEY (material_id, name)
 )
 
--- 人物出场记录
-character_appearances (
-  material_id TEXT,
-  character_name TEXT,
-  chapter INTEGER,
-  significance TEXT
-)
-
--- 世界观实体
+-- 世界观
 worldbuilding_entities (
   material_id TEXT,
   entity_type TEXT,
   name TEXT,
-  importance TEXT,
   description TEXT,
-  properties JSONB,
-  first_appearance INTEGER,
   PRIMARY KEY (material_id, entity_type, name)
 )
-```
 
-### 标签表
-
-```sql
--- 标签字典（唯一数据源）
+-- 标签字典
 tags (
-  dimension VARCHAR(50),    -- element/setting/style/structure
-  tag VARCHAR(100),
-  domain VARCHAR(50),       -- xuanhuan/xianxia/common/...
-  group_name VARCHAR(100),
-  is_common BOOLEAN,
-  synonym_of VARCHAR(100),  -- 同义词指向
-  description TEXT,
-  created_at TIMESTAMP,
-  PRIMARY KEY (dimension, tag)
-)
-
--- 题材领域映射
-genre_domain_map (
-  genre_primary VARCHAR(50) PRIMARY KEY,
-  domains JSONB             -- {"element": ["common", "xuanhuan"]}
-)
-
--- 新标签候选
-new_tag_candidates (
-  id SERIAL,
   dimension VARCHAR(50),
   tag VARCHAR(100),
-  occurrence_count INTEGER,
-  source_material TEXT,
-  status VARCHAR(20),       -- pending/approved/rejected
-  created_at TIMESTAMP
-)
-
--- LLM 执行历史（run_history）
-run_history (
-  id SERIAL,
-  material_id TEXT,
-  pipeline_name TEXT,       -- 总体评估/章级分析/大纲生成等
-  stage_name TEXT,          -- 批次1/批次2等
-  elapsed_sec FLOAT,        -- 耗时（秒）
-  tokens_in INTEGER,        -- 输入 tokens
-  tokens_out INTEGER,       -- 输出 tokens
-  api_calls INTEGER,        -- API 调用次数
-  api_errors INTEGER,       -- API 错误次数
-  status TEXT,              -- success/failed
-  timestamp TIMESTAMP
+  domain VARCHAR(50),
+  is_common BOOLEAN,
+  PRIMARY KEY (dimension, tag)
 )
 ```
+
+---
 
 ## 容错机制
 
 ### LLM 调用容错
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                        LLM 调用容错策略                                       │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
-│  网络错误（429/5xx/超时）                                                     │
-│  ├─ 指数退避重试（最多 8 次）                                                 │
-│  ├─ 429 优先读取 Retry-After 响应头                                          │
-│  └─ 总超时控制（含所有重试）                                                  │
-│                                                                              │
-│  参数错误（context_length_exceeded）                                         │
-│  ├─ 快速失败，不重试                                                          │
-│  └─ 立即抛出，由上层容错处理                                                  │
-│                                                                              │
-│  JSON 解析失败                                                                │
-│  ├─ 自动翻倍 max_tokens 重试（最多 2 次）                                     │
-│  └─ 上限 65536 tokens                                                        │
-│                                                                              │
-│  分析脚本容错                                                                 │
-│  ├─ outline: 3层容错 + generate_simple_acts() 兜底                           │
-│  ├─ worldbuilding: 空结构兜底                                                 │
-│  ├─ characters: 空列表兜底                                                    │
-│  ├─ tags: 默认标签兜底                                                        │
-│  └─ 结果：流程不中断，使用默认值继续                                          │
-│                                                                              │
-└─────────────────────────────────────────────────────────────────────────────┘
+网络错误（429/5xx/超时）
+├─ 指数退避重试（最多 8 次）
+└─ 429 优先读取 Retry-After 响应头
+
+参数错误（context_length_exceeded）
+├─ 快速失败，不重试
+└─ 立即抛出，由上层容错处理
+
+JSON 解析失败
+├─ 自动翻倍 max_tokens 重试（最多 2 次）
+└─ 上限 65536 tokens
+
+分析脚本容错
+├─ outline: 3层容错 + generate_simple_acts() 兜底
+├─ worldbuilding: 空结构兜底
+├─ characters: 空列表兜底
+├─ tags: 默认标签兜底
+└─ 流程不中断，使用默认值继续
 ```
 
 ### 断点续传
@@ -515,132 +568,48 @@ run_history (
 全部完成 → 合并为 chapters.yaml
 ```
 
-### 数据库同步自动修复
-
-```
-sync_novel 检测到 summary 长度不足时：
-    ↓
-抛出 QualityCheckError（包含短摘要章节列表）
-    ↓
-自动调用 repair_short_summaries 重分析
-    ↓
-修复成功 → 继续同步
-修复失败 → 返回 False（需人工干预）
-```
-
-**异常类型**：
-- `DatabaseConfigError`：DATABASE_URL 未设置
-- `QualityCheckError`：summary 长度不足（可修复）
-- `SchemaValidationError`：其他 Schema 问题（不可修复）
-
-## 标签分级系统
-
-### 动态加载
-
-```
-用户题材: 玄幻
-    ↓
-查询 genre_domain_map → {"element": ["common", "xuanhuan"]}
-    ↓
-加载 tags 表 → 约 100 个标签（而非 600+）
-    ↓
-精简 LLM prompt → 避免截断
-```
-
-### 分级审核
-
-| Level | 标签类型 | 审核方式 |
-|-------|---------|---------|
-| 0 | hooks/tropes/themes | 自动入库 |
-| 1 | element/style | 出现 ≥3 次自动批 |
-| 2 | setting/structure | LLM 辅助审核 |
-| 3 | genre | 人工审核 |
-
-## 检索架构
-
-### 向量检索
-
-```
-查询文本 → Embedding API → 查询向量
-    ↓
-PostgreSQL pgvector → cosine_similarity
-    ↓
-返回相似度最高的 N 条结果
-```
-
-### 标签领域定位
-
-```
-检索参数: --element 血脉
-    ↓
-resolve_tag_domain("element", "血脉")
-    ↓
-返回: ("xuanhuan", False)
-    ↓
-建议: --genre 玄幻（获得更精准结果）
-```
+---
 
 ## 配置系统
 
 ### 配置优先级
 
 1. `config/providers.yaml`（多服务商配置）
-2. `config/settings.yaml`（非敏感参数，受版本控制）
-3. `.env` 环境变量（敏感信息：API Key、密码）
-4. 默认值
+2. `config/settings.yaml`（非敏感参数）
+3. `.env` 环境变量（敏感信息）
+4. 契约文件（`schema/fields.yaml`、`prompts/*.yaml`）
 
-### settings.yaml 结构
-
-包含 30+ 配置项：
-- **LLM 请求参数**：max_tokens、temperature、rate_limit_seconds
-- **LLM 批量处理**：batch_size、chapter_tokens
-- **LLM 超时配置**：各阶段超时（analyze/outline/worldbuilding/characters）
-- **摘要池 Token 上限**：各阶段输入量
-- **多样性控制**：动态温度、相似度检测阈值
-- **LLM 定价**：成本估算参数
-
-### 多服务商支持
+### 契约文件优先级最高
 
 ```yaml
-# config/providers.yaml
-default_provider: deepseek
-providers:
-  - name: deepseek
-    model: deepseek-chat
-    base_url: https://api.deepseek.com/v1
-    api_key_env: DEEPSEEK_API_KEY
-    thinking_format: openai  # 标准 OpenAI 格式
-  - name: qwen
-    model: qwen3.6-plus
-    base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
-    api_key_env: DASHSCOPE_API_KEY
-    thinking_format: dashscope  # 阿里云 DashScope 格式
+# fields.yaml 中的阈值优先于 settings.yaml
+summary:
+  min_length: 50  # 此值同步到提示词、schema、quality
+
+# 提示词可以引用契约值
+# analyze.yaml:
+# "摘要长度至少 {{summary_min}} 字" → 实际为 "摘要长度至少 50 字"
 ```
 
-通过 `--provider` 参数切换服务商：
-```bash
-nm pipeline analyze nm_xxx --provider qwen
-```
+---
 
 ## 日志系统
 
 ### 日志文件
 
-- `data/novels/{material_id}/pipeline_{date}_{time}_{PID}.log`：流水线执行日志
-- 文件命名：`pipeline_{YYYY-MM-DD}_{HH-MM-SS}_{PID}.log`
-- **PID 隔离**：并发运行多个 pipeline 时日志写入不同文件，避免交叉
+`data/novels/{material_id}/pipeline_{date}_{time}_{PID}.log`
+
+**PID 隔离**：并发运行多个 pipeline 时日志写入不同文件。
 
 ### 日志格式
 
 ```
 [material_id] 批次完成: 返回 10/10章...
-[material_id 章节分析] API: 12.3s | in=4521 out=823 total=5344 | thinking=1200 | finish=stop | req=abc123...
+[material_id 章节分析] API: 12.3s | in=4521 out=823 | finish=stop
 [RATE] 重试 3/8，等待 60s: RateLimitError
 ```
 
-**统一前缀**：所有日志添加 `[material_id]` 或 `[material_id 模块名]` 前缀便于追踪。
-
-### 错误分类标签
+### 错误标签
 
 | 标签 | 含义 |
 |------|------|
@@ -650,4 +619,3 @@ nm pipeline analyze nm_xxx --provider qwen
 | `[TIMEOUT]` | 超时错误 |
 | `[CONN]` | 连接错误 |
 | `[JSON]` | JSON 解析失败 |
-| `[HTTP]` | 其他 HTTP 错误 |
