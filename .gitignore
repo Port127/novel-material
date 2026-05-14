@@ -36,6 +36,8 @@ logs/
 # 数据（不提交）
 data/novels/
 data/index.yaml
+data/material_index.yaml
+data/classify_progress.yaml
 .docker/
 
 # 根目录 material（外部素材）
