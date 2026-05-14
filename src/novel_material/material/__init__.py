@@ -13,7 +13,7 @@ from .classify import (
     CLASSIFY_INDEX_FILE,
     CLASSIFY_PROGRESS_FILE,
 )
-from .classify_prompt import SYSTEM_PROMPT, USER_PROMPT_TEMPLATE, VALID_GENRES
+from .classify_prompt import build_classify_prompt, USER_PROMPT_TEMPLATE
 
 __all__ = [
     "import_material",
@@ -29,7 +29,6 @@ __all__ = [
     "CLASSIFY_INDEX_FILE",
     "CLASSIFY_PROGRESS_FILE",
     # classify_prompt
-    "SYSTEM_PROMPT",
+    "build_classify_prompt",
     "USER_PROMPT_TEMPLATE",
-    "VALID_GENRES",
 ]

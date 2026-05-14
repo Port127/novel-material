@@ -1,6 +1,7 @@
 """素材分类核心逻辑。
 
-根据小说前三章内容，使用 LLM 进行 genre 分类。
+根据小说样本内容，使用 LLM 进行 genre 分类。
+支持分布式采样（开头 + 中间 + 后期）。
 """
 import json
 import re
@@ -12,10 +13,10 @@ from novel_material.infra.llm import call_llm, load_config
 from novel_material.infra.yaml_io import load_yaml, save_yaml
 from novel_material.infra.config import PROJECT_ROOT, DATA_DIR, get_settings
 from novel_material.material.classify_prompt import (
-    SYSTEM_PROMPT,
+    build_classify_prompt,
     USER_PROMPT_TEMPLATE,
-    VALID_GENRES,
 )
+from novel_material.tags.load import get_all_genres, infer_primary_from_secondary
 
 logger = logging.getLogger(__name__)
 
@@ -37,15 +38,31 @@ MATERIAL_DIR = PROJECT_ROOT / _settings.get(
 )
 
 
-def extract_first_three_chapters(file_path: Path, max_chars: int = 8000) -> str:
-    """从小说文件提取前三章内容。
+def extract_sample_chapters(
+    file_path: Path,
+    total_chapters: int = None,
+    sample_ratio: float = 0.005,
+    min_chapters: int = 3,
+    max_chapters: int = 30,
+    max_chars_per_chapter: int = 1500,
+) -> str:
+    """分布式采样章节内容。
+
+    采样分布：
+    - 开头：1 章（了解设定）
+    - 中间：按比例分配
+    - 后期：1 章（了解结局/转折）
 
     Args:
-        file_path: 小说 txt 文件路径
-        max_chars: 最大字符数（约 5000-8000 字）
+        file_path: 小说文件路径
+        total_chapters: 总章数（可选，自动检测）
+        sample_ratio: 采样比例（默认 0.5%）
+        min_chapters: 最少采样章数
+        max_chapters: 最多采样章数
+        max_chars_per_chapter: 每章最多字符
 
     Returns:
-        str: 前三章内容文本
+        str: 采样内容（章节标题 + 内容）
     """
     if not file_path.exists():
         raise FileNotFoundError(f"文件不存在: {file_path}")
@@ -53,56 +70,97 @@ def extract_first_three_chapters(file_path: Path, max_chars: int = 8000) -> str:
     with open(file_path, "r", encoding="utf-8") as f:
         content = f.read()
 
-    # 章节标题匹配模式（支持多种格式）
-    # 格式1: 第一章 xxx（行首）
-    # 格式2: 第1章 xxx（行首）
-    # 格式3: 一、xxx（部分小说用数字章节）
-    # 要求章节标题必须在行首（前面是换行符或文件开头）
+    # 章节检测
     chapter_pattern = re.compile(
-        r"(?:^|\n)(第[一二三四五六七八九十百千万零\d]+章|第\d+章|[一二三四五六七八九十]+、)",
+        r"(?:^|\n)(第[一二三四五六七八九十百千万零\d]+章|第\d+章)",
         re.MULTILINE
     )
-
-    # 找到所有章节标题的位置
     matches = list(chapter_pattern.finditer(content))
 
-    if len(matches) < 3:
-        # 章节少于3章，取全文前 max_chars
-        logger.warning(f"章节少于3章: {file_path.name}")
-        return content[:max_chars]
+    if len(matches) < min_chapters:
+        # 少于最少章数，取全文前 max_chars
+        return content[:min_chapters * max_chars_per_chapter]
 
-    # 提取前三章内容
-    # matches[0] 是第一章开始，matches[1] 是第二章，matches[2] 是第三章
-    # matches[3] 是第四章开始（作为第三章结束位置）
-    start_pos = matches[0].start()
-    # 如果匹配到的换行符位置是标题开始的前一个字符，需要调整
-    if content[start_pos] == '\n':
-        start_pos += 1
+    # 计算采样数量
+    n_chapters = len(matches)
+    sample_count = max(
+        min_chapters,
+        min(max_chapters, int(n_chapters * sample_ratio))
+    )
 
-    # 第四章开始位置作为结束（如果没有第四章，取到文件末尾）
-    end_match = matches[3] if len(matches) >= 4 else None
-    if end_match:
-        end_pos = end_match.start()
-        # 如果是换行符，保持换行符（作为章节分隔）
-        if content[end_pos] == '\n':
-            end_pos += 1
-    else:
-        end_pos = len(content)
+    # 分布采样位置
+    positions = []
 
-    chapter_content = content[start_pos:end_pos]
+    # 开头：第 1 章
+    positions.append(0)
 
-    # 截断到最大字符数
-    if len(chapter_content) > max_chars:
-        chapter_content = chapter_content[:max_chars]
+    # 中间：均匀分布
+    if sample_count > 2:
+        mid_count = sample_count - 2  # 减去开头和结尾
+        mid_positions = [
+            int(n_chapters * (i + 1) / (mid_count + 1))
+            for i in range(mid_count)
+        ]
+        positions.extend(mid_positions)
 
-    return chapter_content
+    # 结尾：最后一章
+    if sample_count > 1:
+        positions.append(n_chapters - 1)
+
+    # 提取章节内容
+    samples = []
+    for pos in positions:
+        if pos >= len(matches):
+            continue
+
+        start = matches[pos].start()
+        if content[start] == '\n':
+            start += 1
+
+        # 结束位置：下一章开始或文件末尾
+        end_pos = matches[pos + 1].start() if pos + 1 < len(matches) else len(content)
+
+        chapter_content = content[start:end_pos]
+        if len(chapter_content) > max_chars_per_chapter:
+            chapter_content = chapter_content[:max_chars_per_chapter]
+
+        samples.append(chapter_content)
+
+    return "\n\n---\n\n".join(samples)
 
 
-def parse_classification_result(result: dict) -> dict:
-    """解析并校验 LLM 分类结果。
+def load_genre_mapping() -> tuple[list[str], dict[str, str]]:
+    """从数据库加载 genre 映射，返回一级和二级题材列表。
+
+    Returns:
+        tuple: (一级题材列表, 二级题材→一级题材映射)
+    """
+    primary_genres = get_all_genres()
+    secondary_mapping = {}
+    # 构建二级→一级映射（从 infer_primary_from_secondary 的逻辑）
+    for secondary in [
+        "东方玄幻", "异世大陆", "王朝争霸", "高武世界",
+        "修真文明", "幻想修仙", "现代修真", "古典仙侠",
+        "都市生活", "都市异能", "都市修仙", "都市神医",
+        "星际文明", "时空穿梭", "末世危机", "进化变异", "超级科技",
+        "悬疑侦探", "探险生存", "灵异神怪", "诡秘悬疑",
+        "传统武侠", "武侠幻想", "国术无双",
+        "架空历史", "历史穿越", "秦汉三国",
+        "游戏异界", "电子竞技", "虚拟网游",
+    ]:
+        primary = infer_primary_from_secondary(secondary)
+        if primary != secondary:  # 有映射
+            secondary_mapping[secondary] = primary
+
+    return primary_genres, secondary_mapping
+
+
+def parse_classification_result(result: dict, genre_mapping: tuple) -> dict:
+    """解析并校验 LLM 分类结果（新格式）。
 
     Args:
         result: LLM 返回的 JSON 结果
+        genre_mapping: (primary_genres, secondary_mapping)
 
     Returns:
         dict: 校验后的分类结果
@@ -113,25 +171,46 @@ def parse_classification_result(result: dict) -> dict:
     if not isinstance(result, dict):
         raise ValueError("LLM 返回结果不是字典")
 
-    genre = result.get("genre")
-    if not genre:
-        raise ValueError("缺少 genre 字段")
+    primary_genres, secondary_mapping = genre_mapping
 
-    if isinstance(genre, str):
-        genre = [genre]
-    elif not isinstance(genre, list):
-        raise ValueError("genre 必须是字符串或列表")
+    # 解析 genre_primary
+    genre_primary = result.get("genre_primary", "其他")
+    if not isinstance(genre_primary, str):
+        genre_primary = str(genre_primary)
 
-    # 校验 genre 取值
-    valid_genre = []
-    for g in genre:
-        if g in VALID_GENRES:
-            valid_genre.append(g)
-        else:
-            logger.warning(f"无效 genre: {g}")
+    # 校验 genre_primary 是否在系统标签中
+    valid_primary = None
+    for g in primary_genres:
+        if g == genre_primary:
+            valid_primary = g
+            break
 
-    if not valid_genre:
-        valid_genre = ["其他"]
+    if not valid_primary:
+        logger.warning(f"无效 genre_primary: {genre_primary}")
+        valid_primary = "其他"
+
+    # 解析 genre_secondary
+    genre_secondary = result.get("genre_secondary", "")
+    if genre_secondary:
+        # 校验二级题材并归一化
+        inferred = secondary_mapping.get(genre_secondary)
+        if inferred and inferred != valid_primary:
+            logger.warning(f"二级题材 {genre_secondary} 映射到 {inferred}，与 {valid_primary} 不同")
+
+    # 解析 elements（批次3扩展）
+    elements = result.get("elements", [])
+    if not isinstance(elements, list):
+        elements = []
+
+    # 解析 style（批次3扩展）
+    style = result.get("style", {})
+
+    # 解析 quality（批次3扩展）
+    quality = result.get("quality", {})
+    writing = quality.get("writing", 3)
+    plot = quality.get("plot", 3)
+    character = quality.get("character", 3)
+    quality_score = round((writing + plot + character) / 3, 1)
 
     genre_description = result.get("genre_description", "")
     if not genre_description:
@@ -143,8 +222,18 @@ def parse_classification_result(result: dict) -> dict:
     confidence = max(0.0, min(1.0, confidence))
 
     return {
-        "genre": valid_genre,
+        "genre_primary": valid_primary,
+        "genre_secondary": genre_secondary,
         "genre_description": genre_description,
+        "elements": elements,
+        "elements_description": result.get("elements_description", ""),
+        "style": style,
+        "quality": {
+            "writing": writing,
+            "plot": plot,
+            "character": character,
+            "score": quality_score,
+        },
         "confidence": confidence,
     }
 
@@ -164,7 +253,7 @@ def classify_book(
         config: LLM 配置（可选，默认使用默认配置）
 
     Returns:
-        dict: 分类结果，包含 genre、genre_description、confidence、status
+        dict: 分类结果，包含 genre_primary、genre_secondary、confidence、status
 
     Raises:
         FileNotFoundError: 文件不存在
@@ -173,8 +262,15 @@ def classify_book(
     if config is None:
         config = load_config()
 
-    # 提取前三章内容
-    content = extract_first_three_chapters(file_path)
+    # 加载动态 genre 映射
+    genre_mapping = load_genre_mapping()
+    primary_genres, secondary_mapping = genre_mapping
+
+    # 动态构建系统提示词
+    system_prompt = build_classify_prompt(primary_genres)
+
+    # 提取样本章节内容（分布式采样）
+    content = extract_sample_chapters(file_path)
 
     # 构建用户提示词
     user_prompt = USER_PROMPT_TEMPLATE.format(
@@ -187,7 +283,7 @@ def classify_book(
     context = f"[classify] {title}"
     try:
         result = call_llm(
-            system_prompt=SYSTEM_PROMPT,
+            system_prompt=system_prompt,
             user_prompt=user_prompt,
             config=config,
             context=context,
@@ -195,7 +291,8 @@ def classify_book(
     except json.JSONDecodeError as e:
         logger.error(f"{context} JSON 解析失败: {e}")
         return {
-            "genre": ["其他"],
+            "genre_primary": "其他",
+            "genre_secondary": "",
             "genre_description": "LLM 返回格式错误",
             "confidence": 0.0,
             "status": "failed",
@@ -204,7 +301,8 @@ def classify_book(
     except Exception as e:
         logger.error(f"{context} LLM 调用失败: {e}")
         return {
-            "genre": ["其他"],
+            "genre_primary": "其他",
+            "genre_secondary": "",
             "genre_description": f"LLM 调用失败: {type(e).__name__}",
             "confidence": 0.0,
             "status": "failed",
@@ -213,11 +311,12 @@ def classify_book(
 
     # 解析结果
     try:
-        parsed = parse_classification_result(result)
+        parsed = parse_classification_result(result, genre_mapping)
     except ValueError as e:
         logger.error(f"{context} 结果校验失败: {e}")
         return {
-            "genre": ["其他"],
+            "genre_primary": "其他",
+            "genre_secondary": "",
             "genre_description": "结果校验失败",
             "confidence": 0.0,
             "status": "failed",
@@ -231,8 +330,13 @@ def classify_book(
         logger.warning(f"{context} 置信度低: {parsed['confidence']}")
 
     return {
-        "genre": parsed["genre"],
+        "genre_primary": parsed["genre_primary"],
+        "genre_secondary": parsed["genre_secondary"],
         "genre_description": parsed["genre_description"],
+        "elements": parsed["elements"],
+        "elements_description": parsed["elements_description"],
+        "style": parsed["style"],
+        "quality": parsed["quality"],
         "confidence": parsed["confidence"],
         "status": status,
     }
@@ -329,9 +433,10 @@ def get_status() -> dict:
 
 
 __all__ = [
-    "extract_first_three_chapters",
+    "extract_sample_chapters",
     "classify_book",
     "parse_classification_result",
+    "load_genre_mapping",
     "load_novel_index",
     "load_material_index",
     "save_material_index",

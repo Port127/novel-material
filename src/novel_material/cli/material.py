@@ -210,15 +210,25 @@ def cmd_classify_start(
             processed += 1
             continue
 
-        # 保存结果
+        # 保存结果（新格式）
         material_index["materials"][f"{seq:04d}_{title}"] = {
             "title": title,
             "author": author,
             "file_path": str(file_path),
             "file_size": novel.get("file_size", 0),
             "download_count": novel.get("download_count", 0),
-            "genre": result["genre"],
-            "genre_description": result["genre_description"],
+            # Genre（新格式）
+            "genre_primary": result["genre_primary"],
+            "genre_secondary": result.get("genre_secondary", ""),
+            "genre_description": result.get("genre_description", ""),
+            # Elements（批次3新增）
+            "elements": result.get("elements", []),
+            "elements_description": result.get("elements_description", ""),
+            # Style（批次3新增）
+            "style": result.get("style", {}),
+            # Quality（批次3新增）
+            "quality": result.get("quality", {}),
+            # Meta
             "classification_status": result["status"],
             "classification_time": time.strftime("%Y-%m-%dT%H:%M:%S"),
             "confidence": result.get("confidence", 0.0),
@@ -234,7 +244,7 @@ def cmd_classify_start(
         progress["remaining"] = total - progress["processed"]
         save_progress(progress)
 
-        console.print(f"  [green]分类完成[/green]: {result['genre']}")
+        console.print(f"  [green]分类完成[/green]: {result['genre_primary']}")
         if result["status"] == "low_confidence":
             console.print(f"  [yellow]置信度低[/yellow]: {result['confidence']}")
 
@@ -281,14 +291,25 @@ def cmd_classify_retry(
 
         result = classify_book(file_path, title, author, config)
 
+        # 保存结果（新格式）
         material_index["materials"][f"{seq:04d}_{title}"] = {
             "title": title,
             "author": author,
             "file_path": str(file_path),
             "file_size": novel.get("file_size", 0),
             "download_count": novel.get("download_count", 0),
-            "genre": result["genre"],
-            "genre_description": result["genre_description"],
+            # Genre（新格式）
+            "genre_primary": result["genre_primary"],
+            "genre_secondary": result.get("genre_secondary", ""),
+            "genre_description": result.get("genre_description", ""),
+            # Elements
+            "elements": result.get("elements", []),
+            "elements_description": result.get("elements_description", ""),
+            # Style
+            "style": result.get("style", {}),
+            # Quality
+            "quality": result.get("quality", {}),
+            # Meta
             "classification_status": result["status"],
             "classification_time": time.strftime("%Y-%m-%dT%H:%M:%S"),
             "confidence": result.get("confidence", 0.0),
@@ -299,7 +320,7 @@ def cmd_classify_retry(
         progress["failed"] = [f for f in progress.get("failed", []) if f.get("sequence") != seq]
         save_progress(progress)
 
-        console.print(f"[green]重试完成[/green]: {result['genre']}")
+        console.print(f"[green]重试完成[/green]: {result['genre_primary']}")
 
     elif failed:
         # 重试所有失败条目
@@ -331,14 +352,25 @@ def cmd_classify_retry(
 
             result = classify_book(file_path, title, author, config)
 
+            # 保存结果（新格式）
             material_index["materials"][f"{seq:04d}_{title}"] = {
                 "title": title,
                 "author": author,
                 "file_path": str(file_path),
                 "file_size": novel.get("file_size", 0),
                 "download_count": novel.get("download_count", 0),
-                "genre": result["genre"],
-                "genre_description": result["genre_description"],
+                # Genre（新格式）
+                "genre_primary": result["genre_primary"],
+                "genre_secondary": result.get("genre_secondary", ""),
+                "genre_description": result.get("genre_description", ""),
+                # Elements
+                "elements": result.get("elements", []),
+                "elements_description": result.get("elements_description", ""),
+                # Style
+                "style": result.get("style", {}),
+                # Quality
+                "quality": result.get("quality", {}),
+                # Meta
                 "classification_status": result["status"],
                 "classification_time": time.strftime("%Y-%m-%dT%H:%M:%S"),
                 "confidence": result.get("confidence", 0.0),
@@ -356,7 +388,7 @@ def cmd_classify_retry(
 
             save_progress(progress)
 
-            console.print(f"[green]重试完成[/green]: {result['genre']}")
+            console.print(f"[green]重试完成[/green]: {result['genre_primary']}")
 
     else:
         console.print("[yellow]请指定 --seq 或 --failed[/yellow]")

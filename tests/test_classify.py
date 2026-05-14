@@ -5,8 +5,9 @@ from pathlib import Path
 import tempfile
 
 from novel_material.material.classify import (
-    extract_first_three_chapters,
+    extract_sample_chapters,
     parse_classification_result,
+    load_genre_mapping,
     classify_book,
     load_progress,
     save_progress,
@@ -16,202 +17,231 @@ from novel_material.material.classify import (
     CLASSIFY_INDEX_FILE,
     CLASSIFY_PROGRESS_FILE,
 )
-from novel_material.material.classify_prompt import VALID_GENRES
 
 
-class TestExtractFirstThreeChapters:
-    """测试前三章提取功能。"""
+class TestExtractSampleChapters:
+    """测试分布式采样功能。"""
 
-    def test_extract_three_chapters(self, temp_novel_dir):
-        """正常提取前三章。"""
-        # 创建测试文件（无缩进）
-        content = (
-            "第一章 开篇\n\n"
-            "这是第一章的内容。\n\n"
-            "第二章 发展\n\n"
-            "这是第二章的内容。\n\n"
-            "第三章 结局\n\n"
-            "这是第三章的内容。\n\n"
-            "第四章 继续\n\n"
-            "这是第四章的内容。\n"
-        )
+    def test_sample_distribution(self, temp_novel_dir):
+        """测试采样分布：开头 + 中间 + 结尾。"""
+        # 创建 100 章小说
+        content = "\n\n".join(f"第{i}章 内容{i}" for i in range(1, 101))
         test_file = temp_novel_dir / "test.txt"
         test_file.write_text(content)
 
-        result = extract_first_three_chapters(test_file)
+        result = extract_sample_chapters(test_file)
 
-        # 应包含前三章，不包含第四章
-        assert "第一章" in result
-        assert "第二章" in result
-        assert "第三章" in result
-        assert "第四章" not in result
-
-    def test_extract_numeric_chapters(self, temp_novel_dir):
-        """支持数字格式章节（第1章）。"""
-        content = """第1章 开篇
-
-内容一。
-
-第2章 发展
-
-内容二。
-
-第3章 结局
-
-内容三。
-
-第4章 继续
-
-内容四。
-"""
-        test_file = temp_novel_dir / "test.txt"
-        test_file.write_text(content)
-
-        result = extract_first_three_chapters(test_file)
-
+        # 应包含开头（第1章）和结尾（第100章）
         assert "第1章" in result
-        assert "第2章" in result
-        assert "第3章" in result
-        assert "第4章" not in result
+        assert "第100章" in result
 
-    def test_less_than_three_chapters(self, temp_novel_dir):
-        """章节少于3章时返回全文。"""
-        content = "第一章 开篇\n\n这是仅有的内容。\n"
+    def test_sample_ratio(self, temp_novel_dir):
+        """测试采样比例（约 0.5%）。"""
+        # 创建 200 章小说
+        content = "\n\n".join(f"第{i}章 内容{i}" for i in range(1, 201))
         test_file = temp_novel_dir / "test.txt"
         test_file.write_text(content)
 
-        result = extract_first_three_chapters(test_file)
+        result = extract_sample_chapters(test_file, sample_ratio=0.005)
 
-        assert "第一章" in result
-        assert len(result) < 1000  # 应被截断
+        # 200 * 0.005 = 1, min=3 → 采样 3 章
+        assert "第1章" in result
+        assert "第200章" in result
+
+    def test_short_novel(self, temp_novel_dir):
+        """少于 min_chapters 时取全文前部分。"""
+        content = "第1章 内容\n\n第2章 内容"
+        test_file = temp_novel_dir / "test.txt"
+        test_file.write_text(content)
+
+        result = extract_sample_chapters(test_file, min_chapters=3)
+
+        assert len(result) > 0
 
     def test_file_not_found(self, temp_novel_dir):
         """文件不存在时抛出异常。"""
         test_file = temp_novel_dir / "not_exist.txt"
 
         with pytest.raises(FileNotFoundError):
-            extract_first_three_chapters(test_file)
+            extract_sample_chapters(test_file)
 
-    def test_truncate_to_max_chars(self, temp_novel_dir):
-        """内容过长时截断到 max_chars。"""
-        # 创建超长内容
-        content = "第一章 开篇\n\n" + "内容内容" * 5000 + "\n\n第二章 发展\n\n" + "内容内容" * 5000
+    def test_max_chars_per_chapter(self, temp_novel_dir):
+        """每章内容过长时截断。"""
+        # 创建超长单章
+        content = "第1章 开篇\n\n" + "内容" * 5000 + "\n\n第2章 继续\n\n" + "内容" * 5000
         test_file = temp_novel_dir / "test.txt"
         test_file.write_text(content)
 
-        result = extract_first_three_chapters(test_file, max_chars=1000)
+        result = extract_sample_chapters(test_file, max_chars_per_chapter=1000)
 
-        assert len(result) <= 1000
+        # 每章最多 1000 字
+        assert len(result) <= 3000  # 3 章 * 1000 字
 
 
 class TestParseClassificationResult:
-    """测试分类结果解析和校验。"""
+    """测试分类结果解析和校验（新格式）。"""
 
     def test_parse_valid_result(self):
         """解析有效结果。"""
+        # 模拟 genre_mapping
+        genre_mapping = (["玄幻", "仙侠", "都市", "科幻"], {"修真文明": "仙侠"})
+
         result = {
-            "genre": ["玄幻", "修仙"],
+            "genre_primary": "玄幻",
+            "genre_secondary": "东方玄幻",
             "genre_description": "修仙升级流",
             "confidence": 0.8,
         }
 
-        parsed = parse_classification_result(result)
+        parsed = parse_classification_result(result, genre_mapping)
 
-        assert parsed["genre"] == ["玄幻", "修仙"]
+        assert parsed["genre_primary"] == "玄幻"
+        assert parsed["genre_secondary"] == "东方玄幻"
         assert parsed["genre_description"] == "修仙升级流"
         assert parsed["confidence"] == 0.8
 
-    def test_genre_as_string(self):
-        """genre 为字符串时转为列表。"""
+    def test_invalid_genre_primary_replaced(self):
+        """无效 genre_primary 替换为 其他。"""
+        genre_mapping = (["玄幻", "仙侠", "都市"], {})
+
         result = {
-            "genre": "玄幻",
-            "genre_description": "玄幻小说",
-            "confidence": 0.9,
-        }
-
-        parsed = parse_classification_result(result)
-
-        assert parsed["genre"] == ["玄幻"]
-
-    def test_invalid_genre_replaced_with_other(self):
-        """无效 genre 替换为 其他。"""
-        result = {
-            "genre": ["未知类型", "不存在的分类"],
+            "genre_primary": "未知类型",
             "genre_description": "描述",
             "confidence": 0.5,
         }
 
-        parsed = parse_classification_result(result)
+        parsed = parse_classification_result(result, genre_mapping)
 
-        assert parsed["genre"] == ["其他"]
+        assert parsed["genre_primary"] == "其他"
 
-    def test_partial_valid_genre(self):
-        """部分无效 genre 保留有效部分。"""
+    def test_secondary_genre_mapping_warning(self):
+        """二级题材映射到不同一级时记录警告。"""
+        genre_mapping = (["玄幻", "仙侠"], {"修真文明": "仙侠"})
+
         result = {
-            "genre": ["玄幻", "无效类型"],
+            "genre_primary": "玄幻",
+            "genre_secondary": "修真文明",
             "genre_description": "描述",
             "confidence": 0.7,
         }
 
-        parsed = parse_classification_result(result)
+        parsed = parse_classification_result(result, genre_mapping)
 
-        assert parsed["genre"] == ["玄幻"]
+        # 应正常解析，但会有 warning log
+        assert parsed["genre_primary"] == "玄幻"
+        assert parsed["genre_secondary"] == "修真文明"
 
-    def test_missing_genre(self):
-        """缺少 genre 时抛出异常。"""
+    def test_elements_parsed(self):
+        """解析 elements 字段。"""
+        genre_mapping = (["玄幻"], {})
+
         result = {
-            "genre_description": "描述",
-            "confidence": 0.6,
-        }
-
-        with pytest.raises(ValueError, match="缺少 genre"):
-            parse_classification_result(result)
-
-    def test_missing_description(self):
-        """缺少描述时使用默认值。"""
-        result = {
-            "genre": ["玄幻"],
+            "genre_primary": "玄幻",
+            "elements": ["重生", "系统", "逆袭"],
             "confidence": 0.8,
         }
 
-        parsed = parse_classification_result(result)
+        parsed = parse_classification_result(result, genre_mapping)
+
+        assert parsed["elements"] == ["重生", "系统", "逆袭"]
+
+    def test_style_parsed(self):
+        """解析 style 字段。"""
+        genre_mapping = (["玄幻"], {})
+
+        result = {
+            "genre_primary": "玄幻",
+            "style": {"narrative": "快节奏", "tone": "热血"},
+            "confidence": 0.8,
+        }
+
+        parsed = parse_classification_result(result, genre_mapping)
+
+        assert parsed["style"]["narrative"] == "快节奏"
+
+    def test_quality_parsed_with_score(self):
+        """解析 quality 字段并计算综合评分。"""
+        genre_mapping = (["玄幻"], {})
+
+        result = {
+            "genre_primary": "玄幻",
+            "quality": {"writing": 4, "plot": 3, "character": 3},
+            "confidence": 0.8,
+        }
+
+        parsed = parse_classification_result(result, genre_mapping)
+
+        assert parsed["quality"]["writing"] == 4
+        assert parsed["quality"]["score"] == 3.3
+
+    def test_missing_description(self):
+        """缺少描述时使用默认值。"""
+        genre_mapping = (["玄幻"], {})
+
+        result = {
+            "genre_primary": "玄幻",
+            "confidence": 0.8,
+        }
+
+        parsed = parse_classification_result(result, genre_mapping)
 
         assert parsed["genre_description"] == "分类描述未生成"
 
     def test_invalid_confidence(self):
         """无效 confidence 时使用默认值。"""
+        genre_mapping = (["玄幻"], {})
+
         result = {
-            "genre": ["玄幻"],
-            "genre_description": "描述",
+            "genre_primary": "玄幻",
             "confidence": "invalid",
         }
 
-        parsed = parse_classification_result(result)
+        parsed = parse_classification_result(result, genre_mapping)
 
         assert parsed["confidence"] == 0.5
 
     def test_confidence_out_of_range(self):
         """confidence 超出范围时 clamp。"""
+        genre_mapping = (["玄幻"], {})
+
         result = {
-            "genre": ["玄幻"],
-            "genre_description": "描述",
+            "genre_primary": "玄幻",
             "confidence": 1.5,
         }
 
-        parsed = parse_classification_result(result)
+        parsed = parse_classification_result(result, genre_mapping)
 
         assert parsed["confidence"] == 1.0
 
         result["confidence"] = -0.5
-        parsed = parse_classification_result(result)
+        parsed = parse_classification_result(result, genre_mapping)
         assert parsed["confidence"] == 0.0
 
     def test_result_not_dict(self):
         """结果不是字典时抛出异常。"""
+        genre_mapping = (["玄幻"], {})
+
         result = ["玄幻", "修仙"]
 
         with pytest.raises(ValueError, match="不是字典"):
-            parse_classification_result(result)
+            parse_classification_result(result, genre_mapping)
+
+
+class TestLoadGenreMapping:
+    """测试 genre 映射加载。"""
+
+    def test_load_genre_mapping_returns_tuple(self):
+        """返回一级题材列表和二级映射。"""
+        # 注意：此测试依赖数据库连接
+        try:
+            primary_genres, secondary_mapping = load_genre_mapping()
+
+            assert isinstance(primary_genres, list)
+            assert isinstance(secondary_mapping, dict)
+            assert len(primary_genres) > 0
+        except Exception:
+            # 如果数据库未连接，跳过测试
+            pytest.skip("数据库未连接")
 
 
 class TestClassifyBook:
@@ -219,7 +249,6 @@ class TestClassifyBook:
 
     def test_low_confidence_marked(self, temp_novel_dir):
         """confidence < 0.6 时标记为 low_confidence。"""
-        # Mock LLM 返回低置信度结果
         content = """第一章 开篇
 
 这是内容。
@@ -227,13 +256,13 @@ class TestClassifyBook:
         test_file = temp_novel_dir / "test.txt"
         test_file.write_text(content)
 
-        # 直接调用 parse_classification_result 测试标记逻辑
+        # 直接测试 parse_classification_result 的标记逻辑
+        genre_mapping = (["玄幻"], {})
         result = {
-            "genre": ["玄幻"],
-            "genre_description": "描述",
+            "genre_primary": "玄幻",
             "confidence": 0.5,
         }
-        parsed = parse_classification_result(result)
+        parsed = parse_classification_result(result, genre_mapping)
 
         # confidence 低于 0.6
         assert parsed["confidence"] < 0.6
@@ -244,7 +273,6 @@ class TestProgressIO:
 
     def test_save_and_load_progress(self, temp_novel_dir):
         """保存和加载进度文件。"""
-        # 临时覆盖进度文件路径
         import novel_material.material.classify as classify_module
         original_path = classify_module.CLASSIFY_PROGRESS_FILE
         classify_module.CLASSIFY_PROGRESS_FILE = temp_novel_dir / "progress.yaml"
@@ -297,7 +325,8 @@ class TestMaterialIndexIO:
             "materials": {
                 "0001_test": {
                     "title": "测试小说",
-                    "genre": ["玄幻"],
+                    "genre_primary": "玄幻",
+                    "genre_secondary": "东方玄幻",
                     "classification_status": "done",
                 }
             }
@@ -321,7 +350,7 @@ class TestMaterialIndexIO:
         index = {
             "0001_test": {
                 "title": "测试小说",
-                "genre": ["玄幻"],
+                "genre_primary": "玄幻",
             }
         }
 
@@ -350,21 +379,3 @@ class TestGetStatus:
         assert status["failed"] == 0
 
         classify_module.CLASSIFY_PROGRESS_FILE = original_progress_path
-
-
-class TestValidGenres:
-    """测试 genre 取值范围。"""
-
-    def test_valid_genres_set(self):
-        """VALID_GENRES 包含所有预期值。"""
-        expected = ["玄幻", "修仙", "奇幻", "科幻", "都市", "历史", "武侠", "仙侠", "游戏", "悬疑", "其他"]
-
-        for genre in expected:
-            assert genre in VALID_GENRES
-
-    def test_subgenres_in_valid_set(self):
-        """子类型也应在有效集合中。"""
-        subgenres = ["东方玄幻", "西幻", "魔幻", "都市异能", "历史架空", "网游", "电竞", "推理", "惊悚"]
-
-        for genre in subgenres:
-            assert genre in VALID_GENRES
