@@ -369,14 +369,22 @@ def call_llm(
                             f"{prefix}thinking tokens 异常低: {thinking} < {threshold}，可能导致输出质量下降"
                         )
 
-            # INFO 级别日志：每次调用详情
+            # INFO 级别日志：每次调用详情（含请求参数 + 行业标准字段）
+            thinking_mode = "enabled" if thinking_budget is not None else "disabled"
+            temp_str = f"{effective_temp:.2f}" if "effective_temp" in dir() else "None"
             log_parts = [
                 f"{prefix}API: {elapsed:.1f}s",
+                f"model={model_name}",
+                f"max_tokens={effective_max_tokens}",
+                f"thinking={thinking_mode} budget={thinking_budget if thinking_budget is not None else 'None'}",
+                f"temp={temp_str}",
                 f"in={usage.prompt_tokens} out={usage.completion_tokens} total={usage.total_tokens}",
             ]
             if detail["thinking_tokens"]:
-                log_parts.append(f"thinking={detail['thinking_tokens']}")
+                log_parts.append(f"thinking_tokens={detail['thinking_tokens']}")
             log_parts.append(f"finish={finish_reason}")
+            if context:
+                log_parts.append(f"context={context}")
             if request_id:
                 log_parts.append(f"req={request_id[:12]}...")
 
@@ -385,11 +393,15 @@ def call_llm(
             # usage 为 None 时仍记录调用
             logger.warning(f"{prefix}API: {elapsed:.1f}s | usage=None（无法获取 tokens） | finish={finish_reason}")
 
+        # 存储原始内容供异常处理使用
+        raw_content = response.choices[0].message.content
+        detail["_raw_content"] = raw_content
+
         _call_details.append(detail)
         # 限制列表长度，防止无界增长（只需最后一条供 get_last_call_* 使用）
         if len(_call_details) > 100:
             _call_details.pop(0)
-        return json.loads(response.choices[0].message.content)
+        return json.loads(raw_content)
 
     # JSON 解析失败时自动加大 max_tokens 重试（最多 2 次）
     max_json_retries = 2
@@ -397,11 +409,19 @@ def call_llm(
         try:
             return _call()
         except json.JSONDecodeError as e:
+            # 从最后一次调用获取详细信息
+            last_detail = _call_details[-1] if _call_details else {}
+            raw_snippet = last_detail.get("_raw_content", "")[:200] if last_detail.get("_raw_content") else "(无内容)"
+            last_req_id = last_detail.get("request_id", "N/A")[:12]
+            last_elapsed = last_detail.get("elapsed_sec", 0)
+
             if attempt < max_json_retries:
                 new_max = min(effective_max_tokens * 2, 65536)
                 prefix = _format_prefix(context)
                 logger.warning(
-                    f"{prefix}[JSON] 解析失败（max_tokens={effective_max_tokens}），"
+                    f"{prefix}[JSON] 解析失败 | model={config['llm']['model']} | "
+                    f"max_tokens={effective_max_tokens} | attempt={last_elapsed:.1f}s | "
+                    f"req={last_req_id}... | snippet: {raw_snippet} | "
                     f"加大到 {new_max}，重试 {attempt+1}/{max_json_retries}"
                 )
                 effective_max_tokens = new_max
@@ -409,12 +429,23 @@ def call_llm(
                 _api_stats["errors"] += 1
                 elapsed = time.monotonic() - _outer_start
                 prefix = _format_prefix(context)
-                logger.error(f"{prefix}[JSON] 解析最终失败 ({elapsed:.1f}s): {e}")
+                logger.error(
+                    f"{prefix}[JSON] 解析最终失败 | model={config['llm']['model']} | "
+                    f"total={elapsed:.1f}s | req={last_req_id}... | error: {e}"
+                )
                 raise
         except Exception as e:
             _api_stats["errors"] += 1
             elapsed = time.monotonic() - _outer_start
             error_tag = _classify_error(e)
             prefix = _format_prefix(context)
-            logger.error(f"{prefix}{error_tag} API 失败 ({elapsed:.1f}s): {type(e).__name__}: {e}")
+            # 从最后一次调用获取详细信息（如果有）
+            last_detail = _call_details[-1] if _call_details else {}
+            last_req_id = last_detail.get("request_id", "N/A")[:12]
+            last_elapsed = last_detail.get("elapsed_sec", 0)
+            logger.error(
+                f"{prefix}{error_tag} API 失败 | model={config['llm']['model']} | "
+                f"context={context or 'N/A'} | attempt={last_elapsed:.1f}s | total={elapsed:.1f}s | "
+                f"req={last_req_id}... | error: {type(e).__name__}: {e}"
+            )
             raise

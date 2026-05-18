@@ -127,7 +127,7 @@ def analyze_chapters_batch(
 
     # 解析返回结果：兼容 LLM 直接返回数组的情况
     if isinstance(result, list):
-        logger.warning(f"{prefix}批量返回为裸数组（非 {{'chapters': [...]}} 格式），自动适配")
+        logger.warning(f"{prefix}批量返回为裸数组（非 {{'chapters': [...]}} 格式），自动适配 | array_len={len(result)}")
         chapters_list = result
     else:
         chapters_list = result.get("chapters", [])
@@ -137,6 +137,10 @@ def analyze_chapters_batch(
             if result.get("summary") and batch_info:
                 logger.warning(f"{prefix}检测到单章格式返回，尝试兼容解析")
                 return {batch_info[0]["chapter"]: result}
+        elif chapters_list:
+            # 补充：记录返回键名（帮助诊断结构偏差）
+            first_item_keys = list(chapters_list[0].keys()) if chapters_list else []
+            logger.info(f"{prefix}批量解析成功 | chapters={len(chapters_list)} | keys={first_item_keys[:5]}")
 
     parsed = {}
     for item in chapters_list:
