@@ -55,6 +55,8 @@ src/novel_material/
 | 断点续传 | `nm pipeline continue <id>` | 自动从上次进度继续 |
 | 检索 | `nm search <type> <query>` | 章节/人物/世界观/大纲/事件 |
 | 标签管理 | `nm tags stats/list/add` | 查看/添加/审核标签 |
+| 素材分类 | `nm material classify start` | genre + elements + style + quality |
+| 数据同步 | `nm storage sync <id>` | YAML → PostgreSQL（自动修复） |
 
 ## 快速开始
 

@@ -172,13 +172,21 @@ novel-material/
 │   │   ├── init_db.py            # 表结构初始化
 │   │   ├── init_data.py          # 基础数据初始化
 │   │   ├── init_tags.py          # 标签字典导入
+│   │   ├── sync.py               # 同步入口（自动修复）
+│   │   ├── sync_core.py          # 同步核心逻辑
 │   │   ├── sync_chapters.py      # 章节同步
 │   │   ├── sync_characters.py    # 人物同步
 │   │   ├── sync_meta.py          # 元信息同步
 │   │   ├── sync_outline.py       # 大纲同步
 │   │   ├── sync_worldbuilding.py # 世界观同步
+│   │   ├── sync_utils.py         # 同步工具函数
+│   │   ├── repair.py             # 章节修复入口（委托 pipeline）
 │   │   ├── embedding.py          # 向量化存储
-│   │   └── schema.sql            # DDL 定义
+│   │   ├── schema.sql            # DDL 定义
+│   │   └── migrations/           # 数据库迁移脚本
+│   │       ├── 001_add_key_event.sql
+│   │       ├── 002_add_chapter_tags.sql
+│   │       └── README.md
 │   │
 │   ├── tags/                     # 标签系统
 │   │   ├── load.py               # 动态加载
@@ -197,7 +205,9 @@ novel-material/
 │   │
 │   └── material/                 # 素材管理
 │       ├── import_material.py    # 导入外部素材
-│       └── delete.py             # 删除素材
+│       ├── delete.py             # 删除素材
+│       ├── classify.py           # 素材分类核心（genre+elements+style+quality）
+│       └── classify_prompt.py    # 分类提示词模板
 │
 ├── data/                         # 数据目录
 │   ├── novels/                   # 素材存储
@@ -386,7 +396,8 @@ save_yaml(paths.meta_path, meta)
 | `nm pipeline tags` | 标签生成 | `pipeline/tags.py` |
 | `nm pipeline refine` | 调同步 | `pipeline/refine.py` + `pipeline/infer.py` |
 | `nm search chapter` | 章节检索 | `search/chapter.py` |
-| `nm storage sync` | 数据库同步 | `storage/sync_*.py` |
+| `nm storage sync` | 数据库同步（自动修复） | `storage/sync.py` → `storage/repair.py` |
+| `nm material classify` | 素材分类 | `material/classify.py` |
 | `nm validate schema` | Schema 校验 | `validation/schema.py` |
 
 ### Pipeline 层 (`pipeline/`)
@@ -436,6 +447,51 @@ from novel_material.schema import load_field
 class ChapterModel(BaseModel):
     summary: str = Field(min_length=load_field("summary").min_length)
 ```
+
+### Material 层 (`material/`)
+
+**模块拆分**：
+
+| 子模块 | 职责 |
+|--------|------|
+| `import_material.py` | 导入外部素材目录 |
+| `delete.py` | 删除素材及关联资源 |
+| `classify.py` | 素材分类核心（genre + elements + style + quality） |
+| `classify_prompt.py` | 分类提示词模板构建 |
+
+**分类功能**：
+
+`classify.py` 实现素材分类流水线：
+- 分布式采样（开头 + 中间 + 后期章节）
+- LLM 推断 genre_primary / genre_secondary
+- 提取 elements（设定元素）、style（叙事风格）、quality（质量评估）
+- 断点续传 + 进度追踪
+
+### Storage 层 (`storage/`)
+
+**模块拆分**：
+
+| 子模块 | 职责 |
+|--------|------|
+| `sync.py` | 同步入口，协调各 sync 模块 |
+| `sync_core.py` | 同步核心逻辑 + 自动修复检测 |
+| `sync_chapters.py` | 章节同步 + 检测短摘要 |
+| `sync_characters.py` | 人物同步 |
+| `sync_meta.py` | 元信息同步 |
+| `sync_outline.py` | 大纲同步 |
+| `sync_worldbuilding.py` | 世界观同步 |
+| `repair.py` | 章节修复入口（委托 pipeline.analyze） |
+| `init_db.py` | 表结构初始化 |
+| `init_data.py` | 基础数据初始化（genre_domain_map） |
+| `init_tags.py` | 标签字典导入 |
+
+**自动修复机制**：
+
+`sync.py` 检测到质量问题（如 summary 长度不足）时：
+1. 调用 `repair.py` → 委托 `pipeline.analyze.reanalyze_chapters`
+2. 重分析问题章节
+3. 修复成功 → 继续同步
+4. 修复失败 → 记录日志，需人工干预
 
 ### Infra 层 (`infra/`)
 
@@ -566,6 +622,25 @@ JSON 解析失败
 崩溃恢复 → 从 max(done.keys()) + 1 继续
     ↓
 全部完成 → 合并为 chapters.yaml
+```
+
+### 数据库同步自动修复
+
+```
+sync_novel 检测 summary 长度不足
+    ↓
+调用 repair.py → 委托 pipeline.analyze.reanalyze_chapters
+    ↓
+重分析问题章节（使用原 provider + use_window）
+    ↓
+修复成功 → 继续同步
+修复失败 → 记录日志，需人工干预
+```
+
+手动触发修复：
+```bash
+nm storage sync nm_xxx --provider deepseek --window
+# 自动检测并修复问题章节
 ```
 
 ---

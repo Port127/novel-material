@@ -719,6 +719,60 @@ nm material delete <material_id>
 
 **警告**：删除 YAML 文件 + 数据库记录，不可恢复。
 
+### nm material classify
+
+素材分类子命令，对原始素材进行 genre + elements + style + quality 分类。
+
+#### nm material classify status
+
+查看分类进度统计。
+
+```bash
+nm material classify status
+```
+
+**输出**：总数、已完成、剩余、失败数、预计剩余时间。
+
+#### nm material classify start
+
+启动分类任务（支持断点续传）。
+
+```bash
+nm material classify start [--limit N]
+```
+
+**参数**：
+- `--limit`：限制处理数量，0 表示全部
+
+**执行内容**：
+1. 从进度文件恢复断点
+2. 分布式采样章节内容
+3. LLM 推断 genre_primary / genre_secondary
+4. 提取 elements、style、quality
+5. 保存到 material_index.yaml
+
+#### nm material classify retry
+
+重试失败的分类任务。
+
+```bash
+nm material classify retry [--seq N] [--failed]
+```
+
+**参数**：
+- `--seq`：重试指定 sequence
+- `--failed`：重试所有失败条目
+
+#### nm material classify clean
+
+清空进度文件，重新开始。
+
+```bash
+nm material classify clean [--yes]
+```
+
+**警告**：清空后需要重新开始分类。
+
 ---
 
 ## 11. Storage 数据库管理
@@ -749,13 +803,28 @@ nm storage init-tags
 
 ### nm storage sync
 
-同步 YAML 到 PostgreSQL。
+同步 YAML 到 PostgreSQL（支持自动修复）。
 
 ```bash
-nm storage sync <material_id>
+nm storage sync [material_id] [--provider NAME] [--window]
 ```
 
-**前置检查**：自动执行 Schema 校验，校验失败时中止同步。
+**参数**：
+- `material_id`：素材 ID（不指定则同步全部）
+- `--provider`：服务商名称（用于修复时）
+- `--window`：使用滑动窗口模式修复
+
+**自动修复机制**：
+- 检测 summary 长度不足等问题章节
+- 自动调用 pipeline.analyze 重分析
+- 修复成功后继续同步
+
+**示例**：
+```bash
+nm storage sync nm_xxx                  # 同步单个素材
+nm storage sync                         # 同步全部素材
+nm storage sync nm_xxx --provider deepseek --window  # 使用指定参数修复
+```
 
 ### nm storage sync-all
 
@@ -1234,6 +1303,10 @@ nm pipeline continue <id>     # 断点续传
 nm material import <目录>     # 导入
 nm material delete <id>       # 删除
 nm material list              # 列出所有素材
+nm material classify status   # 分类进度统计
+nm material classify start [--limit N]  # 启动分类
+nm material classify retry [--seq N]    # 重试失败
+nm material classify clean    # 清空进度
 
 # 标签管理
 nm tags stats                 # 标签统计

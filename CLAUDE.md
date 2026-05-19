@@ -131,6 +131,10 @@ nm tags export                      # 导出 YAML 视图
 nm material list                    # 素材列表
 nm material import <dir>            # 导入已分析素材
 nm material delete <id>             # 删除素材（危险）
+nm material classify status         # 分类进度统计
+nm material classify start [--limit N]  # 启动分类（断点续传）
+nm material classify retry [--seq N]    # 重试失败条目
+nm material classify clean          # 清空进度
 ```
 
 ### Storage 命令
@@ -138,7 +142,7 @@ nm material delete <id>             # 删除素材（危险）
 ```bash
 nm storage init-db                  # 初始化表结构
 nm storage init-tags                # 导入标签字典
-nm storage sync <id>                # 同步 YAML → PostgreSQL
+nm storage sync [id] [--provider] [--window]  # 同步 YAML → PostgreSQL（自动修复）
 nm storage sync-all                 # 同步所有素材
 ```
 
@@ -228,6 +232,8 @@ nm storage sync nm_xxx      # 修复后重新同步
 - 每个分析步骤失败时使用默认值继续
 - 流程不会因单步失败而中断
 - 网络错误自动指数退避重试（最多 8 次）
+
+**自动修复**：`nm storage sync` 检测到质量问题（如 summary 长度不足）时自动调用 pipeline.analyze 重分析，修复成功后继续同步。
 
 Agent 只需检查 `meta.yaml` 中的状态字段。
 
