@@ -25,6 +25,9 @@ venv/
 *.swp
 *.swo
 
+# Codex (包含敏感配置)
+.codex/
+
 # OS
 .DS_Store
 Thumbs.db
