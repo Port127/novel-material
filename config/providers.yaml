@@ -6,7 +6,7 @@ providers:
   - name: aliyun-qwen
     api_key_env: LLM_API_KEY_ALIYUN
     base_url: https://coding.dashscope.aliyuncs.com/v1
-    model: qwen3.6-plus
+    model: qwen3.7-plus
     # thinking 格式：dashscope（阿里云）或 openai（标准 OpenAI）
     thinking_format: dashscope
 
