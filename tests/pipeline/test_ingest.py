@@ -1,4 +1,6 @@
 """Tests for ingest module."""
+import re
+
 import pytest
 from novel_material.pipeline.ingest import (
     detect_chapter_pattern,
@@ -107,9 +109,9 @@ class TestChapterSplit:
         chapter_lines = detect_chapter_pattern(lines)
         chapters = split_chapters(lines, chapter_lines)
 
-        # word_count 包含标题+内容（不含换行符）
+        # word_count 包含标题+内容，但不含空格、换行等空白字符
         full_content = "第1章 开篇\n这是一段测试内容"
-        assert chapters[0]["word_count"] == len(full_content.replace("\n", ""))
+        assert chapters[0]["word_count"] == len(re.sub(r"\s", "", full_content))
 
 
 class TestMaterialId:

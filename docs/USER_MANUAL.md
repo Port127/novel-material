@@ -444,6 +444,23 @@ nm pipeline tags <material_id> [--provider NAME]
 
 **输出**：`tags.yaml`
 
+### nm pipeline insights
+
+题材感知深度分析，基于已有 `chapters.yaml` 批量生成创作机制分析。
+
+```bash
+nm pipeline insights <material_id> [--start N] [--end N] [--provider NAME] [--profile NAME]
+```
+
+**参数**：
+- `--start/--end`：章节范围
+- `--provider`：服务商名称
+- `--profile`：显式指定 profile，可重复传入，如 `--profile common --profile suspense`
+
+**输出**：`chapter_insights/{chapter:04d}.yaml`
+
+**注意**：该层是 `chapters.yaml` 之上的深度分析层，不会修改 `chapters.yaml`。
+
 ### nm pipeline refine
 
 统计精调，计算出场次数、钩子数等统计信息，并推断结构角色。
@@ -464,7 +481,7 @@ nm pipeline refine <material_id>
 完整流水线，从入库到精调一步完成。
 
 ```bash
-nm pipeline full <file_path> [--start N] [--end N] [--provider NAME] [--window]
+nm pipeline full <file_path> [--start N] [--end N] [--provider NAME] [--window] [--mode standard]
 ```
 
 **执行阶段**：
@@ -475,7 +492,13 @@ nm pipeline full <file_path> [--start N] [--end N] [--provider NAME] [--window]
 5. 世界观提取（worldbuilding）
 6. 人物提取（characters）
 7. 标签生成（tags）
-8. 精调（refine）
+8. 深度分析（insights，standard/deep）
+9. 精调（refine）
+
+**运行模式**：
+- `fast`：跳过 core insights，优先完成可检索入库
+- `standard`：默认模式，完整主流水线 + 批量 core insights
+- `deep`：质量优先，预留关键章节 deep insights
 
 **注意**：长篇小说可能耗时数小时，建议先用 `--start 1 --end 10` 测试。
 
@@ -492,7 +515,7 @@ nm pipeline status <material_id>
 自动从断点继续流水线。
 
 ```bash
-nm pipeline continue <material_id> [--skip-sync] [--start N] [--end N] [--provider NAME] [--window]
+nm pipeline continue <material_id> [--skip-sync] [--start N] [--end N] [--provider NAME] [--window] [--mode standard]
 ```
 
 **参数**：
@@ -501,6 +524,7 @@ nm pipeline continue <material_id> [--skip-sync] [--start N] [--end N] [--provid
 - `--start/--end`：章级分析范围
 - `--provider`：服务商名称
 - `--window`：滑动窗口模式
+- `--mode`：运行模式，支持 `fast` / `standard` / `deep`
 
 **行为**：
 - 检测各阶段完成状态
@@ -600,6 +624,24 @@ nm search event <query> [--setting TEXT] [--emotion TEXT] [--limit N] [--keyword
 nm search event "雨中告别" --setting 城市 --emotion 悲伤
 nm search event "主角突破" --limit 20
 nm search event "决战" --keyword  # 关键词模式
+```
+
+### nm search insight
+
+检索 `chapter_insights/` 中的深度分析结果，不依赖 PostgreSQL。
+
+```bash
+nm search insight <keyword> [--limit N]
+```
+
+**搜索范围**：`common.conflict`、`common.reader_hook`、`common.writing_takeaway`、`genre.*`
+
+**返回内容**：章节、标题、命中字段、writing_takeaway、素材 ID。
+
+**示例**：
+```bash
+nm search insight "主角被压制后反杀"
+nm search insight "戒指传承" --limit 20
 ```
 
 ---
@@ -865,6 +907,16 @@ nm validate quality <material_id>
 ```
 
 **检查项**：摘要长度合理性、张力评级一致性、人物出场统计准确性
+
+### nm validate insights
+
+校验 `chapter_insights/` 深度分析结果。
+
+```bash
+nm validate insights <material_id>
+```
+
+**检查项**：profile 必填字段、字段长度、evidence、confidence、schema_version。
 
 ### nm validate all
 

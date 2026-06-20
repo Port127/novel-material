@@ -25,6 +25,17 @@ LLM_CHAPTER_BATCH_SIZE: 10
 LLM_MAX_CHAPTER_TOKENS: 5000
 
 # ──────────────────────────────────────────────
+# Pipeline 运行模式与 insights 时间预算
+# ──────────────────────────────────────────────
+
+PIPELINE_RUN_MODE: standard
+LLM_INSIGHT_BATCH_SIZE: 20
+INSIGHTS_DEFAULT_DEPTH: core
+INSIGHTS_KEY_CHAPTER_RATE: 0.2
+PIPELINE_INCLUDE_INSIGHTS: true
+PIPELINE_DEEP_INSIGHTS_BLOCKING: false
+
+# ──────────────────────────────────────────────
 # LLM 超时配置（各阶段，单位：秒）
 # ──────────────────────────────────────────────
 

@@ -1,0 +1,42 @@
+name: common
+display_name: 通用小说分析
+applies_to: ["*"]
+required_fields:
+  core_event:
+    description: 本章发生的核心事件
+    min_length: 10
+    max_length: 120
+  conflict:
+    description: 本章核心冲突
+    min_length: 10
+    max_length: 160
+  reader_hook:
+    description: 本章制造或延续的读者期待
+    min_length: 8
+    max_length: 160
+  writing_takeaway:
+    description: 可复用写法
+    min_length: 12
+    max_length: 220
+optional_fields:
+  scene_goal:
+    description: 主要角色在本章的目标
+  stakes:
+    description: 失败代价或风险
+  turning_point:
+    description: 本章关键转折
+  character_change:
+    description: 人物心态、关系或处境变化
+search_facets:
+  - core_event
+  - conflict
+  - reader_hook
+  - writing_takeaway
+quality_rules:
+  - field_presence
+  - min_length
+  - evidence_required
+prompt_additions:
+  - 先描述事实，再解释叙事功能，最后提炼可复用写法。
+  - 不要使用空泛评价，例如“剧情精彩”“人物生动”；必须说明具体机制。
+  - 如果章级信息不足，不要补写不存在的目标、转折或人物变化。

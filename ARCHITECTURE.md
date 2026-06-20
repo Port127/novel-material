@@ -113,6 +113,10 @@ novel-material/
 │   │   ├── fields.yaml           # 所有字段定义 + 阈值（单一数据源）
 │   │   └── thresholds.py         # 非字段阈值获取
 │   │
+│   ├── analysis_profiles/        # [契约层] 题材感知深度分析 profile
+│   │   ├── loader.py             # profile 加载与合并
+│   │   └── profiles/*.yaml       # common/xuanhuan/xianxia/suspense
+│   │
 │   ├── infra/                    # 基础设施 + 服务层
 │   │   ├── __init__.py           # 统一导出
 │   │   ├── config.py             # 路径常量 + meta 状态更新
@@ -156,6 +160,10 @@ novel-material/
 │   │   ├── characters_layer.py   # 人物分层逻辑
 │   │   ├── characters_selector.py # 人物选择器
 │   │   ├── tags.py               # 标签生成
+│   │   ├── insights.py           # 题材感知深度分析
+│   │   ├── insights_prompt.py    # 深度分析 prompt 构造
+│   │   ├── profile_resolver.py   # profile 路由
+│   │   ├── runtime_modes.py      # fast/standard/deep 运行模式
 │   │   ├── refine.py             # 统计精调
 │   │   └── progress.py           # 进度追踪
 │   │
@@ -165,6 +173,7 @@ novel-material/
 │   │   ├── character.py          # 人物检索
 │   │   ├── world.py              # 世界观检索
 │   │   ├── event.py              # 事件检索
+│   │   ├── insight.py            # chapter_insights YAML 检索
 │   │   ├── detail.py             # 细节检索（内部）
 │   │   └── common.py             # 共享工具
 │   │
@@ -201,6 +210,7 @@ novel-material/
 │   │   ├── models.py             # Pydantic 数据模型
 │   │   ├── validators.py         # 校验逻辑
 │   │   ├── quality.py            # 质量校验
+│   │   ├── insights.py           # chapter_insights 校验
 │   │   └── pacing_normalize.py   # 节奏标准化
 │   │
 │   └── material/                 # 素材管理
@@ -211,6 +221,7 @@ novel-material/
 │
 ├── data/                         # 数据目录
 │   ├── novels/                   # 素材存储
+│   │   └── {material_id}/chapter_insights/ # L2 深度分析，不替代 chapters.yaml
 │   ├── schemas/                  # YAML Schema 定义
 │   └── tag-system/               # 标签分类学
 │
@@ -394,11 +405,14 @@ save_yaml(paths.meta_path, meta)
 | `nm pipeline worldbuilding` | 世界观提取 | `pipeline/worldbuilding.py` |
 | `nm pipeline characters` | 人物提取 | `pipeline/characters.py` |
 | `nm pipeline tags` | 标签生成 | `pipeline/tags.py` |
+| `nm pipeline insights` | 题材感知深度分析 | `pipeline/insights.py` |
 | `nm pipeline refine` | 调同步 | `pipeline/refine.py` + `pipeline/infer.py` |
 | `nm search chapter` | 章节检索 | `search/chapter.py` |
+| `nm search insight` | 深度分析 YAML 检索 | `search/insight.py` |
 | `nm storage sync` | 数据库同步（自动修复） | `storage/sync.py` → `storage/repair.py` |
 | `nm material classify` | 素材分类 | `material/classify.py` |
 | `nm validate schema` | Schema 校验 | `validation/schema.py` |
+| `nm validate insights` | 深度分析校验 | `validation/insights.py` |
 
 ### Pipeline 层 (`pipeline/`)
 
@@ -426,6 +440,7 @@ save_yaml(paths.meta_path, meta)
 | `worldbuilding.py` | 空结构兜底 |
 | `characters_core.py` | 空列表兜底 |
 | `tags.py` | 默认标签兜底 |
+| `insights.py` | 批量生成 + 批次失败落盘占位 + 最多一次修复 |
 
 ### Validation 层 (`validation/`)
 

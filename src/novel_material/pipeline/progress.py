@@ -22,6 +22,7 @@ PIPELINE_STAGES = [
     ("世界观", "worldbuilding", True),
     ("人物", "characters", True),
     ("标签", "tags", True),
+    ("深度分析", "insights", True),
     ("精调", "refined", True),
     ("数据库同步", "synced", False),      # 不计入总阶段数，仅用于进度状态表
 ]
@@ -33,11 +34,12 @@ WORLDBUILDING_STAGES = 1       # 世界观：提取（向量化单独阶段）
 OUTLINE_STAGES = 3             # 大纲：前提/幕序列/beats
 
 
-def get_pipeline_stages(include_evaluation: bool = False) -> list:
+def get_pipeline_stages(include_evaluation: bool = False, include_insights: bool = True) -> list:
     """获取流水线阶段列表（不含数据库同步）。
 
     Args:
         include_evaluation: 是否包含总体评估阶段
+        include_insights: 是否包含题材感知深度分析阶段
 
     Returns:
         list: 阶段列表 [(显示名, 进度键), ...]
@@ -45,8 +47,24 @@ def get_pipeline_stages(include_evaluation: bool = False) -> list:
     return [
         (name, key)
         for name, key, counted in PIPELINE_STAGES
-        if counted or (key == "evaluation" and include_evaluation)
+        if (counted or (key == "evaluation" and include_evaluation))
+        and (include_insights or key != "insights")
     ]
+
+
+def has_complete_insights(novel_dir: Path) -> bool:
+    """Return True when chapter_insights has one YAML per indexed chapter."""
+    chapter_index_file = novel_dir / "chapter_index.yaml"
+    if not chapter_index_file.exists():
+        return False
+    chapter_index = load_yaml_list(chapter_index_file)
+    total = len(chapter_index)
+    if total == 0:
+        return False
+    insights_dir = novel_dir / "chapter_insights"
+    if not insights_dir.exists():
+        return False
+    return len(list(insights_dir.glob("*.yaml"))) >= total
 
 
 def get_pipeline_progress(material_id: str) -> dict:
@@ -112,6 +130,7 @@ def get_pipeline_progress(material_id: str) -> dict:
         "characters": (novel_dir / "characters" / "_index.yaml").exists(),
         "characters_embedded": (novel_dir / "characters" / "character_embeddings.npz").exists(),
         "tags": (novel_dir / "tags.yaml").exists(),
+        "insights": has_complete_insights(novel_dir),
         "refined": meta.get("refined_at") is not None,
         "synced": synced,
         "meta_status": meta.get("status"),
@@ -163,7 +182,7 @@ def print_pipeline_status(progress: dict) -> None:
     console.print(embed_table)
 
 
-def get_next_pending_stage(progress: dict) -> str | None:
+def get_next_pending_stage(progress: dict, include_insights: bool = True) -> str | None:
     """获取下一个待执行的阶段名称。
 
     Returns:
@@ -190,6 +209,9 @@ def get_next_pending_stage(progress: dict) -> str | None:
         if not progress.get(key):
             return name
 
+    if include_insights and not progress.get("insights"):
+        return "insights"
+
     if not progress.get("refined"):
         return "refine"
 
@@ -199,7 +221,7 @@ def get_next_pending_stage(progress: dict) -> str | None:
     return None
 
 
-def calculate_total_stages(has_evaluation: bool) -> int:
+def calculate_total_stages(has_evaluation: bool, include_insights: bool = True) -> int:
     """计算流水线总阶段数（不含数据库同步）。
 
     Args:
@@ -208,13 +230,14 @@ def calculate_total_stages(has_evaluation: bool) -> int:
     Returns:
         int: 总阶段数
     """
-    return len(get_pipeline_stages(has_evaluation))
+    return len(get_pipeline_stages(has_evaluation, include_insights=include_insights))
 
 
 def calculate_current_stage(
     progress: dict,
     use_window_detected: bool,
     will_analyze: bool,
+    include_insights: bool = True,
 ) -> int:
     """计算当前阶段编号（下一待执行阶段）。
 
@@ -226,7 +249,7 @@ def calculate_current_stage(
     Returns:
         int: 下一待执行阶段的编号（从 1 开始）
     """
-    stages = get_pipeline_stages(use_window_detected)
+    stages = get_pipeline_stages(use_window_detected, include_insights=include_insights)
 
     completed_count = 0
     for name, key in stages:

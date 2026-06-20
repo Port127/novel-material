@@ -1,0 +1,29 @@
+name: xianxia
+display_name: 仙侠分析
+applies_to: ["仙侠"]
+required_fields:
+  cultivation_rule:
+    description: 修炼规则、境界限制、功法机制
+    min_length: 8
+    max_length: 180
+  dao_heart_or_morality:
+    description: 道心、因果、善恶、选择压力
+    min_length: 8
+    max_length: 160
+optional_fields:
+  sect_or_master_relation:
+    description: 宗门、师徒、同门关系变化
+    min_length: 6
+    max_length: 160
+  tribulation_or_breakthrough:
+    description: 渡劫、破境、顿悟、瓶颈变化
+search_facets:
+  - cultivation_rule
+  - dao_heart_or_morality
+  - sect_or_master_relation
+quality_rules:
+  - genre_field_presence
+  - evidence_required
+prompt_additions:
+  - 重点分析修炼规则如何限制角色选择，以及道心/因果如何推动情节。
+  - 区分“玄幻战力爽点”和“仙侠修行规则/道心选择”。

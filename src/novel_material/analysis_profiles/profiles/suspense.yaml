@@ -1,0 +1,34 @@
+name: suspense
+display_name: 悬疑分析
+applies_to: ["悬疑灵异", "悬疑侦探女频"]
+required_fields:
+  clue:
+    description: 本章新增或强化的线索
+    min_length: 8
+    max_length: 180
+  information_gap:
+    description: 读者、主角、嫌疑人之间的信息差
+    min_length: 8
+    max_length: 180
+  mystery_progress:
+    description: 谜题推进程度
+    min_length: 8
+    max_length: 160
+optional_fields:
+  reveal_or_misdirection:
+    description: 揭示、误导或红鲱鱼
+    min_length: 8
+    max_length: 180
+  suspect_state:
+    description: 嫌疑对象或危险对象的状态变化
+search_facets:
+  - clue
+  - information_gap
+  - reveal_or_misdirection
+  - mystery_progress
+quality_rules:
+  - clue_must_have_evidence
+  - reveal_changes_understanding
+prompt_additions:
+  - 重点分析线索、误导、信息差和谜题推进，不要把单纯恐怖氛围误判为有效线索。
+  - 每个 clue 必须能从章节摘要或原文中找到依据。

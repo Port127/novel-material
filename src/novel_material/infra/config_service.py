@@ -79,6 +79,7 @@ def _build_llm_config(settings: dict, providers_yaml: dict | None, provider: str
         "worldbuilding_summary_tokens": int(settings.get("LLM_WORLDBUILDING_SUMMARY_TOKENS", 15000)),
         "characters_summary_tokens": int(settings.get("LLM_CHAPTERS_SUMMARY_TOKENS", 15000)),
         "chapter_batch_size": int(settings.get("LLM_CHAPTER_BATCH_SIZE", 5)),
+        "insight_batch_size": int(settings.get("LLM_INSIGHT_BATCH_SIZE", 20)),
         "pricing": {
             "input_per_1k": float(settings.get("LLM_PRICE_INPUT_1K", 0.0004)),
             "output_per_1k": float(settings.get("LLM_PRICE_OUTPUT_1K", 0.0012)),

@@ -1,0 +1,32 @@
+name: xuanhuan
+display_name: 玄幻分析
+applies_to: ["玄幻", "诸天无限"]
+required_fields:
+  power_progression:
+    description: 修为、能力、血脉、功法或战力推进
+    min_length: 8
+    max_length: 160
+  resource_gain:
+    description: 资源、机缘、传承、法宝、信息收益
+    min_length: 6
+    max_length: 140
+optional_fields:
+  face_slapping:
+    description: 打脸、压制、反击、身份反转的铺垫或兑现
+    min_length: 6
+    max_length: 160
+  sect_faction_conflict:
+    description: 宗门、家族、王朝、势力关系变化
+  power_payoff:
+    description: 前文能力或设定在本章的兑现
+search_facets:
+  - power_progression
+  - resource_gain
+  - face_slapping
+  - sect_faction_conflict
+quality_rules:
+  - genre_field_presence
+  - no_generic_power_words
+prompt_additions:
+  - 重点判断能力成长、资源收益、压制与反击链条。
+  - 如果本章没有升级或资源收益，说明“无明显推进”，不要编造。

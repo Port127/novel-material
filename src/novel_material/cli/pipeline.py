@@ -28,6 +28,8 @@ from novel_material.pipeline.progress import (
     CHARACTERS_STAGES,
     WORLDBUILDING_STAGES,
 )
+from novel_material.pipeline.insights import generate_chapter_insights
+from novel_material.pipeline.runtime_modes import get_runtime_mode
 from novel_material.storage.sync import sync_novel
 
 app = typer.Typer(help="数据处理流水线")
@@ -149,6 +151,67 @@ def cmd_analyze(
     if start is not None or end is not None:
         console.print("[yellow]警告：仅分析了部分章节，后续阶段（大纲、世界观等）将基于不完整的章级数据生成[/yellow]")
         console.print("[yellow]建议：分析全书后再执行后续阶段，或使用 nm pipeline continue --skip-sync 完成后续[/yellow]")
+
+
+@app.command("insights")
+def cmd_insights(
+    material_id: str = typer.Argument(..., help="素材 ID"),
+    start: int = typer.Option(None, "--start", "-s", help="起始章节号"),
+    end: int = typer.Option(None, "--end", "-e", help="结束章节号"),
+    provider: str = typer.Option(None, "--provider", "-p", help="服务商名称"),
+    profile: list[str] = typer.Option(None, "--profile", help="显式指定 profile，可重复传入"),
+):
+    """题材感知深度分析：生成 chapter_insights/{chapter}.yaml。"""
+    novel_dir = NOVELS_DIR / material_id
+    chapter_index = load_yaml_list(novel_dir / "chapter_index.yaml")
+    total_chapters = len(chapter_index)
+
+    if start is not None and start < 1:
+        console.print("[red]起始章节号必须 >= 1[/red]")
+        raise typer.Exit(1)
+    if start is not None and end is not None and end < start:
+        console.print("[red]结束章节号必须 >= 起始章节号[/red]")
+        raise typer.Exit(1)
+    if start is not None and start > total_chapters:
+        console.print(f"[red]起始章节号 {start} 超出总章数 {total_chapters}[/red]")
+        raise typer.Exit(1)
+    if end is not None and end > total_chapters:
+        console.print(f"[red]结束章节号 {end} 超出总章数 {total_chapters}[/red]")
+        raise typer.Exit(1)
+
+    chapters_in_range = [
+        ch for ch in chapter_index
+        if (start is None or ch["chapter"] >= start)
+        and (end is None or ch["chapter"] <= end)
+    ]
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        TimeRemainingColumn(),
+        console=console,
+    ) as progress_bar:
+        task = progress_bar.add_task(f"深度分析: {material_id}", total=len(chapters_in_range))
+
+        def update_progress(done: int, total: int, desc: str):
+            progress_bar.update(task, total=total, completed=done, description=f"深度分析: {desc}")
+
+        with silent_console():
+            success = generate_chapter_insights(
+                material_id,
+                start_ch=start,
+                end_ch=end,
+                provider=provider,
+                explicit_profiles=profile,
+                progress_callback=update_progress,
+            )
+
+    if not success:
+        console.print("[red]深度分析失败[/red]")
+        raise typer.Exit(1)
+    console.print("[green]深度分析完成[/green]")
 
 
 @app.command("evaluate")
@@ -306,6 +369,7 @@ def cmd_full(
     end: int = typer.Option(None, "--end", "-e", help="结束章节号（不指定则到结尾）"),
     provider: str = typer.Option(None, "--provider", "-p", help="服务商名称"),
     use_window: bool = typer.Option(False, "--window", "-w", help="启用滑动窗口模式（自动执行总体评估）"),
+    mode: str = typer.Option("standard", "--mode", help="运行模式：fast / standard / deep"),
     skip_sync: bool = typer.Option(False, "--skip-sync", help="跳过数据库同步"),
     skip_embedding: bool = typer.Option(False, "--skip-embedding", help="跳过章节向量化"),
 ):
@@ -331,7 +395,8 @@ def cmd_full(
         range_end_text = end or "末"
         range_desc = f" (第 {range_start}-{range_end_text} 章)"
     window_desc = " [滑动窗口]" if use_window else ""
-    total_stages = calculate_total_stages(use_window)
+    runtime_mode = get_runtime_mode(mode)
+    total_stages = calculate_total_stages(use_window, include_insights=runtime_mode.include_core_insights)
 
     console.print(f"[cyan]开始完整流水线{range_desc}{window_desc}[/cyan]")
     logger.info(_PIPELINE_SEPARATOR)
@@ -454,8 +519,33 @@ def cmd_full(
         progress.update(task6, completed=1)
         progress.remove_task(task6)
 
-        # 阶段 N+5: 精调
+        # 阶段 N+5: 深度分析（standard/deep）
         refine_stage = tags_stage + 1
+        if runtime_mode.include_core_insights:
+            insights_stage = tags_stage + 1
+            task_insights = progress.add_task(
+                f"阶段 {insights_stage}/{total_stages}: 深度分析",
+                total=total_chapters,
+            )
+
+            def update_insights_progress(done: int, total: int, desc: str):
+                progress.update(
+                    task_insights,
+                    total=total,
+                    completed=done,
+                    description=f"阶段 {insights_stage}/{total_stages}: {desc}",
+                )
+
+            with silent_console():
+                generate_chapter_insights(
+                    material_id,
+                    provider=provider,
+                    progress_callback=update_insights_progress,
+                )
+            progress.remove_task(task_insights)
+            refine_stage = insights_stage + 1
+
+        # 阶段 N+6: 精调
         task7 = progress.add_task(f"阶段 {refine_stage}/{total_stages}: 精调 + 向量化", total=2)
         with silent_console():
             if not refine(material_id):
@@ -487,7 +577,7 @@ def cmd_full(
     table.add_column("状态", style="green")
 
     # 数据库同步不计入总阶段数，单独添加
-    stages = get_pipeline_stages(use_window)
+    stages = get_pipeline_stages(use_window, include_insights=runtime_mode.include_core_insights)
     stages.append(("数据库同步", "synced"))
 
     final_progress = get_pipeline_progress(material_id)
@@ -527,6 +617,7 @@ def cmd_continue(
     end: int = typer.Option(None, "--end", "-e", help="结束章节号（不指定则到结尾）"),
     provider: str = typer.Option(None, "--provider", "-p", help="服务商名称"),
     use_window: bool = typer.Option(False, "--window", "-w", help="启用滑动窗口模式（需先运行 evaluate）"),
+    mode: str = typer.Option("standard", "--mode", help="运行模式：fast / standard / deep"),
     skip_embedding: bool = typer.Option(False, "--skip-embedding", help="跳过章节向量化"),
 ):
     """自动从断点继续流水线。
@@ -558,6 +649,7 @@ def cmd_continue(
             console.print("[red]请执行：nm pipeline evaluate {material_id}[/red]")
             raise typer.Exit(1)
 
+    runtime_mode = get_runtime_mode(mode)
     progress = get_pipeline_progress(material_id)
     print_pipeline_status(progress)
 
@@ -570,7 +662,7 @@ def cmd_continue(
         raise typer.Exit(1)
 
     # 显示续传信息
-    next_stage = get_next_pending_stage(progress)
+    next_stage = get_next_pending_stage(progress, include_insights=runtime_mode.include_core_insights)
     # 如果指定了范围，即使流水线已完成，也要执行（允许重新分析指定范围）
     if not next_stage and start is None and end is None:
         console.print("\n[green]流水线已完成，无需续传[/green]")
@@ -593,14 +685,19 @@ def cmd_continue(
 
     # 计算总阶段数和当前阶段编号（动态）
     use_window_detected = progress.get("evaluation")
-    total_stages = calculate_total_stages(use_window_detected)
+    total_stages = calculate_total_stages(use_window_detected, include_insights=runtime_mode.include_core_insights)
 
     # 预计算：本次是否会执行章级分析
     # 条件：章级分析未完成，或用户指定了范围（即使已完成也要重新分析）
     will_analyze = not progress.get("analyzed") or start is not None or end is not None
 
     # 计算当前阶段编号
-    current_stage = calculate_current_stage(progress, use_window_detected, will_analyze)
+    current_stage = calculate_current_stage(
+        progress,
+        use_window_detected,
+        will_analyze,
+        include_insights=runtime_mode.include_core_insights,
+    )
 
     # 显示范围信息
     range_desc = ""
@@ -706,6 +803,28 @@ def cmd_continue(
             progress_bar.remove_task(task)
             current_stage += 1
 
+        # 深度分析
+        if runtime_mode.include_core_insights and not progress.get("insights"):
+            console.print(f"[cyan]阶段 {current_stage}/{total_stages}: 深度分析...[/cyan]")
+            task = progress_bar.add_task(f"阶段 {current_stage}/{total_stages}: 深度分析", total=total_chapters)
+
+            def update_insights_progress_continue(done: int, total: int, desc: str):
+                progress_bar.update(
+                    task,
+                    total=total,
+                    completed=done,
+                    description=f"阶段 {current_stage}/{total_stages}: {desc}",
+                )
+
+            with silent_console():
+                generate_chapter_insights(
+                    material_id,
+                    provider=provider,
+                    progress_callback=update_insights_progress_continue,
+                )
+            progress_bar.remove_task(task)
+            current_stage += 1
+
         # 精调
         if not progress.get("refined"):
             console.print(f"[cyan]阶段 {current_stage}/{total_stages}: 数据精调...[/cyan]")
@@ -741,7 +860,7 @@ def cmd_continue(
     table.add_column("阶段", style="cyan")
     table.add_column("状态", style="green")
 
-    stages = get_pipeline_stages(use_window_detected)
+    stages = get_pipeline_stages(use_window_detected, include_insights=runtime_mode.include_core_insights)
     # 数据库同步不计入总阶段数，单独添加用于状态显示
     stages.append(("数据库同步", "synced"))
 

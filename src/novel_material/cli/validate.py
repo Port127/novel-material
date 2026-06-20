@@ -5,6 +5,7 @@ from rich.table import Table
 
 from novel_material.validation.schema import validate_material
 from novel_material.validation.quality import run_quality_check
+from novel_material.validation.insights import validate_material_insights
 
 app = typer.Typer(help="数据校验")
 console = Console()
@@ -69,3 +70,16 @@ def cmd_quality(
         console.print(f"[green]素材 {material_id} 质量检查通过[/green]")
     else:
         console.print(f"[red]素材 {material_id} 质量检查失败[/red]")
+
+
+@app.command("insights")
+def cmd_validate_insights(
+    material_id: str = typer.Argument(..., help="素材 ID"),
+):
+    """校验 chapter_insights 深度分析结果。"""
+    errors = validate_material_insights(material_id)
+    if errors:
+        for error in errors:
+            console.print(f"[red]✗[/red] {error}")
+        raise typer.Exit(1)
+    console.print(f"[green]素材 {material_id} 深度分析校验通过[/green]")

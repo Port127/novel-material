@@ -368,9 +368,19 @@ class TestGetStatus:
 
     def test_get_status_empty(self, temp_novel_dir):
         """空进度时返回正确统计。"""
+        import json
         import novel_material.material.classify as classify_module
+
+        novel_index_file = temp_novel_dir / "novel_index.json"
+        novel_index_file.write_text(
+            json.dumps([{"seq": 1}, {"seq": 2}], ensure_ascii=False),
+            encoding="utf-8",
+        )
+
         original_progress_path = classify_module.CLASSIFY_PROGRESS_FILE
+        original_novel_index_file = classify_module.NOVEL_INDEX_FILE
         classify_module.CLASSIFY_PROGRESS_FILE = temp_novel_dir / "progress.yaml"
+        classify_module.NOVEL_INDEX_FILE = novel_index_file
 
         status = get_status()
 
@@ -379,3 +389,4 @@ class TestGetStatus:
         assert status["failed"] == 0
 
         classify_module.CLASSIFY_PROGRESS_FILE = original_progress_path
+        classify_module.NOVEL_INDEX_FILE = original_novel_index_file

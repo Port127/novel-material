@@ -1,0 +1,10 @@
+cases:
+  - id: xuanhuan_opening_001
+    genre: 玄幻
+    expected_profiles: ["common", "xuanhuan"]
+    expected_fields:
+      common:
+        conflict_contains: ["羞辱", "压制"]
+        reader_hook_contains: ["机缘", "戒指", "传承"]
+      genre:
+        resource_gain_contains: ["戒指", "传承"]

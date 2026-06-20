@@ -7,6 +7,7 @@ from novel_material.search.outline import search_outlines
 from novel_material.search.character import search_characters
 from novel_material.search.chapter import search_chapters
 from novel_material.search.world import search_worldbuilding
+from novel_material.search.insight import search_insights
 
 app = typer.Typer(help="素材检索")
 console = Console()
@@ -134,6 +135,41 @@ def cmd_world(
             r.get("name", ""),
             desc,
             r.get("material_id", "")
+        )
+
+    console.print(table)
+    console.print(f"[dim]共 {len(results)} 条结果[/dim]")
+
+
+@app.command("insight")
+def cmd_insight(
+    keyword: str = typer.Argument(..., help="关键词"),
+    limit: int = typer.Option(10, "--limit", "-l", help="返回数量"),
+):
+    """检索 chapter_insights 深度分析。"""
+    results = search_insights(query=keyword, limit=limit)
+
+    if not results:
+        console.print("[yellow]未找到匹配结果[/yellow]")
+        return
+
+    table = Table(title="深度分析检索结果")
+    table.add_column("章节", style="cyan")
+    table.add_column("标题", style="green")
+    table.add_column("命中字段", style="yellow")
+    table.add_column("writing_takeaway", style="white")
+    table.add_column("素材", style="dim")
+
+    for r in results:
+        takeaway = r.get("writing_takeaway", "")
+        if len(takeaway) > 60:
+            takeaway = takeaway[:60] + "..."
+        table.add_row(
+            str(r.get("chapter", "")),
+            r.get("title", ""),
+            ", ".join(r.get("matched_fields", [])),
+            takeaway,
+            r.get("material_id", ""),
         )
 
     console.print(table)
