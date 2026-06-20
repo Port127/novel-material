@@ -1,154 +1,96 @@
 # Novel Material V2
 
-小说素材管理系统。通过 LLM 对小说进行结构化解析，存储到 YAML + PostgreSQL，提供语义检索服务。
+Novel Material V2 是一个小说写作参考检索库。它将长篇小说清洗、按章切分并使用 LLM 提取章节、大纲、人物、世界观、标签和题材感知洞察，分析结果保存为 YAML，并可同步到 PostgreSQL 进行查询。
 
-## 设计理念
+本项目负责**检索与结构化展示**；外部 Agent 和用户负责理解、比较、糅合与生成。
 
-### 契约驱动设计
+## 核心原则
 
-本项目采用**契约驱动设计**（Contract-Driven Design）：
+- **YAML 是事实来源**：数据库是可以从本地产物重建的查询层。
+- **契约驱动**：字段阈值集中在 `src/novel_material/schema/fields.yaml`，提示词位于 `src/novel_material/prompts/`。
+- **章节是最小分析单元**：不拆分边界不稳定的场景和事件。
+- **质量优先**：保留现有 4096 维向量作为质量基线，性能优化必须经过检索质量评测。
+- **长流程可恢复**：流水线支持断点续传、失败记录和自动重试。
 
-```
-fields.yaml（单一数据源）
-    │
-    ├──→ prompts/*.yaml（提示词引用 {{summary_min}}）
-    │
-    ├──→ validation/models.py（Pydantic 模型读取阈值）
-    │
-    └──→ validation/quality.py（质量校验读取阈值）
-```
+## 当前能力
 
-一处修改，多处生效：修改 `fields.yaml` 中的阈值，自动同步到提示词、schema 校验、质量校验。
+| 能力 | 命令 | 主要产物 |
+|---|---|---|
+| 入库 | `nm pipeline ingest <file>` | `source.txt`、`chapter_index.yaml` |
+| 总体评估 | `nm pipeline evaluate <id>` | `evaluation.yaml` |
+| 章级分析 | `nm pipeline analyze <id>` | `chapters.yaml`、章节向量 |
+| 题材感知分析 | `nm pipeline insights <id>` | `chapter_insights/*.yaml` |
+| 骨架分析 | `nm pipeline outline/worldbuilding/characters/tags <id>` | 大纲、世界观、人物、标签 |
+| 精调 | `nm pipeline refine <id>` | 统计与结构角色推断 |
+| 断点续传 | `nm pipeline continue <id>` | 自动继续未完成阶段 |
+| 素材检索 | `nm search chapter/outline/character/world/insight` | 结构化参考结果 |
+| 数据同步 | `nm storage sync [id]` | PostgreSQL 查询数据 |
 
-### YAML 为 Source of Truth
-
-分析结果优先落盘为 YAML，数据库是可重建的查询层。
-
-### 章节为最小粒度
-
-不拆分难以定义边界的"事件"或"场景"。详见 [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md)。
-
-## 目录结构（核心层）
-
-```
-src/novel_material/
-├── cli/           # CLI 入口（nm 命令）
-├── prompts/       # [契约层] 提示词模板（YAML）
-├── schema/        # [契约层] 字段契约（fields.yaml）
-├── infra/         # 基础设施 + 服务层
-├── pipeline/      # 流水线逻辑
-├── search/        # 检索逻辑
-├── storage/       # 数据库层
-├── tags/          # 标签系统
-├── validation/    # 校验层
-└── material/      # 素材管理
-```
-
-## 功能概览
-
-| 功能 | 命令 | 说明 |
-|------|------|------|
-| 入库 | `nm pipeline ingest <file>` | 文本清洗 + 章节切分 |
-| 总体评估 | `nm pipeline evaluate <id>` | 类型/主线/阶段概要 |
-| 章级分析 | `nm pipeline analyze <id>` | 摘要、张力、人物、功能 |
-| 骨架分析 | `nm pipeline outline/world/char/tags <id>` | 大纲、世界观、人物、标签 |
-| 断点续传 | `nm pipeline continue <id>` | 自动从上次进度继续 |
-| 检索 | `nm search <type> <query>` | 章节/人物/世界观/大纲/事件 |
-| 标签管理 | `nm tags stats/list/add` | 查看/添加/审核标签 |
-| 素材分类 | `nm material classify start` | genre + elements + style + quality |
-| 数据同步 | `nm storage sync <id>` | YAML → PostgreSQL（自动修复） |
+当前检索层仍在演进：主 CLI 的章节检索默认使用关键词匹配，已有向量分支尚未与关键词融合，也没有启用 ANN 索引。详细限制见 [系统架构](ARCHITECTURE.md)。
 
 ## 快速开始
 
-完整操作指南见 [docs/USER_MANUAL.md](docs/USER_MANUAL.md)。
-
-### 1. 安装
+要求 Python 3.10+、Docker，以及可用的 LLM/Embedding 配置。
 
 ```bash
 pip install -e .
-```
-
-### 2. 配置
-
-```bash
 cp .env.example .env
-# 必须填入 DATABASE_URL、LLM_API_KEY、EMBEDDING_API_KEY
+make db-up
+make db-init
 ```
 
-### 3. 启动数据库
+入库并执行标准流水线：
 
 ```bash
-make db-up && make db-init
+nm pipeline full ./my-novel.txt --mode standard
 ```
 
-### 4. 入库小说
+查看进度和检索素材：
 
 ```bash
-nm pipeline full ./my-novel.txt
-```
-
-### 5. 检索
-
-```bash
+nm pipeline status nm_xxx
 nm search chapter "开局困境" --limit 10
+nm search insight "主角被压制后反杀" --limit 10
+```
+
+完整安装、配置和命令参数见 [用户手册](docs/USER_MANUAL.md)。
+
+## 运行模式
+
+| 模式 | 用途 | insights 行为 |
+|---|---|---|
+| `fast` | 优先完成基础分析和入库 | 跳过 core insights |
+| `standard` | 默认无人值守流程 | 执行批量 core insights |
+| `deep` | 质量优先 | core insights，并为后续关键章节深度分析保留扩展点 |
+
+## 数据目录
+
+```text
+data/novels/nm_novel_YYYYMMDD_xxxx/
+├── source.txt
+├── chapter_index.yaml
+├── meta.yaml
+├── evaluation.yaml
+├── chapters.yaml
+├── chapter_embeddings.npz
+├── chapter_insights/
+├── outline/
+├── characters/
+├── worldbuilding/
+└── tags.yaml
 ```
 
 ## 文档导航
 
-| 文档 | 给谁看 | 解决什么问题 |
-|------|--------|-------------|
-| **[ARCHITECTURE.md](ARCHITECTURE.md)** | 开发者 | 系统架构、契约层、服务层、数据流 |
-| **[USER_MANUAL.md](docs/USER_MANUAL.md)** | 使用者 | 命令参考、场景指南、故障排查 |
-| **[AGENTS.md](AGENTS.md)** | AI Agent | 操作规则、约束、CLI 速览 |
-| **[REQUIREMENTS.md](docs/REQUIREMENTS.md)** | 决策者 | 做什么、不做什么、为什么 |
-
-推荐阅读顺序：REQUIREMENTS → ARCHITECTURE → USER_MANUAL → AGENTS。
-
-## 契约层使用示例
-
-### 加载提示词
-
-```python
-from novel_material.prompts import load_prompt
-
-prompt = load_prompt("analyze")
-print(prompt.system_prompt)  # 已完成模板变量替换
-```
-
-### 加载字段契约
-
-```python
-from novel_material.schema import load_field, get_threshold
-
-field = load_field("summary")
-print(field.min_length)  # 50
-
-threshold = get_threshold("character_thresholds")
-print(threshold["core"])  # 50
-```
-
-## 数据产物
-
-完整流水线后生成：
-
-```
-data/novels/nm_novel_YYYYMMDD_xxxx/
-├── source.txt           # 清洗后的原文
-├── meta.yaml            # 元信息
-├── chapters.yaml        # 章级分析
-├── outline/             # 大纲结构
-├── characters/          # 人物档案
-├── worldbuilding/       # 世界观
-├── tags.yaml            # 小说级标签
-└── chapter_embeddings.npz  # 向量缓存
-```
-
-## 容错特性
-
-内置断点续传、自动重试、默认值兜底。详见 [docs/USER_MANUAL.md](docs/USER_MANUAL.md)。
+- [项目文档索引](docs/README.md)
+- [项目需求](docs/REQUIREMENTS.md)：产品边界、质量目标和规模。
+- [系统架构](ARCHITECTURE.md)：当前实现、数据流和已知限制。
+- [用户手册](docs/USER_MANUAL.md)：安装、命令和故障排查。
+- [Agent 指南](AGENTS.md)：Codex 与通用 Agent 操作规则。
+- [题材感知深度分析](docs/GENRE_AWARE_ANALYSIS.md)：insights 功能说明。
 
 ## 测试
 
 ```bash
-python -m pytest tests/
+python -m pytest -q
 ```

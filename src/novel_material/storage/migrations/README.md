@@ -1,26 +1,28 @@
 # 数据库迁移说明
 
+此目录保存**已有数据库**升级时需要按顺序执行的 SQL。全新数据库无需手动执行这些文件，直接运行：
+
+```bash
+nm storage init-db
+```
+
 ## 执行顺序
-迁移脚本按编号顺序执行：
-1. `001_add_key_event.sql` - 添加 key_event 和 key_plot_point 字段
 
-## 使用方式
+1. `001_add_key_event.sql`：为章节补充关键事件和结构角色字段。
+2. `002_add_chapter_tags.sql`：为章节补充情感、场景、叙事技巧和钩子等标签字段。
 
-### 已有数据库执行迁移
+已有数据库升级时，应按编号顺序执行尚未应用的迁移，例如：
+
 ```bash
-# 方法 1：手动执行
-docker exec -it novel-material-pg psql -U admin -d novel_material -f /path/to/migration.sql
-
-# 方法 2：通过 psql 连接执行
-psql $DATABASE_URL < src/novel_material/storage/migrations/001_add_key_event.sql
+psql -d novel_material -f src/novel_material/storage/migrations/001_add_key_event.sql
+psql -d novel_material -f src/novel_material/storage/migrations/002_add_chapter_tags.sql
 ```
 
-### 新数据库初始化
-新数据库无需执行迁移，直接执行 schema.sql 即可：
-```bash
-make db-init  # 或 nm storage init-db
-```
+执行前请先备份数据库。迁移文件应保持幂等，重复执行不应破坏已有数据。
 
-## 迁移历史
-- 001_add_key_event.sql (2025-05-09): 添加章节关键事件字段
-- 002_add_chapter_tags.sql (2026-05-09): 添加章节级标签字段（情感基调/场景类型/叙事技巧/钩子类型）
+## 历史记录
+
+| 版本 | 文件 | 说明 |
+|---|---|---|
+| 001 | `001_add_key_event.sql` | 新增章节关键事件和结构角色字段 |
+| 002 | `002_add_chapter_tags.sql` | 新增章节级标签字段 |

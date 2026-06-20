@@ -1,299 +1,233 @@
 # Novel Material V2 - Agent 使用指南
 
-本文档定义 LLM Agent（如 Codex）操作本项目的规则。
+本文档定义 Codex 与通用 Agent 操作本项目的规则。
 
 ## 相关文档
 
-- [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md) — 业务边界与不做什么
-- [ARCHITECTURE.md](ARCHITECTURE.md) — 系统架构与契约层设计
-- [docs/USER_MANUAL.md](docs/USER_MANUAL.md) — 详细使用手册
+- [项目需求](docs/REQUIREMENTS.md)：产品边界、质量目标和不做什么。
+- [系统架构](ARCHITECTURE.md)：当前实现、数据流和已知限制。
+- [用户手册](docs/USER_MANUAL.md)：完整命令参数和故障排查。
+- [文档索引](docs/README.md)：全部现行文档与状态。
 
 ## 项目定位
 
-Novel Material V2 是一个**小说素材管理系统**：
+Novel Material V2 是小说写作参考检索库：
 
-- **入库**：清洗文本、切分章节
-- **分析**：LLM 自动提取大纲、世界观、人物、标签
-- **存储**：YAML 本地存储 + PostgreSQL 查询层
-- **检索**：语义搜索 + 结构化查询
+- 入库：清洗文本并按章切分。
+- 分析：提取章节、大纲、人物、世界观、标签和题材洞察。
+- 存储：YAML 保存事实数据，PostgreSQL 提供查询层。
+- 检索：返回结构化参考，由外部 Agent 负责理解、糅合和生成。
 
-## 核心架构
+## 工作原则
 
-### 契约层
+### 优先级
 
-```
-prompts/  ← 提示词模板（YAML）
-schema/   ← 字段契约（fields.yaml）
-```
+1. 用户当前请求。
+2. 本文件。
+3. `docs/REQUIREMENTS.md` 的产品边界。
+4. `ARCHITECTURE.md` 的当前技术实现。
+5. `docs/USER_MANUAL.md` 的命令说明。
 
-**单一数据源原则**：所有阈值集中在 `schema/fields.yaml`，一处修改多处生效。
+### 使用 Skills 和 CLI
 
-### 服务层
+Skills 位于 `.agents/skills/`，是 Agent 的上层入口。执行项目操作时优先使用适用的 Skill，再通过 `nm` CLI 调用服务；不要直接运行 `pipeline/*.py`、`search/*.py` 或 `storage/*.py`。
 
-```
-infra/yaml_io.py        ← YAML 读写
-infra/path_service.py   ← 路径构建
-infra/progress_manager.py ← 进度管理
-infra/context.py        ← 执行上下文
-```
+| 用户意图 | 应使用 | 不应使用 |
+|---|---|---|
+| 入库小说 | `nm pipeline full ./novel.txt` | 直接调用 `pipeline/ingest.py` |
+| 分析素材 | `nm pipeline analyze nm_xxx` | 直接调用 `pipeline/analyze.py` |
+| 检索宗门 | `nm search world "宗门" --dimension factions` | 直接调用 `search/world.py` |
+| 从断点继续 | `nm pipeline continue nm_xxx` | 手工推断下一阶段 |
 
-Agent 操作应通过 CLI 或服务层，不直接调用底层模块。
+### 数据与检索原则
 
-## Agent 工作原则
+- YAML 是事实来源，PostgreSQL 是可重建的查询层。
+- 不手工编辑 `chapters/*.yaml`、`chapter_insights/*.yaml` 或 `key_plot_point`。
+- 检索质量优先，不为追求速度擅自降维、替换 embedding 或修改数据库。
+- 当前章节搜索默认是关键词匹配；不要把它描述成已经完成的混合检索。
+- 内部存在 `event.py`、`detail.py`，但它们没有注册到主 CLI，Agent 不应声称命令可用。
 
-### 1. 优先级
+## 状态流转
 
-1. 用户当前请求
-2. 本文件（AGENTS.md）
-3. [ARCHITECTURE.md](ARCHITECTURE.md) — 系统架构
-4. [docs/USER_MANUAL.md](docs/USER_MANUAL.md) — 完整命令参考
-5. [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md) — 业务边界
-
-### 2. 使用 CLI 而非底层脚本
-
-Agent 应使用 `nm` 命令，而非直接调用 Python 模块。
-
-| 用户意图 | 正确命令 | 错误做法 |
-|---------|---------|---------|
-| "入库这本小说" | `nm pipeline full ./novel.txt` | 直接调用 `pipeline/ingest.py` |
-| "分析 nm_xxx" | `nm pipeline analyze nm_xxx` | 直接调用 `pipeline/analyze.py` |
-| "搜索修仙宗门" | `nm search world "宗门" --dimension faction` | 直接调用 `search/world.py` |
-| "从断点继续" | `nm pipeline continue nm_xxx` | 手动检查进度 |
-
-### 3. Skills 是上层入口
-
-Skills（`.Codex/skills/*/SKILL.md`）封装了 CLI 调用。Agent 应优先使用 Skills。
-
-### 4. 状态流转
-
-```
-ingested/clean → evaluated → analyzed → finalized
+```text
+clean → evaluated（可选）→ analyzed → finalized
+  └────────────────────────→ analyzed
+任意阶段严重失败 → failed
 ```
 
-| 状态 | 含义 | 可执行操作 |
-|------|------|-----------|
-| `clean` | 已清洗，待评估 | `nm pipeline evaluate`（可选） |
-| `evaluated` | 已评估，待分析 | `nm pipeline analyze` |
-| `analyzed` | 已分析，待骨架 | `nm pipeline outline/world/char/tags` |
-| `finalized` | 已完成 | `nm storage sync` |
-| `failed` | 流水线失败 | 查看日志 → `nm pipeline continue` |
+| 状态 | 含义 | 常见下一步 |
+|---|---|---|
+| `clean` | 已清洗和切分 | `nm pipeline evaluate`（可选）或 `analyze` |
+| `evaluated` | 已生成全局评估 | `nm pipeline analyze` |
+| `analyzed` | 已完成章级分析 | 骨架分析、insights、refine |
+| `finalized` | 已完成精调 | 校验后同步数据库 |
+| `failed` | 流水线失败 | 查看日志后执行 `nm pipeline continue` |
 
-**总体评估是可选步骤**：不强制要求，但为滑动窗口模式提供全局上下文。
+总体评估只在滑动窗口等场景需要。insights 是增强层：`fast` 跳过、`standard` 执行 core、`deep` 为更深分析保留扩展点。
 
-Agent 不应：
-- 对 `analyzed` 状态执行 `analyze`（会覆盖）
-- 对 `clean` 状态执行 `refine`（无章级数据）
+## CLI 速览
 
-## CLI 命令速览
-
-> 完整命令参数见 [docs/USER_MANUAL.md](docs/USER_MANUAL.md)。
-
-### Pipeline 命令
+### Pipeline
 
 ```bash
-nm pipeline ingest <file>           # 入库：预处理 + 章节切分
-nm pipeline evaluate <id>           # 总体评估：类型/主线/阶段概要
-nm pipeline analyze <id> [--window] # 章级分析（支持滑动窗口）
-nm pipeline outline <id>            # 大纲生成
-nm pipeline worldbuilding <id>      # 世界观提取
-nm pipeline characters <id>         # 人物提取
-nm pipeline tags <id>               # 标签生成
-nm pipeline refine <id>             # 精调统计 + 结构推断
-nm pipeline full <file>             # 完整流水线
-nm pipeline status <id>             # 查看进度
-nm pipeline continue <id>           # 自动从断点继续
+nm pipeline ingest <file>
+nm pipeline evaluate <id>
+nm pipeline analyze <id> [--window] [--skip-embedding]
+nm pipeline insights <id> [--start N] [--end N] [--profile NAME]
+nm pipeline outline <id>
+nm pipeline worldbuilding <id>
+nm pipeline characters <id>
+nm pipeline tags <id>
+nm pipeline refine <id>
+nm pipeline full <file> [--mode fast|standard|deep]
+nm pipeline status <id>
+nm pipeline continue <id> [--mode fast|standard|deep]
 ```
 
-### Search 命令
+### Search
+
+当前公开命令只有：
 
 ```bash
-nm search chapter <keyword>         # 章节检索（向量语义）
-nm search outline [--genre] [--query]  # 大纲检索
-nm search character [--archetype]   # 人物检索
-nm search world <keyword> [--dimension]  # 世界观检索
-nm search event <query> [--setting] [--emotion]  # 事件检索
+nm search chapter <keyword> [--limit N]
+nm search outline [--query TEXT] [--genre TEXT] [--limit N]
+nm search character [--name TEXT] [--archetype TEXT] [--role TEXT]
+nm search world <keyword> [--dimension TEXT] [--limit N]
+nm search insight <keyword> [--limit N]
 ```
 
-### Tags 命令
+### Tags
 
 ```bash
-nm tags stats                       # 标签统计
-nm tags list [--dimension]          # 标签列表
-nm tags add <dimension> <tag> <domain>  # 添加标签
-nm tags remove <dimension> <tag>    # 删除标签
-nm tags review [--auto]             # 审核待定标签
-nm tags export                      # 导出 YAML 视图
+nm tags stats
+nm tags list [--dimension TEXT]
+nm tags add <dimension> <tag> <domain>
+nm tags remove <dimension> <tag>
+nm tags review [--auto]
+nm tags move <dimension> <tag> <domain>
+nm tags set-synonym <dimension> <tag> <canonical>
+nm tags export
+nm tags info <dimension> <tag>
 ```
 
-### Material 命令
+### Material
 
 ```bash
-nm material list                    # 素材列表
-nm material import <dir>            # 导入已分析素材
-nm material delete <id>             # 删除素材（危险）
-nm material classify status         # 分类进度统计
-nm material classify start [--limit N]  # 启动分类（断点续传）
-nm material classify retry [--seq N]    # 重试失败条目
-nm material classify clean          # 清空进度
+nm material list
+nm material import <directory>
+nm material delete --id <material_id> [--force]
+nm material classify status
+nm material classify start [--limit N]
+nm material classify retry [--seq N|--failed]
+nm material classify clean
 ```
 
-### Storage 命令
+### Storage 与 Validate
 
 ```bash
-nm storage init-db                  # 初始化表结构
-nm storage init-tags                # 导入标签字典
-nm storage sync [id] [--provider] [--window]  # 同步 YAML → PostgreSQL（自动修复）
-nm storage sync-all                 # 同步所有素材
+nm storage init-db
+nm storage init-data
+nm storage init-tags
+nm storage sync [material_id] [--provider NAME] [--window]
+
+nm validate validate [material_id]
+nm validate validate --all
+nm validate quality <material_id> [--start N] [--end N]
+nm validate insights <material_id>
 ```
 
-### Validate 命令
+## 常用流程
+
+### 入库并分析
 
 ```bash
-nm validate schema <id>             # Schema 结构校验
-nm validate quality <id>            # 内容质量校验
-nm validate all <id>                # 全量校验
+nm pipeline full ./novel.txt --mode standard
 ```
 
-## 常用操作流程
-
-### 入库新小说
+分步执行时：
 
 ```bash
-nm pipeline full ./novel.txt
-# 或分步执行
 nm pipeline ingest ./novel.txt
 nm pipeline analyze nm_xxx
 nm pipeline outline nm_xxx
 nm pipeline worldbuilding nm_xxx
 nm pipeline characters nm_xxx
 nm pipeline tags nm_xxx
+nm pipeline insights nm_xxx
 nm pipeline refine nm_xxx
+nm validate validate nm_xxx
 nm storage sync nm_xxx
 ```
 
 ### 从断点继续
 
 ```bash
-nm pipeline status nm_xxx   # 查看进度
-nm pipeline continue nm_xxx  # 继续执行
+nm pipeline status nm_xxx
+nm pipeline continue nm_xxx --mode standard
 ```
 
-### 检索素材
+### 检索参考
 
 ```bash
 nm search chapter "开局困境" --limit 10
 nm search character --archetype 导师
-nm search world "宗门" --dimension faction
+nm search world "宗门" --dimension factions
+nm search insight "主角被压制后反杀"
 ```
 
-## 禁止操作
+## 禁止与高风险操作
 
 | 操作 | 原因 |
-|------|------|
-| 对同一素材重复执行 `full` | 会覆盖已有分析结果 |
-| 在无 `LLM_API_KEY` 时执行分析 | 会立即失败 |
-| 手动编辑 `chapters/*.yaml` | 可能破坏断点续传机制 |
-| 跳过 `nm validate schema` 直接同步 | 可能写入非法数据 |
+|---|---|
+| 对同一素材重复执行 `pipeline full` | 会创建新素材并重复分析 |
+| 无 API Key 时执行 LLM 分析 | 会失败并污染进度判断 |
+| 手工修改章节分析文件 | 可能破坏断点续传和校验 |
+| 未校验就同步数据库 | 可能写入不完整数据 |
+| 未经评测修改 embedding 维度 | 可能降低检索质量并造成全量迁移 |
+| 未经用户确认删除素材或重置数据库 | 属于破坏性操作 |
+
+`nm storage sync` 发现短摘要或 schema 问题时可能触发 LLM 修复，产生 API 消耗并修改 YAML。执行前应告知用户这一副作用。
 
 ## 错误处理
 
 ### Pipeline 失败
 
-如果 `meta.yaml` 状态为 `failed`：
-
-1. 查看日志：`data/novels/{material_id}/pipeline.log`
-2. 检查错误类型：
-   - API Key 无效 → 修复 `.env`
-   - 网络错误 → 重试（有断点续传）
-3. 修复后执行 `nm pipeline continue`
-
-### 标签校验失败
-
-标签不在字典中时：
-
-```bash
-nm tags add element 新标签 xuanhuan --group 设定元素
-# 或等待频率自动批（出现 ≥3 次自动入库）
-nm tags review --auto
-```
+1. 查看 `data/novels/{material_id}/pipeline.log` 和 `meta.yaml`。
+2. 修复 API Key、网络或数据问题。
+3. 执行 `nm pipeline continue <id>`，不要手工跳阶段。
 
 ### 数据库同步失败
 
 ```bash
-nm validate schema nm_xxx  # 先校验
-nm storage sync nm_xxx      # 修复后重新同步
+nm validate validate nm_xxx
+nm validate quality nm_xxx
+nm storage sync nm_xxx
 ```
 
-## 容错机制
+### 标签不在字典
 
-分析脚本已内置容错，Agent 无需额外处理：
-
-- `context_length_exceeded` 会快速失败（不触发无效重试）
-- 每个分析步骤失败时使用默认值继续
-- 流程不会因单步失败而中断
-- 网络错误自动指数退避重试（最多 8 次）
-
-**自动修复**：`nm storage sync` 检测到质量问题（如 summary 长度不足）时自动调用 pipeline.analyze 重分析，修复成功后继续同步。
-
-Agent 只需检查 `meta.yaml` 中的状态字段。
-
-## 模型基准
-
-本项目以 **qwen3.6-plus** 为基准模型：
-
-| 参数 | 数值 |
-|------|------|
-| 最大上下文 | 1,000,000 tokens |
-| 最大输出 | 65,536 tokens |
-
-实际配置见 `schema/fields.yaml`（契约层）和 `config/settings.yaml`。
-
-## 章节类型
-
-| 类型 | 说明 | 分析策略 |
-|------|------|---------|
-| `normal` | 正文章节 | 完整分析 |
-| `afterword` | 后记 | 放宽要求 |
-| `extra` | 番外 | 放宽要求 |
-| `author_note` | 作者说 | 放宽要求 |
-
-## 结构角色字段
-
-两个字段语义不同：
-
-| 字段 | 来源 | 说明 |
-|------|------|------|
-| key_event | LLM生成 | 关键事件描述（10-30字） |
-| key_plot_point | 代码推断 | 结构角色标记 |
-
-key_plot_point 合法值：`inciting_incident`、`first_turning_point`、`midpoint`、`second_turning_point`、`climax`、`resolution`
-
-Agent 不应手动编辑 key_plot_point，由 refine 阶段自动推断。
-
-## 契约层接口
-
-Agent 如需修改阈值，应修改契约文件而非硬编码：
-
-```python
-# 修改 schema/fields.yaml
-summary:
-  min_length: 50  # 修改此值，自动同步到提示词、校验
-
-# 或加载契约
-from novel_material.schema import load_field
-field = load_field("summary")
-print(field.min_length)
+```bash
+nm tags add element 新标签 xuanhuan --group 设定元素
+nm tags review --auto
 ```
 
-## LLM 分析质量动态调节
+## 配置与契约
 
-系统内置防御机制：
+- 当前 LLM 服务商和模型：`config/providers.yaml`。
+- 通用参数：`config/settings.yaml`。
+- 字段契约：`src/novel_material/schema/fields.yaml`。
+- 提示词模板：`src/novel_material/prompts/`。
+- Embedding 配置：`.env`，当前实现位于 `src/novel_material/infra/embedding.py`。
 
-| 机制 | 说明 |
-|------|------|
-| 动态温度 | 随批次递增提高 temperature |
-| 动态提示词 | 每 10 批次唤醒独立性提醒 |
-| 相似度检测 | 检测 Jaccard 相似度 |
-| Thinking 管理 | 前期 thinking，后期动态温度 |
+不得在业务代码或文档中重复硬编码契约阈值和当前模型版本。
 
-Agent 无需干预，只需关注最终状态。
+## 章节字段约束
+
+| 字段 | 来源 | 含义 |
+|---|---|---|
+| `key_event` | LLM | 关键事件描述 |
+| `key_plot_point` | 代码推断 | 粗粒度结构角色 |
+
+`key_plot_point` 由 refine 阶段推断，Agent 不应手工编辑。
+
+章节类型包括 `normal`、`afterword`、`extra`、`author_note`；特殊章节会放宽叙事分析要求。

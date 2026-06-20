@@ -8,6 +8,8 @@
 - [USER_MANUAL.md](docs/USER_MANUAL.md) — 详细使用手册（如何使用）
 - [AGENTS.md](AGENTS.md) — Agent 操作规则
 - [README.md](README.md) — 项目入口与快速开始
+- [文档索引](docs/README.md) — 现行文档、工作记录与阅读顺序
+- [题材感知深度分析](docs/GENRE_AWARE_ANALYSIS.md) — insights 层说明
 
 ---
 
@@ -231,7 +233,8 @@ novel-material/
 │
 ├── docs/                         # 文档
 ├── tests/                        # 测试
-├── .claude/skills/               # Agent Skills
+├── .agents/skills/               # Codex/通用 Agent Skills
+├── .claude/skills/               # Claude Code Skills
 └── pyproject.toml                # Python 包配置
 ```
 
@@ -367,16 +370,20 @@ save_yaml(paths.meta_path, meta)
 ### 分析阶段（LLM 调用）
 
 ```
-章级分析 → 向量化 → 骨架分析 → 精调 → 同步数据库
-    │         │         │        │         │
-    │      embedding  outline   统计     PostgreSQL
-    │      (OpenAI)   world     出场次数  novels
-    │                 characters 钩子数   chapters
-    │                 tags      结构推断  characters
-    │                 (infer)            worldbuilding
-    │                                     outline_sequences
-    │                                     outline_beats
+章级分析 ─┬→ 向量化 ───────────────┐
+          ├→ insights（按运行模式） │
+          └→ 骨架分析 → 精调 ──────┼→ 同步数据库
+                 │         │        │
+              outline    统计     PostgreSQL
+              world      出场次数  novels
+              characters 钩子数   chapters
+              tags       结构推断  characters
+                                    worldbuilding
+                                    outline_sequences
+                                    outline_beats
 ```
+
+`chapters.yaml` 是稳定的 L1 章级分析结果。`chapter_insights/{chapter}.yaml` 是可选 L2 增强层，由 `common + 题材 profile` 组合生成，不替代 L1，也不进入当前 PostgreSQL 同步表。`fast` 模式跳过 insights，`standard` 模式执行 core insights，`deep` 模式保留关键章节深度分析扩展点。
 
 ### 断点续传机制
 
@@ -411,7 +418,7 @@ save_yaml(paths.meta_path, meta)
 | `nm search insight` | 深度分析 YAML 检索 | `search/insight.py` |
 | `nm storage sync` | 数据库同步（自动修复） | `storage/sync.py` → `storage/repair.py` |
 | `nm material classify` | 素材分类 | `material/classify.py` |
-| `nm validate schema` | Schema 校验 | `validation/schema.py` |
+| `nm validate validate` | Schema 完整性校验 | `validation/schema.py` |
 | `nm validate insights` | 深度分析校验 | `validation/insights.py` |
 
 ### Pipeline 层 (`pipeline/`)
@@ -442,6 +449,19 @@ save_yaml(paths.meta_path, meta)
 | `tags.py` | 默认标签兜底 |
 | `insights.py` | 批量生成 + 批次失败落盘占位 + 最多一次修复 |
 
+### Search 层 (`search/`)
+
+当前检索实现由多条独立路径组成，还不是混合检索：
+
+| 路径 | 当前实现 | 限制 |
+|---|---|---|
+| 章节/大纲/人物/世界观关键词 | PostgreSQL `ILIKE` | 没有中文分词、全文倒排索引和统一相关度排名 |
+| 章节/大纲/人物/世界观语义分支 | 4096 维向量余弦距离精确排序 | schema 未启用 ANN 索引；主 CLI 未完整暴露语义参数 |
+| insight 检索 | 顺序扫描 `chapter_insights/*.yaml` 的指定字段 | 不使用 PostgreSQL，也不是向量搜索 |
+| 事件与细纲 | `event.py`、`detail.py` 内部函数 | 未注册到 `nm search` 主 CLI |
+
+关键词和语义分支目前是二选一，没有融合召回、统一重排或多样性控制。未来检索改造必须以 4096 维精确检索为质量基线，不得把性能优化提前描述为现有能力。
+
 ### Validation 层 (`validation/`)
 
 **模块拆分**：
@@ -452,6 +472,7 @@ save_yaml(paths.meta_path, meta)
 | `models.py` | Pydantic 数据模型定义 |
 | `validators.py` | 校验逻辑实现 |
 | `quality.py` | 内容质量校验 |
+| `insights.py` | chapter_insights 契约与质量校验 |
 
 **校验阈值来源**：
 
@@ -559,7 +580,7 @@ chapters (
   material_id TEXT,
   chapter INTEGER,
   title TEXT,
-  chapter_type TEXT,
+  type TEXT,
   summary TEXT,
   tension_level INTEGER,
   key_event TEXT,
@@ -577,6 +598,7 @@ characters (
   role TEXT,
   archetype TEXT,
   arc_summary TEXT,
+  arc_summary_embedding vector(4096),
   appearance_count INTEGER,
   PRIMARY KEY (material_id, name)
 )
@@ -587,6 +609,7 @@ worldbuilding_entities (
   entity_type TEXT,
   name TEXT,
   description TEXT,
+  description_embedding vector(4096),
   PRIMARY KEY (material_id, entity_type, name)
 )
 
