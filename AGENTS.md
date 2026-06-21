@@ -1,4 +1,4 @@
-# Novel Material V2 - Agent 使用指南
+# Novel Material V3 - Agent 使用指南
 
 本文档定义 Codex 与通用 Agent 操作本项目的规则。
 
@@ -48,7 +48,7 @@
 
 ## 项目定位
 
-Novel Material V2 是小说写作参考检索库：
+Novel Material V3 是面向外部 Agent 的小说写作参考检索后端：
 
 - 入库：清洗文本并按章切分。
 - 分析：提取章节、大纲、人物、世界观、标签和题材洞察。
@@ -67,7 +67,7 @@ Novel Material V2 是小说写作参考检索库：
 
 ### 使用 Skills 和 CLI
 
-Skills 位于 `.agents/skills/`，是 Agent 的上层入口。执行项目操作时优先使用适用的 Skill，再通过 `nm` CLI 调用服务；不要直接运行 `pipeline/*.py`、`search/*.py` 或 `storage/*.py`。
+Skills 位于 `.agents/skills/`，是当前宿主的项目入口；`.agents/skills/` 是事实来源，`.claude/skills/` 是由 `scripts/sync_agent_skills.py` 生成的镜像，禁止单独维护镜像内容。执行项目操作时优先使用适用的 Skill，再通过 `nm` CLI 调用服务；不要直接运行 `pipeline/*.py`、`search/*.py` 或 `storage/*.py`。
 
 | 用户意图 | 应使用 | 不应使用 |
 |---|---|---|

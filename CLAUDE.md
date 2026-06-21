@@ -1,4 +1,4 @@
-# Novel Material V2 - Agent 使用指南
+# Novel Material V3 - Agent 使用指南
 
 本文档定义 Codex 与通用 Agent 操作本项目的规则。
 
@@ -48,7 +48,7 @@
 
 ## 项目定位
 
-Novel Material V2 是小说写作参考检索库：
+Novel Material V3 是面向外部 Agent 的小说写作参考检索后端：
 
 - 入库：清洗文本并按章切分。
 - 分析：提取章节、大纲、人物、世界观、标签和题材洞察。
@@ -67,7 +67,7 @@ Novel Material V2 是小说写作参考检索库：
 
 ### 使用 Skills 和 CLI
 
-Skills 位于 `.claude/skills/`，是 Agent 的上层入口。执行项目操作时优先使用适用的 Skill，再通过 `nm` CLI 调用服务；不要直接运行 `pipeline/*.py`、`search/*.py` 或 `storage/*.py`。
+Skills 位于 `.claude/skills/`，是当前宿主的项目入口；`.agents/skills/` 是事实来源，`.claude/skills/` 是由 `scripts/sync_agent_skills.py` 生成的镜像，禁止单独维护镜像内容。执行项目操作时优先使用适用的 Skill，再通过 `nm` CLI 调用服务；不要直接运行 `pipeline/*.py`、`search/*.py` 或 `storage/*.py`。
 
 | 用户意图 | 应使用 | 不应使用 |
 |---|---|---|
@@ -81,8 +81,9 @@ Skills 位于 `.claude/skills/`，是 Agent 的上层入口。执行项目操作
 - YAML 是事实来源，PostgreSQL 是可重建的查询层。
 - 不手工编辑 `chapters/*.yaml`、`chapter_insights/*.yaml` 或 `key_plot_point`。
 - 检索质量优先，不为追求速度擅自降维、替换 embedding 或修改数据库。
-- 当前章节搜索默认是关键词匹配；不要把它描述成已经完成的混合检索。
-- 内部存在 `event.py`、`detail.py`，但它们没有注册到主 CLI，Agent 不应声称命令可用。
+- 搜索默认使用 `quality` 三路召回；Agent 调用时优先加 `--json --mode quality` 并检查 trace。
+- `event`、`detail` 已注册主 CLI；七类检索结果只是参考样例，不是事实答案或最终小说内容。
+- 人工 Golden Query 基线尚未完成，不得声称混合检索或重排优于 4096 维精确模式。
 
 ## 状态流转
 
@@ -123,14 +124,16 @@ nm pipeline continue <id> [--mode fast|standard|deep]
 
 ### Search
 
-当前公开命令只有：
+当前公开命令：
 
 ```bash
-nm search chapter <keyword> [--limit N]
-nm search outline [--query TEXT] [--genre TEXT] [--limit N]
-nm search character [--name TEXT] [--archetype TEXT] [--role TEXT]
-nm search world <keyword> [--dimension TEXT] [--limit N]
-nm search insight <keyword> [--limit N]
+nm search chapter <keyword> [--mode quality|exact] [--json]
+nm search event <keyword> [--mode quality|exact] [--json]
+nm search outline [--query TEXT] [--genre TEXT] [--json]
+nm search character [--name TEXT] [--archetype TEXT] [--role TEXT] [--json]
+nm search world <keyword> [--dimension TEXT] [--json]
+nm search detail [keyword] [--act N] [--json]
+nm search insight <keyword> [--json]
 ```
 
 ### Tags
