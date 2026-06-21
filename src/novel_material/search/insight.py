@@ -6,6 +6,7 @@ from pathlib import Path
 
 from novel_material.infra.config import NOVELS_DIR
 from novel_material.infra.yaml_io import load_yaml
+from novel_material.search.models import SearchResult
 
 COMMON_SEARCH_FIELDS = ("conflict", "reader_hook", "writing_takeaway")
 
@@ -31,10 +32,14 @@ def _matched_fields(query: str, insight: dict) -> list[str]:
     return matched
 
 
-def search_insights(query: str, limit: int = 10, novels_dir: Path | None = None) -> list[dict]:
+def search_insights(
+    query: str,
+    limit: int = 10,
+    novels_dir: Path | None = None,
+) -> list[SearchResult]:
     """Search generated chapter insights by simple YAML field scanning."""
     base_dir = novels_dir or NOVELS_DIR
-    results: list[dict] = []
+    results: list[SearchResult] = []
 
     if not base_dir.exists():
         return results
@@ -52,14 +57,21 @@ def search_insights(query: str, limit: int = 10, novels_dir: Path | None = None)
             if not matched_fields:
                 continue
             common = insight.get("common") if isinstance(insight.get("common"), dict) else {}
-            results.append({
-                "material_id": material_dir.name,
-                "chapter": insight.get("chapter"),
-                "title": insight.get("title", ""),
-                "profiles": insight.get("profiles", []),
-                "matched_fields": matched_fields,
-                "writing_takeaway": common.get("writing_takeaway", ""),
-            })
+            chapter = insight.get("chapter")
+            writing_takeaway = common.get("writing_takeaway", "")
+            results.append(SearchResult(
+                result_id=f"insight:{material_dir.name}:{chapter}",
+                document_type="insight",
+                material_id=material_dir.name,
+                chapter=chapter,
+                title=insight.get("title", ""),
+                summary=writing_takeaway,
+                metadata={
+                    "profiles": insight.get("profiles", []),
+                    "writing_takeaway": writing_takeaway,
+                },
+                matched_fields=matched_fields,
+            ))
             if len(results) >= limit:
                 return results
 

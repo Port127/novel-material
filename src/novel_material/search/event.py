@@ -1,31 +1,20 @@
 """事件检索：按语义描述检索章节（"雨中告别"、"主角初次突破"等），默认使用向量搜索。"""
-import os
-import psycopg2
-import psycopg2.extras
-import click
+from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
 
 load_dotenv()
 
-from .common import build_like_terms, require_database_url
+from .common import build_like_terms
+from .db import readonly_connection
+from .models import SearchResult
 from novel_material.infra.embedding import get_embedding, load_embedding_config
-from novel_material.infra.logging_config import get_search_logger
-
-DATABASE_URL = os.getenv("DATABASE_URL")
-logger = get_search_logger()
 
 
 def search_events(query, setting=None, emotion=None, limit=10, keyword=False):
     """通过章节摘要检索事件，默认向量语义搜索。"""
-    conn = psycopg2.connect(require_database_url(DATABASE_URL))
-    conn.autocommit = True
-
-    results = []
-
-    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+    with readonly_connection() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
         # 向量语义搜索（默认）
         if not keyword:
-            print("正在生成查询向量...")
             config = load_embedding_config()
             query_embedding = get_embedding(query, config)
 
@@ -93,38 +82,28 @@ def search_events(query, setting=None, emotion=None, limit=10, keyword=False):
             params.append(limit)
 
         cur.execute(sql, params)
-        results = cur.fetchall()
+        rows = cur.fetchall()
 
-    conn.close()
-
-    if not results:
-        print("未找到匹配的事件")
-        return
-
-    print(f"找到 {len(results)} 个匹配事件:\n")
-
-    for r in results:
-        print(f"--- {r['novel_name']} 第{r['chapter']}章 ---")
-        print(f"标题: {r['title']}")
-        print(f"摘要: {r['summary']}")
-        if not keyword and 'distance' in r:
-            similarity = 1 - r['distance']
-            print(f"相似度: {similarity:.2%}")
-        print(f"张力: {r['tension_level']}/5 | 节奏: {r['pacing']}")
-        print(f"功能: {r['chapter_functions']}")
-        print(f"人物: {r['characters_appear']}")
-        print()
-
-
-@click.command()
-@click.argument("query")
-@click.option("--setting", default=None, help="场景类型")
-@click.option("--emotion", default=None, help="情绪基调")
-@click.option("--limit", default=10, help="返回结果数")
-@click.option("--keyword", is_flag=True, help="使用关键词搜索而非向量搜索")
-def main(query, setting, emotion, limit, keyword):
-    search_events(query=query, setting=setting, emotion=emotion, limit=limit, keyword=keyword)
-
-
-if __name__ == "__main__":
-    main()
+    return [
+        SearchResult(
+            result_id=f"event:{row['material_id']}:{row['chapter']}",
+            document_type="event",
+            material_id=row["material_id"],
+            chapter=row["chapter"],
+            title=row.get("title") or "",
+            summary=row.get("summary") or "",
+            metadata={
+                "novel_name": row.get("novel_name"),
+                "genre": row.get("genre") or [],
+                "tension_level": row.get("tension_level"),
+                "pacing": row.get("pacing"),
+                "chapter_functions": row.get("chapter_functions") or [],
+                "characters_appear": row.get("characters_appear") or [],
+            },
+            scores={"semantic": 1 - float(row["distance"])}
+            if row.get("distance") is not None
+            else {},
+            matched_fields=["summary"] if row.get("distance") is not None else [],
+        )
+        for row in rows
+    ]

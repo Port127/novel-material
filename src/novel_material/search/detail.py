@@ -1,27 +1,17 @@
 """细纲检索：按幕/序列/节拍检索大纲结构。"""
-import os
-import psycopg2
-import psycopg2.extras
-import click
+from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
 
 load_dotenv()
 
-from .common import build_like_terms, require_database_url
-from novel_material.infra.logging_config import get_search_logger
-
-DATABASE_URL = os.getenv("DATABASE_URL")
-logger = get_search_logger()
+from .common import build_like_terms
+from .db import readonly_connection
+from .models import SearchResult
 
 
 def search_detail(query=None, genre=None, act=None, description_query=None, limit=10):
     """检索细纲（序列+节拍）。"""
-    conn = psycopg2.connect(require_database_url(DATABASE_URL))
-    conn.autocommit = True
-
-    results = []
-
-    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+    with readonly_connection() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
         # 先找匹配的序列
         sql_seq = """
             SELECT s.material_id, s.act, s.sequence, s.title, s.chapters_start,
@@ -67,36 +57,25 @@ def search_detail(query=None, genre=None, act=None, description_query=None, limi
             beats = cur.fetchall()
             s["beats"] = beats
 
-        results = seq_results
 
-    conn.close()
-
-    if not results:
-        print("未找到匹配的细纲")
-        return
-
-    print(f"找到 {len(results)} 个序列:\n")
-
-    for s in results:
-        print(f"--- {s['novel_name']} 第{s['act']}幕 序列{s['sequence']} ---")
-        print(f"标题: {s['title']}")
-        print(f"章节: {s['chapters_start']}-{s['chapters_end']}")
-        print(f"描述: {s['description']}")
-        print(f"节拍 ({len(s['beats'])}个):")
-        for b in s["beats"]:
-            print(f"  [{b['beat']}] {b['title']} (章{b['chapter']}) - 张力:{b['tension']}")
-        print()
-
-
-@click.command()
-@click.argument("query", required=False)
-@click.option("--genre", default=None, help="按题材过滤")
-@click.option("--act", default=None, type=int, help="幕号（1/2/3）")
-@click.option("--query", "description_query", default=None, help="序列描述关键词")
-@click.option("--limit", default=10, help="返回结果数")
-def main(query, genre, act, description_query, limit):
-    search_detail(query=query, genre=genre, act=act, description_query=description_query, limit=limit)
-
-
-if __name__ == "__main__":
-    main()
+    return [
+        SearchResult(
+            result_id=(
+                f"detail:{row['material_id']}:{row['act']}:{row['sequence']}"
+            ),
+            document_type="detail",
+            material_id=row["material_id"],
+            title=row.get("title") or "",
+            summary=row.get("description") or "",
+            metadata={
+                "novel_name": row.get("novel_name"),
+                "genre": row.get("novel_genre") or [],
+                "act": row.get("act"),
+                "sequence": row.get("sequence"),
+                "chapters_start": row.get("chapters_start"),
+                "chapters_end": row.get("chapters_end"),
+                "beats": row.get("beats") or [],
+            },
+        )
+        for row in seq_results
+    ]

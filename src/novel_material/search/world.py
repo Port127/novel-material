@@ -1,18 +1,13 @@
 """世界观检索：按类型、势力、地理、力量体系等条件检索，支持向量语义搜索。"""
-import os
-import psycopg2
-import psycopg2.extras
-import click
+from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
 
 load_dotenv()
 
-from .common import build_like_terms, require_database_url
+from .common import build_like_terms
+from .db import readonly_connection
+from .models import SearchResult
 from novel_material.infra.embedding import get_embedding, load_embedding_config
-from novel_material.infra.logging_config import get_search_logger
-
-DATABASE_URL = os.getenv("DATABASE_URL")
-logger = get_search_logger()
 
 _ENTITY_TYPE_ALIASES = {
     "faction": "factions",
@@ -34,15 +29,9 @@ def _normalize_entity_type(entity_type):
 def search_worldbuilding(query=None, entity_type=None, genre=None, importance=None, name_query=None, limit=10, semantic=False):
     """检索世界观设定，支持向量语义搜索。"""
     entity_type = _normalize_entity_type(entity_type)
-    conn = psycopg2.connect(require_database_url(DATABASE_URL))
-    conn.autocommit = True
-
-    results = []
-
-    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+    with readonly_connection() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
         # 向量语义搜索
         if semantic:
-            print("正在生成查询向量...")
             config = load_embedding_config()
             query_embedding = get_embedding(query, config)
 
@@ -115,37 +104,29 @@ def search_worldbuilding(query=None, entity_type=None, genre=None, importance=No
             params.append(limit)
 
         cur.execute(sql, params)
-        results = cur.fetchall()
+        rows = cur.fetchall()
 
-    conn.close()
-
-    if not results:
-        print("未找到匹配的世界观设定")
-        return
-
-    print(f"找到 {len(results)} 个世界观设定:\n")
-
-    for r in results:
-        print(f"--- {r['name']} ({r['novel_name']}) ---")
-        print(f"类型: {r['entity_type']} | 重要性: {r['importance']}")
-        print(f"描述: {r['description']}")
-        if semantic and 'distance' in r:
-            similarity = 1 - r['distance']
-            print(f"相似度: {similarity:.2%}")
-        print()
-
-
-@click.command()
-@click.argument("query", required=False)
-@click.option("--type", "entity_type", default=None, help="实体类型（factions/regions/power_systems）")
-@click.option("--genre", default=None, help="按题材过滤")
-@click.option("--importance", default=None, help="重要性（primary/secondary/minor）")
-@click.option("--name", "name_query", default=None, help="名称关键词")
-@click.option("--limit", default=10, help="返回结果数")
-@click.option("--semantic", is_flag=True, help="启用向量语义搜索（更精准的语义匹配）")
-def main(query, entity_type, genre, importance, name_query, limit, semantic):
-    search_worldbuilding(query=query, entity_type=entity_type, genre=genre, importance=importance, name_query=name_query, limit=limit, semantic=semantic)
-
-
-if __name__ == "__main__":
-    main()
+    return [
+        SearchResult(
+            result_id=(
+                f"world:{row['material_id']}:{row['entity_type']}:{row['name']}"
+            ),
+            document_type="world",
+            material_id=row["material_id"],
+            title=row.get("name") or "",
+            summary=row.get("description") or "",
+            metadata={
+                "novel_name": row.get("novel_name"),
+                "genre": row.get("novel_genre") or [],
+                "entity_type": row.get("entity_type"),
+                "properties": row.get("properties") or {},
+                "importance": row.get("importance"),
+                "first_appearance": row.get("first_appearance"),
+            },
+            scores={"semantic": 1 - float(row["distance"])}
+            if row.get("distance") is not None
+            else {},
+            matched_fields=["description"] if row.get("distance") is not None else [],
+        )
+        for row in rows
+    ]

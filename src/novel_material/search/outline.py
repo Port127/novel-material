@@ -1,32 +1,21 @@
 """大纲检索：按类型、元素、主角设定等检索小说大纲，支持向量语义搜索。"""
-import os
 import json
-import psycopg2
-import psycopg2.extras
-import click
+from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
 
 load_dotenv()
 
-from .common import build_like_terms, require_database_url
+from .common import build_like_terms
+from .db import readonly_connection
+from .models import SearchResult
 from novel_material.infra.embedding import get_embedding, load_embedding_config
-from novel_material.infra.logging_config import get_search_logger
-
-DATABASE_URL = os.getenv("DATABASE_URL")
-logger = get_search_logger()
 
 
 def search_outlines(query=None, genre=None, element=None, structure_type=None, premise_query=None, limit=5, semantic=False):
     """检索大纲，支持向量语义搜索。"""
-    conn = psycopg2.connect(require_database_url(DATABASE_URL))
-    conn.autocommit = True
-
-    results = []
-
-    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+    with readonly_connection() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
         # 向量语义搜索
         if semantic:
-            print("正在生成查询向量...")
             config = load_embedding_config()
             query_embedding = get_embedding(query, config)
 
@@ -92,38 +81,26 @@ def search_outlines(query=None, genre=None, element=None, structure_type=None, p
             params.append(limit)
 
         cur.execute(sql, params)
-        results = cur.fetchall()
+        rows = cur.fetchall()
 
-    conn.close()
-
-    if not results:
-        print("未找到匹配的大纲")
-        return
-
-    print(f"找到 {len(results)} 部小说的大纲:\n")
-
-    for r in results:
-        print(f"--- {r['name']} ---")
-        print(f"类型: {r['genre']}")
-        print(f"结构: {r['structure_type']} ({r['act_count']}幕 / {r['sequence_count']}序列)")
-        print(f"前提: {r['premise']}")
-        if semantic and 'distance' in r:
-            similarity = 1 - r['distance']
-            print(f"相似度: {similarity:.2%}")
-        print()
-
-
-@click.command()
-@click.argument("query", required=False)
-@click.option("--genre", default=None, help="按题材过滤")
-@click.option("--element", default=None, help="元素标签（如：重生、系统）")
-@click.option("--structure", "structure_type", default=None, help="叙事结构（三幕式/英雄之旅）")
-@click.option("--query", "premise_query", default=None, help="前提关键词")
-@click.option("--limit", default=5, help="返回结果数")
-@click.option("--semantic", is_flag=True, help="启用向量语义搜索（更精准的语义匹配）")
-def main(query, genre, element, structure_type, premise_query, limit, semantic):
-    search_outlines(query=query, genre=genre, element=element, structure_type=structure_type, premise_query=premise_query, limit=limit, semantic=semantic)
-
-
-if __name__ == "__main__":
-    main()
+    return [
+        SearchResult(
+            result_id=f"outline:{row['material_id']}",
+            document_type="outline",
+            material_id=row["material_id"],
+            title=row.get("name") or "",
+            summary=row.get("premise") or "",
+            metadata={
+                "genre": row.get("genre") or [],
+                "structure_type": row.get("structure_type"),
+                "act_count": row.get("act_count"),
+                "sequence_count": row.get("sequence_count"),
+                "tags": row.get("tags") or {},
+            },
+            scores={"semantic": 1 - float(row["distance"])}
+            if row.get("distance") is not None
+            else {},
+            matched_fields=["premise"] if row.get("distance") is not None else [],
+        )
+        for row in rows
+    ]

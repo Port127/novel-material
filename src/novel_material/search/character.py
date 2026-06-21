@@ -1,31 +1,20 @@
 """人物检索：按原型、角色、类型等条件检索人物，支持向量语义搜索。"""
-import os
-import psycopg2
-import psycopg2.extras
-import click
+from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
 
 load_dotenv()
 
-from .common import build_like_terms, require_database_url
+from .common import build_like_terms
+from .db import readonly_connection
+from .models import SearchResult
 from novel_material.infra.embedding import get_embedding, load_embedding_config
-from novel_material.infra.logging_config import get_search_logger
-
-DATABASE_URL = os.getenv("DATABASE_URL")
-logger = get_search_logger()
 
 
 def search_characters(query=None, archetype=None, role=None, genre=None, name_query=None, limit=10, semantic=False):
     """检索人物，支持向量语义搜索。"""
-    conn = psycopg2.connect(require_database_url(DATABASE_URL))
-    conn.autocommit = True
-
-    results = []
-
-    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+    with readonly_connection() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
         # 向量语义搜索
         if semantic:
-            print("正在生成查询向量...")
             config = load_embedding_config()
             query_embedding = get_embedding(query, config)
 
@@ -101,40 +90,29 @@ def search_characters(query=None, archetype=None, role=None, genre=None, name_qu
             params.append(limit)
 
         cur.execute(sql, params)
-        results = cur.fetchall()
+        rows = cur.fetchall()
 
-    conn.close()
-
-    if not results:
-        print("未找到匹配的人物")
-        return
-
-    print(f"找到 {len(results)} 个人物:\n")
-
-    for r in results:
-        print(f"--- {r['name']} ({r['novel_name']}) ---")
-        print(f"角色: {r['role']} | 原型: {r['archetype']}")
-        print(f"道德立场: {r['moral_spectrum']}")
-        print(f"弧线: {r['arc_summary']}")
-        print(f"功能: {r['narrative_function']}")
-        print(f"出场次数: {r['appearance_count']}")
-        if semantic and 'distance' in r:
-            similarity = 1 - r['distance']
-            print(f"相似度: {similarity:.2%}")
-        print()
-
-
-@click.command()
-@click.argument("query", required=False)
-@click.option("--archetype", default=None, help="人物原型（如：英雄、导师）")
-@click.option("--role", default=None, help="角色类型（protagonist/antagonist/supporting）")
-@click.option("--genre", default=None, help="按题材过滤")
-@click.option("--name", "name_query", default=None, help="人物名字关键词")
-@click.option("--limit", default=10, help="返回结果数")
-@click.option("--semantic", is_flag=True, help="启用向量语义搜索（更精准的语义匹配）")
-def main(query, archetype, role, genre, name_query, limit, semantic):
-    search_characters(query=query, archetype=archetype, role=role, genre=genre, name_query=name_query, limit=limit, semantic=semantic)
-
-
-if __name__ == "__main__":
-    main()
+    return [
+        SearchResult(
+            result_id=f"character:{row['material_id']}:{row['name']}",
+            document_type="character",
+            material_id=row["material_id"],
+            title=row.get("name") or "",
+            summary=row.get("arc_summary") or "",
+            content=row.get("description") or "",
+            metadata={
+                "novel_name": row.get("novel_name"),
+                "genre": row.get("novel_genre") or [],
+                "role": row.get("role"),
+                "archetype": row.get("archetype"),
+                "moral_spectrum": row.get("moral_spectrum"),
+                "narrative_function": row.get("narrative_function"),
+                "appearance_count": row.get("appearance_count"),
+            },
+            scores={"semantic": 1 - float(row["distance"])}
+            if row.get("distance") is not None
+            else {},
+            matched_fields=["arc_summary"] if row.get("distance") is not None else [],
+        )
+        for row in rows
+    ]

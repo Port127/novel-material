@@ -1,33 +1,21 @@
 """章纲检索：按章节功能、关键词、张力等条件检索章节，支持向量语义搜索。"""
-import os
 import json
-import psycopg2
-import psycopg2.extras
-import click
+from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
 
 load_dotenv()
 
-from .common import build_like_terms, require_database_url
+from .common import build_like_terms
+from .db import readonly_connection
+from .models import SearchResult
 from novel_material.infra.embedding import get_embedding, load_embedding_config
-from novel_material.tags.resolve import resolve_tag_domain, suggest_genre_for_tag
-from novel_material.infra.logging_config import get_search_logger
-
-DATABASE_URL = os.getenv("DATABASE_URL")
-logger = get_search_logger()
 
 
 def search_chapters(query, genre=None, chapter_function=None, chapter_num=None, tension_min=None, tension_max=None, element=None, style=None, plot_point=None, limit=10, semantic=False):
     """检索章节，支持向量语义搜索。"""
-    conn = psycopg2.connect(require_database_url(DATABASE_URL))
-    conn.autocommit = True
-
-    results = []
-
-    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+    with readonly_connection() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
         # 向量语义搜索（优先）
         if semantic:
-            print(f"正在生成查询向量...")
             config = load_embedding_config()
             query_embedding = get_embedding(query, config)
 
@@ -119,28 +107,10 @@ def search_chapters(query, genre=None, chapter_function=None, chapter_num=None, 
                 params.append(tension_max)
 
             if element:
-                # 标签领域定位（提示用户）
-                try:
-                    domain, is_common = resolve_tag_domain("element", element)
-                    if not is_common:
-                        suggested = suggest_genre_for_tag("element", element)
-                        if suggested and not genre:
-                            print(f"提示: '{element}' 是 {suggested} 题材专属标签")
-                            print(f"建议加 --genre 参数获得更精准结果")
-                except ValueError:
-                    print(f"警告: '{element}' 不在标签字典中")
-
                 sql += " AND n.tags->'elements' @> %s::jsonb"
                 params.append(json.dumps([element]))
 
             if style:
-                # 标签领域定位（提示用户）
-                try:
-                    domain, is_common = resolve_tag_domain("style", style)
-                    # style 通常都是 common，所以不需要特别提示
-                except ValueError:
-                    print(f"警告: '{style}' 不在标签字典中")
-
                 sql += " AND n.tags->'style' @> %s::jsonb"
                 params.append(json.dumps([style]))
 
@@ -152,50 +122,30 @@ def search_chapters(query, genre=None, chapter_function=None, chapter_num=None, 
             params.append(limit)
 
         cur.execute(sql, params)
-        results = cur.fetchall()
+        rows = cur.fetchall()
 
-    conn.close()
-
-    # 打印结果
-    if not results:
-        print("未找到匹配的章节")
-        return
-
-    print(f"找到 {len(results)} 个匹配结果:\n")
-
-    for r in results:
-        print(f"--- {r['novel_name']} 第{r['chapter']}章 ---")
-        print(f"标题: {r['title']}")
-        print(f"摘要: {r['summary']}")
-        if semantic and 'distance' in r:
-            # 余弦距离转换为相似度：similarity = 1 - distance
-            similarity = 1 - r['distance']
-            print(f"相似度: {similarity:.2%}")
-        if r.get('key_event'):
-            print(f"关键事件: {r['key_event']}")
-        if r.get('key_plot_point'):
-            print(f"结构角色: {r['key_plot_point']}")
-        print(f"张力: {r['tension_level']}/5 | 节奏: {r['pacing']}")
-        print(f"功能: {r['chapter_functions']}")
-        print(f"人物: {r['characters_appear']}")
-        print()
-
-
-@click.command()
-@click.argument("query")
-@click.option("--genre", default=None, help="按题材过滤（如：修仙、都市）")
-@click.option("--function", "chapter_function", default=None, help="章节功能标签（如：开局困境）")
-@click.option("--chapter", "chapter_num", default=None, type=int, help="精确章节号")
-@click.option("--tension-min", default=None, type=int, help="张力最小值（1-5）")
-@click.option("--tension-max", default=None, type=int, help="张力最大值（1-5）")
-@click.option("--element", default=None, help="元素标签过滤（如：重生、系统）")
-@click.option("--style", default=None, help="风格标签过滤（如：热血、治愈）")
-@click.option("--plot-point", default=None, help="结构角色过滤（如：inciting_incident、climax）")
-@click.option("--limit", default=10, help="返回结果数")
-@click.option("--semantic", is_flag=True, help="启用向量语义搜索（更精准的语义匹配）")
-def main(query, genre, chapter_function, chapter_num, tension_min, tension_max, element, style, plot_point, limit, semantic):
-    search_chapters(query=query, genre=genre, chapter_function=chapter_function, chapter_num=chapter_num, tension_min=tension_min, tension_max=tension_max, element=element, style=style, plot_point=plot_point, limit=limit, semantic=semantic)
-
-
-if __name__ == "__main__":
-    main()
+    return [
+        SearchResult(
+            result_id=f"chapter:{row['material_id']}:{row['chapter']}",
+            document_type="chapter",
+            material_id=row["material_id"],
+            chapter=row["chapter"],
+            title=row.get("title") or "",
+            summary=row.get("summary") or "",
+            metadata={
+                "novel_name": row.get("novel_name"),
+                "genre": row.get("genre") or [],
+                "tension_level": row.get("tension_level"),
+                "pacing": row.get("pacing"),
+                "chapter_functions": row.get("chapter_functions") or [],
+                "characters_appear": row.get("characters_appear") or [],
+                "key_event": row.get("key_event"),
+                "key_plot_point": row.get("key_plot_point"),
+            },
+            scores={"semantic": 1 - float(row["distance"])}
+            if row.get("distance") is not None
+            else {},
+            matched_fields=["summary"] if row.get("distance") is not None else [],
+        )
+        for row in rows
+    ]

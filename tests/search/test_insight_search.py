@@ -29,13 +29,24 @@ def test_search_insights_matches_common_and_genre_fields(tmp_path: Path):
 
     results = search_insights("戒指", novels_dir=tmp_path)
 
-    assert results == [
+    assert [result.model_dump() for result in results] == [
         {
+            "result_id": "insight:nm_demo:1",
+            "document_type": "insight",
             "material_id": "nm_demo",
             "chapter": 1,
             "title": "第1章 开篇",
-            "profiles": ["common", "xuanhuan"],
+            "summary": "先压低主角处境，再用戒指线索制造期待。",
+            "content": "",
+            "metadata": {
+                "profiles": ["common", "xuanhuan"],
+                "writing_takeaway": "先压低主角处境，再用戒指线索制造期待。",
+            },
+            "source": None,
+            "neighbors": None,
+            "scores": {},
             "matched_fields": ["common.reader_hook", "common.writing_takeaway", "genre.resource_gain"],
-            "writing_takeaway": "先压低主角处境，再用戒指线索制造期待。",
+            "final_score": None,
+            "rank_reason": "",
         }
     ]
