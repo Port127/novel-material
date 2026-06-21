@@ -1,6 +1,6 @@
 # 项目需求文档
 
-> 本文档记录 novel-material V2 的核心用户需求，所有架构设计和技术决策必须服务于这些需求。
+> 本文档记录 Novel Material V3 的产品需求与质量边界。当前实现以 `ARCHITECTURE.md` 为准，操作方法以 `USER_MANUAL.md` 为准。
 
 ## 相关文档
 

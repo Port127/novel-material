@@ -1,4 +1,4 @@
--- Novel Material V2 - PostgreSQL Schema
+-- Novel Material V3 - PostgreSQL Schema
 -- 数据库初始化脚本
 
 -- 启用 pgvector 扩展
