@@ -1,10 +1,10 @@
-# Novel Material V2 用户手册
+# Novel Material V3 用户手册
 
-本文档说明 Novel Material V2 的安装、配置、CLI 使用和故障处理。命令清单以当前 `nm --help` 输出为准。
+本文档说明 Novel Material V3 的安装、配置、CLI 使用和故障处理。命令清单以当前 `nm --help` 输出为准。
 
 ## 1. 系统定位
 
-Novel Material V2 是小说写作参考检索库，负责清洗小说、按章切分、生成结构化分析，并向外部 Agent 提供可比较、可追溯的写作参考。
+Novel Material V3 是面向外部 Agent 的小说写作参考检索后端，负责清洗小说、按章切分、生成结构化分析，并提供可比较、可追溯的参考上下文。
 
 项目不在内部生成用户最终采用的小说内容。Agent 和用户负责理解、糅合与创作。
 
@@ -144,7 +144,18 @@ nm pipeline insights nm_xxx --start 1 --end 50
 nm pipeline insights nm_xxx --profile common --profile suspense
 ```
 
-产物位于 `data/novels/{material_id}/chapter_insights/{chapter:04d}.yaml`。该阶段只读取已有章级分析，不替代 `chapters.yaml`。详情见 [题材感知深度分析](GENRE_AWARE_ANALYSIS.md)。
+产物位于 `data/novels/{material_id}/chapter_insights/{chapter:04d}.yaml`。该阶段只读取已有章级分析，不替代 `chapters.yaml`，也不进入当前 PostgreSQL 同步表。
+
+字段契约由 `common + 题材 profile` 合并生成。内置题材 profile 为 `xuanhuan`、`xianxia`、`suspense`；默认根据 `meta.yaml` 路由，`--profile` 可重复传入并显式覆盖。结果包含冲突、读者期待、写作启示、题材字段、证据、置信度和质量状态。
+
+批次失败不会终止整本素材；输出校验失败最多自动修复一次，仍失败时在 `quality.validation_errors` 记录。检查命令：
+
+```bash
+nm validate insights nm_xxx
+nm search insight "主角被压制后反杀" --mode quality --json
+```
+
+运行模式中，`fast` 跳过 insights，`standard` 执行 core insights。`deep` 当前只保留更深分析的运行模式配置，主流水线尚未实现独立 deep insight 生成器。
 
 ### 4.4 骨架分析与精调
 

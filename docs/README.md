@@ -12,7 +12,6 @@
 | [用户手册](USER_MANUAL.md) | 使用事实来源 | 与真实 CLI 一致的安装和操作方法 |
 | [Agent 指南](../AGENTS.md) | Agent 规则 | Codex 与通用 Agent 的项目操作规范 |
 | [Claude 指南](../CLAUDE.md) | Agent 规则 | Claude Code 的项目操作规范 |
-| [题材感知深度分析](GENRE_AWARE_ANALYSIS.md) | 功能指南 | Profile、insights 产物、命令与质量评估 |
 | [检索容量与质量门禁](search-benchmark.md) | 实验状态 | 容量计划、ANN 准入条件与未执行项 |
 
 文档发生冲突时，依次以项目需求、系统架构、用户手册、Agent 指南为准。README 只做摘要，不覆盖详细规范。

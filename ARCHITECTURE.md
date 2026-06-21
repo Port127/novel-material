@@ -1,4 +1,4 @@
-# Novel Material V2 - 系统架构
+# Novel Material V3 - 系统架构
 
 本文档描述系统的真实架构、数据流向和模块边界。
 
@@ -9,7 +9,6 @@
 - [AGENTS.md](AGENTS.md) — Agent 操作规则
 - [README.md](README.md) — 项目入口与快速开始
 - [文档索引](docs/README.md) — 现行文档、工作记录与阅读顺序
-- [题材感知深度分析](docs/GENRE_AWARE_ANALYSIS.md) — insights 层说明
 
 ---
 
@@ -27,7 +26,7 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                         Novel Material V2                                    │
+│                         Novel Material V3                                    │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                              │
 │  ┌─────────────┐                                                            │
@@ -383,7 +382,13 @@ save_yaml(paths.meta_path, meta)
                                     outline_beats
 ```
 
-`chapters.yaml` 是稳定的 L1 章级分析结果。`chapter_insights/{chapter}.yaml` 是可选 L2 增强层，由 `common + 题材 profile` 组合生成，不替代 L1，也不进入当前 PostgreSQL 同步表。`fast` 模式跳过 insights，`standard` 模式执行 core insights，`deep` 模式保留关键章节深度分析扩展点。
+`chapters.yaml` 是稳定的 L1 章级分析结果。`chapter_insights/{chapter:04d}.yaml` 是可选 L2 增强层，由 `common + 题材 profile + 可选叙事 profile` 合并字段契约后批量生成，不替代 L1，也不进入当前 PostgreSQL 同步表。
+
+首批 profile 包括 `common`、`xuanhuan`、`xianxia`、`suspense`。`profile_resolver.py` 根据 `meta.yaml` 题材选择，也接受 CLI `--profile` 显式覆盖；`analysis_profiles/` 负责加载和合并 YAML 契约。单章 insight 包含 `profiles`、`common`、`genre`、`evidence`、`confidence` 和 `quality`，题材字段必须能关联章级摘要或已有字段证据。
+
+`fast` 模式跳过 insights，`standard` 模式执行 core insights。`deep` 的运行模式元数据已保留关键章节比例与阻断语义，但当前主流水线仍调用同一个 core insight 生成器，没有独立的 deep 分析实现，文档和 Agent 不得声称已经完成更深层分析。
+
+`insights.py` 按批调用 LLM，批次失败会为对应章节写入失败状态并继续；schema 校验失败最多修复一次，仍失败则保留结果并写入 `quality.validation_errors`，同时下调 confidence。新增 profile 时必须提供 YAML 字段契约，并覆盖 loader、resolver、prompt 和 validator 测试。
 
 ### 断点续传机制
 
