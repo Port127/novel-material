@@ -7,6 +7,7 @@ import pytest
 import yaml
 
 from novel_material.eval.search_eval import (
+    SearchEvalCase,
     evaluate_cases,
     export_candidates,
     import_candidate_labels,
@@ -78,6 +79,7 @@ def test_export_candidates_writes_unlabeled_rows_without_changing_queries(tmp_pa
         "title": "开篇",
         "summary": "主角陷入困境。",
         "relevance": None,
+        "candidate_source": "strict",
     }]
     assert queries_path.read_text(encoding="utf-8") == original
 
@@ -104,7 +106,80 @@ def test_export_candidates_keeps_case_visible_when_search_returns_no_results(tmp
         "summary": "",
         "relevance": None,
         "status": "no_candidates",
+        "candidate_source": "none",
     }]
+
+
+def test_export_candidates_skips_relaxed_search_when_strict_pool_is_large_enough(
+    tmp_path,
+):
+    """严格候选达到门槛时不应产生额外检索调用。"""
+    cases = [SearchEvalCase(
+        "chapter_001", "开局困境", "chapter", {}, {}, True, True
+    )]
+    strict = [_result(f"chapter:nm_demo:{index}") for index in range(1, 11)]
+
+    def unexpected_relaxed(_case, _limit):
+        raise AssertionError("严格候选足够时不应执行放宽检索")
+
+    output = tmp_path / "candidates.yaml"
+    export_candidates(
+        cases,
+        lambda _case, _limit: strict,
+        output,
+        limit=30,
+        minimum_candidates=10,
+        relaxed_search_callable=unexpected_relaxed,
+    )
+
+    rows = yaml.safe_load(output.read_text(encoding="utf-8"))
+    assert len(rows) == 10
+    assert {row["candidate_source"] for row in rows} == {"strict"}
+
+
+def test_export_candidates_backfills_from_relaxed_search_and_deduplicates(
+    tmp_path,
+):
+    """严格候选不足时应去重合并放宽候选。"""
+    cases = [SearchEvalCase(
+        "chapter_001",
+        "开局困境",
+        "chapter",
+        {"chapter_num": 1},
+        {},
+        True,
+        True,
+    )]
+    strict = [_result("chapter:nm_demo:1"), _result("chapter:nm_demo:2")]
+    relaxed = [
+        _result("chapter:nm_demo:2"),
+        _result("chapter:nm_other:3", material_id="nm_other"),
+        _result("chapter:nm_other:4", material_id="nm_other"),
+    ]
+    output = tmp_path / "candidates.yaml"
+
+    export_candidates(
+        cases,
+        lambda _case, _limit: strict,
+        output,
+        limit=4,
+        minimum_candidates=4,
+        relaxed_search_callable=lambda _case, _limit: relaxed,
+    )
+
+    rows = yaml.safe_load(output.read_text(encoding="utf-8"))
+    assert [row["result_id"] for row in rows] == [
+        "chapter:nm_demo:1",
+        "chapter:nm_demo:2",
+        "chapter:nm_other:3",
+        "chapter:nm_other:4",
+    ]
+    assert [row["candidate_source"] for row in rows] == [
+        "strict",
+        "strict",
+        "relaxed",
+        "relaxed",
+    ]
 
 
 def test_import_candidate_labels_merges_scores_into_queries(tmp_path):

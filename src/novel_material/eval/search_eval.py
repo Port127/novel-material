@@ -80,12 +80,36 @@ def export_candidates(
     search_callable: SearchCallable,
     output_path: Path,
     limit: int = 30,
+    *,
+    minimum_candidates: int = 10,
+    relaxed_search_callable: SearchCallable | None = None,
 ) -> None:
     """执行检索并导出不带猜测分数的人工标注候选。"""
+    if not 1 <= minimum_candidates <= limit:
+        raise ValueError("minimum_candidates 必须介于 1 和 limit 之间")
+
     rows: list[dict[str, Any]] = []
     for case in cases:
-        results = search_callable(case, limit)[:limit]
-        if not results:
+        pool: list[tuple[SearchResult, str]] = []
+        seen: set[str] = set()
+
+        for result in search_callable(case, limit)[:limit]:
+            if result.result_id in seen:
+                continue
+            seen.add(result.result_id)
+            pool.append((result, "strict"))
+
+        target = min(limit, minimum_candidates)
+        if len(pool) < target and relaxed_search_callable is not None:
+            for result in relaxed_search_callable(case, limit):
+                if result.result_id in seen:
+                    continue
+                seen.add(result.result_id)
+                pool.append((result, "relaxed"))
+                if len(pool) >= target:
+                    break
+
+        if not pool:
             rows.append({
                 "case_id": case.id,
                 "query": case.query,
@@ -95,6 +119,7 @@ def export_candidates(
                 "summary": "",
                 "relevance": None,
                 "status": "no_candidates",
+                "candidate_source": "none",
             })
             continue
         rows.extend({
@@ -105,7 +130,8 @@ def export_candidates(
             "title": result.title,
             "summary": result.summary,
             "relevance": None,
-        } for result in results)
+            "candidate_source": candidate_source,
+        } for result, candidate_source in pool)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(
