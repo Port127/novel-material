@@ -77,6 +77,25 @@ def test_filter_only_command_builds_nonempty_search_request(monkeypatch):
     assert service.requests[0].filters == {"archetype": "导师"}
 
 
+def test_cli_forwards_quality_control_options(monkeypatch):
+    service = FakeSearchService()
+    monkeypatch.setattr(
+        "novel_material.cli.search.create_default_search_service",
+        lambda: service,
+    )
+
+    result = runner.invoke(app, [
+        "search", "chapter", "雨中告别", "--mode", "exact",
+        "--candidate-limit", "25", "--time-budget", "30", "--json",
+    ])
+
+    assert result.exit_code == 0
+    request = service.requests[0]
+    assert request.mode == "exact"
+    assert request.candidate_limit == 25
+    assert request.time_budget_seconds == 30
+
+
 def test_database_failure_exits_nonzero(monkeypatch):
     """数据库故障不得被误报为没有匹配结果。"""
     class FailingService:

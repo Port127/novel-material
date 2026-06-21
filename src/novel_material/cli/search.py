@@ -62,6 +62,20 @@ def _filters(**values) -> dict:
     return {name: value for name, value in values.items() if value is not None}
 
 
+def _request_options(
+    *,
+    semantic: bool,
+    mode: str,
+    candidate_limit: int,
+    time_budget: int,
+) -> dict:
+    return {
+        "mode": "exact" if semantic else mode,
+        "candidate_limit": candidate_limit,
+        "time_budget_seconds": time_budget,
+    }
+
+
 @app.command("outline")
 def cmd_outline(
     query: str | None = typer.Option(None, "--query", "-q", help="关键词"),
@@ -71,6 +85,9 @@ def cmd_outline(
     premise_query: str | None = typer.Option(None, "--premise-query", help="前提关键词"),
     limit: int = typer.Option(5, "--limit", "-l", help="返回数量"),
     semantic: bool = typer.Option(False, "--semantic", help="启用语义检索"),
+    mode: str = typer.Option("quality", "--mode", help="quality 或 exact"),
+    candidate_limit: int = typer.Option(200, "--candidate-limit", help="候选数量"),
+    time_budget: int = typer.Option(180, "--time-budget", help="时间预算（秒）"),
     json_output: bool = typer.Option(False, "--json", help="输出稳定 JSON"),
 ):
     """检索大纲。"""
@@ -87,7 +104,7 @@ def cmd_outline(
                 structure_type=structure_type,
             ),
             limit=limit,
-            mode="exact" if semantic else "quality",
+            **_request_options(semantic=semantic, mode=mode, candidate_limit=candidate_limit, time_budget=time_budget),
         ),
         json_output=json_output,
         title="大纲检索结果",
@@ -103,6 +120,9 @@ def cmd_character(
     genre: str | None = typer.Option(None, "--genre", "-g", help="题材筛选"),
     limit: int = typer.Option(10, "--limit", "-l", help="返回数量"),
     semantic: bool = typer.Option(False, "--semantic", help="启用语义检索"),
+    mode: str = typer.Option("quality", "--mode", help="quality 或 exact"),
+    candidate_limit: int = typer.Option(200, "--candidate-limit", help="候选数量"),
+    time_budget: int = typer.Option(180, "--time-budget", help="时间预算（秒）"),
     json_output: bool = typer.Option(False, "--json", help="输出稳定 JSON"),
 ):
     """检索人物。"""
@@ -118,7 +138,7 @@ def cmd_character(
                 genre=genre,
             ),
             limit=limit,
-            mode="exact" if semantic else "quality",
+            **_request_options(semantic=semantic, mode=mode, candidate_limit=candidate_limit, time_budget=time_budget),
         ),
         json_output=json_output,
         title="人物检索结果",
@@ -138,6 +158,9 @@ def cmd_chapter(
     plot_point: str | None = typer.Option(None, "--plot-point", help="结构角色"),
     limit: int = typer.Option(5, "--limit", "-l", help="返回数量"),
     semantic: bool = typer.Option(False, "--semantic", help="启用语义检索"),
+    mode: str = typer.Option("quality", "--mode", help="quality 或 exact"),
+    candidate_limit: int = typer.Option(200, "--candidate-limit", help="候选数量"),
+    time_budget: int = typer.Option(180, "--time-budget", help="时间预算（秒）"),
     json_output: bool = typer.Option(False, "--json", help="输出稳定 JSON"),
 ):
     """检索章节摘要。"""
@@ -156,7 +179,7 @@ def cmd_chapter(
                 plot_point=plot_point,
             ),
             limit=limit,
-            mode="exact" if semantic else "quality",
+            **_request_options(semantic=semantic, mode=mode, candidate_limit=candidate_limit, time_budget=time_budget),
         ),
         json_output=json_output,
         title="章节检索结果",
@@ -170,6 +193,9 @@ def cmd_event(
     emotion: str | None = typer.Option(None, "--emotion", help="情绪基调"),
     limit: int = typer.Option(10, "--limit", "-l", help="返回数量"),
     keyword_mode: bool = typer.Option(False, "--keyword", help="使用关键词检索"),
+    mode: str = typer.Option("quality", "--mode", help="quality 或 exact"),
+    candidate_limit: int = typer.Option(200, "--candidate-limit", help="候选数量"),
+    time_budget: int = typer.Option(180, "--time-budget", help="时间预算（秒）"),
     json_output: bool = typer.Option(False, "--json", help="输出稳定 JSON"),
 ):
     """检索事件。"""
@@ -179,7 +205,7 @@ def cmd_event(
             document_types=["event"],
             filters=_filters(setting=setting, emotion=emotion),
             limit=limit,
-            mode="quality",
+            **_request_options(semantic=False, mode=mode, candidate_limit=candidate_limit, time_budget=time_budget),
         ),
         json_output=json_output,
         title="事件检索结果",
@@ -195,6 +221,9 @@ def cmd_world(
     name: str | None = typer.Option(None, "--name", help="名称关键词"),
     limit: int = typer.Option(5, "--limit", "-l", help="返回数量"),
     semantic: bool = typer.Option(False, "--semantic", help="启用语义检索"),
+    mode: str = typer.Option("quality", "--mode", help="quality 或 exact"),
+    candidate_limit: int = typer.Option(200, "--candidate-limit", help="候选数量"),
+    time_budget: int = typer.Option(180, "--time-budget", help="时间预算（秒）"),
     json_output: bool = typer.Option(False, "--json", help="输出稳定 JSON"),
 ):
     """检索世界观设定。"""
@@ -209,7 +238,7 @@ def cmd_world(
                 name=name,
             ),
             limit=limit,
-            mode="exact" if semantic else "quality",
+            **_request_options(semantic=semantic, mode=mode, candidate_limit=candidate_limit, time_budget=time_budget),
         ),
         json_output=json_output,
         title="世界观检索结果",
@@ -223,6 +252,9 @@ def cmd_detail(
     act: int | None = typer.Option(None, "--act", help="幕号"),
     description_query: str | None = typer.Option(None, "--query", "-q", help="描述关键词"),
     limit: int = typer.Option(10, "--limit", "-l", help="返回数量"),
+    mode: str = typer.Option("quality", "--mode", help="quality 或 exact"),
+    candidate_limit: int = typer.Option(200, "--candidate-limit", help="候选数量"),
+    time_budget: int = typer.Option(180, "--time-budget", help="时间预算（秒）"),
     json_output: bool = typer.Option(False, "--json", help="输出稳定 JSON"),
 ):
     """检索细纲。"""
@@ -233,6 +265,7 @@ def cmd_detail(
             document_types=["detail"],
             filters=_filters(genre=genre, act=act),
             limit=limit,
+            **_request_options(semantic=False, mode=mode, candidate_limit=candidate_limit, time_budget=time_budget),
         ),
         json_output=json_output,
         title="细纲检索结果",
@@ -243,6 +276,9 @@ def cmd_detail(
 def cmd_insight(
     keyword: str = typer.Argument(..., help="关键词"),
     limit: int = typer.Option(10, "--limit", "-l", help="返回数量"),
+    mode: str = typer.Option("quality", "--mode", help="quality 或 exact"),
+    candidate_limit: int = typer.Option(200, "--candidate-limit", help="候选数量"),
+    time_budget: int = typer.Option(180, "--time-budget", help="时间预算（秒）"),
     json_output: bool = typer.Option(False, "--json", help="输出稳定 JSON"),
 ):
     """检索 chapter_insights 深度分析。"""
@@ -251,6 +287,7 @@ def cmd_insight(
             query=keyword,
             document_types=["insight"],
             limit=limit,
+            **_request_options(semantic=False, mode=mode, candidate_limit=candidate_limit, time_budget=time_budget),
         ),
         json_output=json_output,
         title="深度分析检索结果",
