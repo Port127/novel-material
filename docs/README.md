@@ -13,6 +13,7 @@
 | [Agent 指南](../AGENTS.md) | Agent 规则 | Codex 与通用 Agent 的项目操作规范 |
 | [Claude 指南](../CLAUDE.md) | Agent 规则 | Claude Code 的项目操作规范 |
 | [题材感知深度分析](GENRE_AWARE_ANALYSIS.md) | 功能指南 | Profile、insights 产物、命令与质量评估 |
+| [检索容量与质量门禁](search-benchmark.md) | 实验状态 | 容量计划、ANN 准入条件与未执行项 |
 
 文档发生冲突时，依次以项目需求、系统架构、用户手册、Agent 指南为准。README 只做摘要，不覆盖详细规范。
 
@@ -34,6 +35,7 @@
 - 人工标注延期处理，因此暂未生成 `eval/baselines/4096-exact.json`。在基线补齐前，后续实现可以继续，但不得声称混合检索或重排质量已经达到、不低于或优于 4096 维精确基线。
 - 恢复该待办时，应先保留已有人工填写内容，再完善候选证据和不确定项处理；禁止直接重新生成候选文件覆盖人工修改。
 - 完成人工标注后，依次执行 `nm eval search import-labels` 和 `nm eval search score --mode exact`，再恢复依赖质量基线的门禁验收。
+- 25 万、50 万和 250 万章容量实测随质量基线延期；当前只有安全计划入口和硬门禁，不得虚构结论。
 
 ## 子系统契约
 

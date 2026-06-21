@@ -451,16 +451,9 @@ save_yaml(paths.meta_path, meta)
 
 ### Search 层 (`search/`)
 
-当前检索实现由多条独立路径组成，还不是混合检索：
+`SearchService` 是外部 Agent 的上下文供应层。`quality` 模式编排中文词法、完整 4096 维语义和结构化过滤三路召回，经 RRF、跨素材多样性和可插拔重排后，批量补充邻章摘要与原文行号。单路失败写入 trace 并降级，全部通道失败才报错。
 
-| 路径 | 当前实现 | 限制 |
-|---|---|---|
-| 章节/大纲/人物/世界观关键词 | PostgreSQL `ILIKE` | 没有中文分词、全文倒排索引和统一相关度排名 |
-| 章节/大纲/人物/世界观语义分支 | 4096 维向量余弦距离精确排序 | schema 未启用 ANN 索引；主 CLI 未完整暴露语义参数 |
-| insight 检索 | 顺序扫描 `chapter_insights/*.yaml` 的指定字段 | 不使用 PostgreSQL，也不是向量搜索 |
-| 事件与细纲 | `event.py`、`detail.py` 内部函数 | 未注册到 `nm search` 主 CLI |
-
-关键词和语义分支目前是二选一，没有融合召回、统一重排或多样性控制。未来检索改造必须以 4096 维精确检索为质量基线，不得把性能优化提前描述为现有能力。
+`exact` 模式只执行 4096 维语义精确排序。生产 schema 不启用 ANN；候选实验必须通过 `docs/search-benchmark.md` 的质量门禁。七类公开命令统一返回 `SearchResponse`。LLM 重排默认关闭；人工 Golden Query 基线补齐前，不得宣称混合或重排质量优于精确基线。
 
 ### Validation 层 (`validation/`)
 

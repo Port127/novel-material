@@ -183,33 +183,28 @@ nm pipeline continue nm_xxx --mode standard
 
 ## 5. Search 检索
 
-当前主 CLI 暴露五类检索：`outline`、`character`、`chapter`、`world`、`insight`。
+主 CLI 暴露 `chapter`、`event`、`outline`、`character`、`world`、`detail`、`insight` 七类检索。默认 `quality` 模式执行中文词法、4096 维精确语义和结构化三路召回，再做 RRF、多样性、可选重排和上下文补全。
 
 ### 5.1 使用示例
 
 ```bash
-nm search chapter "开局困境" --limit 10
-nm search outline --query "废柴逆袭" --genre 玄幻 --limit 10
-nm search character --name 杨间
-nm search character --archetype 导师 --role supporting --limit 10
-nm search world "宗门" --dimension factions --limit 10
-nm search world "境界" --dimension power_systems
-nm search insight "主角被压制后反杀" --limit 10
+nm search chapter "开局困境" --mode quality --limit 10 --json
+nm search event "雨中告别" --mode quality --json
+nm search outline --query "废柴逆袭" --genre 玄幻 --json
+nm search character --archetype 导师 --role supporting --json
+nm search world "宗门" --dimension factions --json
+nm search detail "高潮前铺垫" --mode quality --json
+nm search insight "主角被压制后反杀" --json
 ```
 
-Insight 搜索顺序扫描本地 `chapter_insights/*.yaml` 的冲突、读者期待、写作启示和题材字段，不使用 PostgreSQL 或向量搜索。
+通用参数为 `--mode quality|exact`、`--candidate-limit N`、`--time-budget N`、`--limit N` 和 `--json`。JSON 的 `trace.degraded` 与 `degradation_reasons` 说明 embedding、重排、时间预算或上下文降级。已有数据库先执行 `nm storage migrate`。
 
 ### 5.2 当前已知限制
 
-- 章节主 CLI 默认走关键词 `ILIKE`，没有暴露底层 `semantic` 参数。
-- 关键词与向量查询是独立分支，不是混合召回。
-- PostgreSQL 向量列为 4096 维，当前没有启用 ANN 索引。
-- 关键词查询尚未实现中文全文索引和统一相关度排名。
-- `src/novel_material/search/event.py` 与 `detail.py` 是内部模块，没有注册到 `nm search`。
-- 章节、大纲、人物和世界观底层搜索函数仍混合查询和打印职责，主 CLI 可能重复提示未找到。
-- 项目尚未建立完整检索基准集，不应仅凭相似度数字判断质量。
-
-后续检索改造以质量为第一目标，允许深度检索最长约三分钟；任何降维或近似索引都必须先与 4096 维精确检索比较。
+- 4096 维向量保持精确排序，生产环境没有 ANN 索引。
+- `insight` 扫描本地 YAML，不使用 PostgreSQL 向量表。
+- LLM 重排接口已实现，但人工质量对比完成前默认 `identity`。
+- Golden Query 人工标注和三档容量实测尚未完成，不得声称混合检索质量不低于精确基线。
 
 ## 6. Tags 标签管理
 
