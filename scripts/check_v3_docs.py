@@ -16,12 +16,14 @@ CURRENT_DOCUMENTS = [
     Path("AGENTS.md"),
     Path("CLAUDE.md"),
     Path("pyproject.toml"),
+    Path("src/novel_material/__init__.py"),
     Path("src/novel_material/storage/schema.sql"),
 ]
 MARKDOWN_DOCUMENTS = [path for path in CURRENT_DOCUMENTS if path.suffix == ".md"]
 FORBIDDEN = {
     "Novel Material V2": "仍包含 V2 项目标识",
     'version = "2.0.0"': "仍包含 2.0.0 包版本",
+    '__version__ = "2.0.0"': "仍包含 __version__ 2.0.0 包版本",
     "GENRE_AWARE_ANALYSIS.md": "仍链接已合并的题材分析指南",
     "当前主 CLI 暴露五类": "仍包含过期的五类检索说明",
     "当前章节搜索默认是关键词匹配": "仍包含过期的单路检索说明",

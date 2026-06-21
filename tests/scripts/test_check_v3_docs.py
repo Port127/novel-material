@@ -29,6 +29,19 @@ def test_check_accepts_v3_document(tmp_path):
     assert check_current_docs(tmp_path, [Path("README.md")]) == []
 
 
+def test_check_rejects_v2_package_dunder_version(tmp_path):
+    package = tmp_path / "src" / "novel_material" / "__init__.py"
+    package.parent.mkdir(parents=True)
+    package.write_text('__version__ = "2.0.0"\n', encoding="utf-8")
+
+    issues = check_current_docs(
+        tmp_path,
+        [Path("src/novel_material/__init__.py")],
+    )
+
+    assert any("__version__" in issue for issue in issues)
+
+
 def test_markdown_link_check_reports_missing_relative_target(tmp_path):
     (tmp_path / "README.md").write_text(
         "[不存在](docs/missing.md)\n",
