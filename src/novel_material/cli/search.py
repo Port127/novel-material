@@ -1,20 +1,12 @@
 """Search 子命令：素材检索。"""
 
-from collections.abc import Callable
-
 import typer
 from rich.console import Console
 from rich.table import Table
 
-from novel_material.search.chapter import search_chapters
-from novel_material.search.character import search_characters
-from novel_material.search.detail import search_detail
-from novel_material.search.event import search_events
-from novel_material.search.insight import search_insights
-from novel_material.search.models import SearchResult
-from novel_material.search.outline import search_outlines
-from novel_material.search.serialization import build_response, response_json
-from novel_material.search.world import search_worldbuilding
+from novel_material.search.models import SearchRequest, SearchResult
+from novel_material.search.serialization import response_json
+from novel_material.search.service import create_default_search_service
 
 app = typer.Typer(help="素材检索")
 console = Console()
@@ -44,26 +36,30 @@ def _display_results(title: str, results: list[SearchResult]) -> None:
 
 
 def _run_search(
-    query: str,
-    search_call: Callable[[], list[SearchResult]],
+    request: SearchRequest,
     *,
     json_output: bool,
     title: str,
 ) -> None:
     """统一处理搜索成功、空结果和异常。"""
     try:
-        results = search_call()
+        response = create_default_search_service().search(request)
     except Exception as exc:
         console.print(f"[red]检索失败：{exc}[/red]")
         raise typer.Exit(1) from exc
 
-    response = build_response(query, results)
+    results = response.results
     if json_output:
         typer.echo(response_json(response))
     elif not results:
         console.print("[yellow]未找到匹配结果[/yellow]")
     else:
         _display_results(title, results)
+
+
+def _filters(**values) -> dict:
+    """移除未指定的 CLI 过滤条件。"""
+    return {name: value for name, value in values.items() if value is not None}
 
 
 @app.command("outline")
@@ -78,17 +74,20 @@ def cmd_outline(
     json_output: bool = typer.Option(False, "--json", help="输出稳定 JSON"),
 ):
     """检索大纲。"""
-    effective_query = premise_query or query or ""
+    effective_query = (
+        premise_query or query or element or structure_type or genre or "大纲"
+    )
     _run_search(
-        effective_query,
-        lambda: search_outlines(
-            query=query,
-            genre=genre,
-            element=element,
-            structure_type=structure_type,
-            premise_query=premise_query,
+        SearchRequest(
+            query=effective_query,
+            document_types=["outline"],
+            filters=_filters(
+                genre=genre,
+                element=element,
+                structure_type=structure_type,
+            ),
             limit=limit,
-            semantic=semantic,
+            mode="exact" if semantic else "quality",
         ),
         json_output=json_output,
         title="大纲检索结果",
@@ -107,17 +106,19 @@ def cmd_character(
     json_output: bool = typer.Option(False, "--json", help="输出稳定 JSON"),
 ):
     """检索人物。"""
-    effective_query = query or name or ""
+    effective_query = query or name or archetype or role or genre or "人物"
     _run_search(
-        effective_query,
-        lambda: search_characters(
-            query=query,
-            name_query=name,
-            archetype=archetype,
-            role=role,
-            genre=genre,
+        SearchRequest(
+            query=effective_query,
+            document_types=["character"],
+            filters=_filters(
+                name=name,
+                archetype=archetype,
+                role=role,
+                genre=genre,
+            ),
             limit=limit,
-            semantic=semantic,
+            mode="exact" if semantic else "quality",
         ),
         json_output=json_output,
         title="人物检索结果",
@@ -141,19 +142,21 @@ def cmd_chapter(
 ):
     """检索章节摘要。"""
     _run_search(
-        keyword,
-        lambda: search_chapters(
+        SearchRequest(
             query=keyword,
-            genre=genre,
-            chapter_function=chapter_function,
-            chapter_num=chapter_num,
-            tension_min=tension_min,
-            tension_max=tension_max,
-            element=element,
-            style=style,
-            plot_point=plot_point,
+            document_types=["chapter"],
+            filters=_filters(
+                genre=genre,
+                chapter_function=chapter_function,
+                chapter_num=chapter_num,
+                tension_min=tension_min,
+                tension_max=tension_max,
+                element=element,
+                style=style,
+                plot_point=plot_point,
+            ),
             limit=limit,
-            semantic=semantic,
+            mode="exact" if semantic else "quality",
         ),
         json_output=json_output,
         title="章节检索结果",
@@ -171,13 +174,12 @@ def cmd_event(
 ):
     """检索事件。"""
     _run_search(
-        keyword,
-        lambda: search_events(
+        SearchRequest(
             query=keyword,
-            setting=setting,
-            emotion=emotion,
+            document_types=["event"],
+            filters=_filters(setting=setting, emotion=emotion),
             limit=limit,
-            keyword=keyword_mode,
+            mode="quality",
         ),
         json_output=json_output,
         title="事件检索结果",
@@ -197,15 +199,17 @@ def cmd_world(
 ):
     """检索世界观设定。"""
     _run_search(
-        keyword,
-        lambda: search_worldbuilding(
+        SearchRequest(
             query=keyword,
-            entity_type=dimension,
-            genre=genre,
-            importance=importance,
-            name_query=name,
+            document_types=["world"],
+            filters=_filters(
+                dimension=dimension,
+                genre=genre,
+                importance=importance,
+                name=name,
+            ),
             limit=limit,
-            semantic=semantic,
+            mode="exact" if semantic else "quality",
         ),
         json_output=json_output,
         title="世界观检索结果",
@@ -222,14 +226,12 @@ def cmd_detail(
     json_output: bool = typer.Option(False, "--json", help="输出稳定 JSON"),
 ):
     """检索细纲。"""
-    effective_query = description_query or keyword or ""
+    effective_query = description_query or keyword or genre or "细纲"
     _run_search(
-        effective_query,
-        lambda: search_detail(
-            query=keyword,
-            genre=genre,
-            act=act,
-            description_query=description_query,
+        SearchRequest(
+            query=effective_query,
+            document_types=["detail"],
+            filters=_filters(genre=genre, act=act),
             limit=limit,
         ),
         json_output=json_output,
@@ -245,8 +247,11 @@ def cmd_insight(
 ):
     """检索 chapter_insights 深度分析。"""
     _run_search(
-        keyword,
-        lambda: search_insights(query=keyword, limit=limit),
+        SearchRequest(
+            query=keyword,
+            document_types=["insight"],
+            limit=limit,
+        ),
         json_output=json_output,
         title="深度分析检索结果",
     )

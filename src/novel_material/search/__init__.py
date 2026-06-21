@@ -16,7 +16,7 @@ from .models import (
     SearchTrace,
     SourceLocation,
 )
-from .service import SearchService, SearchServiceError
+from .service import SearchService, SearchServiceError, create_default_search_service
 
 __all__ = [
     "search_outlines",
@@ -35,4 +35,5 @@ __all__ = [
     "SourceLocation",
     "SearchService",
     "SearchServiceError",
+    "create_default_search_service",
 ]

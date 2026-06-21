@@ -4,7 +4,11 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+from psycopg2.extras import RealDictCursor
+
+from novel_material.infra.config import NOVELS_DIR
 from novel_material.infra.yaml_io import load_yaml_list
+from novel_material.search.db import readonly_connection
 from novel_material.search.models import (
     NeighborContext,
     SearchResult,
@@ -73,6 +77,57 @@ def enrich_chapter_results(
         )
         for result in results
     ]
+
+
+def enrich_results_from_storage(
+    results: Sequence[SearchResult],
+    trace: SearchTrace,
+    *,
+    novels_dir: Path = NOVELS_DIR,
+) -> list[SearchResult]:
+    """一次查询加载全部命中所需邻章摘要，再补充本地原文位置。"""
+    chapter_results = [
+        result
+        for result in results
+        if result.document_type in _CONTEXT_TYPES and result.chapter is not None
+    ]
+    if not chapter_results:
+        return [result.model_copy(deep=True) for result in results]
+
+    material_ids = sorted({result.material_id for result in chapter_results})
+    chapter_numbers = sorted({
+        neighbor
+        for result in chapter_results
+        for neighbor in (result.chapter - 1, result.chapter, result.chapter + 1)
+        if neighbor >= 1
+    })
+    summaries_by_material: dict[str, dict[int, str]] = {}
+    try:
+        with readonly_connection() as conn, conn.cursor(
+            cursor_factory=RealDictCursor
+        ) as cur:
+            cur.execute(
+                """
+                SELECT material_id, chapter, summary
+                FROM chapters
+                WHERE material_id = ANY(%s) AND chapter = ANY(%s)
+                """,
+                (material_ids, chapter_numbers),
+            )
+            rows = cur.fetchall()
+        for row in rows:
+            summaries_by_material.setdefault(row["material_id"], {})[
+                int(row["chapter"])
+            ] = row.get("summary") or ""
+    except Exception as exc:
+        _record_degradation(trace, f"邻章摘要查询失败：{exc}")
+
+    return enrich_chapter_results(
+        results,
+        summaries_by_material=summaries_by_material,
+        novels_dir=novels_dir,
+        trace=trace,
+    )
 
 
 def _chapter_index(

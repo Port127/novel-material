@@ -4,9 +4,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from .common import build_like_terms
 from .db import readonly_connection
-from .models import SearchResult
+from .models import SearchRequest, SearchResult
+from .text import tokenize_for_search
 from novel_material.infra.embedding import get_embedding, load_embedding_config
 
 _ENTITY_TYPE_ALIASES = {
@@ -26,7 +26,7 @@ def _normalize_entity_type(entity_type):
     return _ENTITY_TYPE_ALIASES.get(entity_type, entity_type)
 
 
-def search_worldbuilding(query=None, entity_type=None, genre=None, importance=None, name_query=None, limit=10, semantic=False):
+def search_worldbuilding(query=None, entity_type=None, genre=None, importance=None, name_query=None, limit=10, semantic=False, material_id=None):
     """检索世界观设定，支持向量语义搜索。"""
     entity_type = _normalize_entity_type(entity_type)
     with readonly_connection() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
@@ -45,6 +45,10 @@ def search_worldbuilding(query=None, entity_type=None, genre=None, importance=No
                 WHERE w.description_embedding IS NOT NULL
             """
             params = [str(query_embedding)]
+
+            if material_id:
+                sql += " AND w.material_id = %s"
+                params.append(material_id)
 
             if entity_type:
                 sql += " AND w.entity_type = %s"
@@ -73,6 +77,10 @@ def search_worldbuilding(query=None, entity_type=None, genre=None, importance=No
             """
             params = []
 
+            if material_id:
+                sql += " AND w.material_id = %s"
+                params.append(material_id)
+
             if entity_type:
                 sql += " AND w.entity_type = %s"
                 params.append(entity_type)
@@ -85,23 +93,26 @@ def search_worldbuilding(query=None, entity_type=None, genre=None, importance=No
                 sql += " AND w.importance = %s"
                 params.append(importance)
 
-            terms = build_like_terms(name_query or query)
-            if terms:
-                clauses = []
-                for term in terms:
-                    fuzzy = f"%{term}%"
-                    clauses.append(
-                        """(
-                            w.name ILIKE %s
-                            OR COALESCE(w.description, '') ILIKE %s
-                            OR COALESCE(w.properties::text, '') ILIKE %s
-                        )"""
-                    )
-                    params.extend([fuzzy, fuzzy, fuzzy])
-                sql += " AND (" + " OR ".join(clauses) + ")"
+            lexical_query = name_query or query or ""
+            query_tokens = tokenize_for_search(lexical_query)
+            if query_tokens:
+                sql += """ AND (
+                    w.search_document @@ plainto_tsquery('simple', %s)
+                    OR w.name %% %s
+                )"""
+                params.extend([query_tokens, lexical_query])
 
-            sql += " ORDER BY w.importance ASC NULLS LAST, w.name ASC LIMIT %s"
-            params.append(limit)
+            if query_tokens:
+                sql += """ ORDER BY
+                    ts_rank_cd(w.search_document, plainto_tsquery('simple', %s)) DESC,
+                    similarity(w.name, %s) DESC,
+                    w.importance ASC NULLS LAST,
+                    w.name ASC LIMIT %s
+                """
+                params.extend([query_tokens, lexical_query, limit])
+            else:
+                sql += " ORDER BY w.importance ASC NULLS LAST, w.name ASC LIMIT %s"
+                params.append(limit)
 
         cur.execute(sql, params)
         rows = cur.fetchall()
@@ -130,3 +141,41 @@ def search_worldbuilding(query=None, entity_type=None, genre=None, importance=No
         )
         for row in rows
     ]
+
+
+def retrieve_worldbuilding_lexical(request: SearchRequest) -> list[SearchResult]:
+    """使用世界观中文词法索引召回。"""
+    return search_worldbuilding(
+        query=request.query,
+        limit=request.candidate_limit,
+        semantic=False,
+        **_world_filters(request),
+    )
+
+
+def retrieve_worldbuilding_semantic(request: SearchRequest) -> list[SearchResult]:
+    """使用完整 4096 维设定描述向量精确召回。"""
+    return search_worldbuilding(
+        query=request.query,
+        limit=request.candidate_limit,
+        semantic=True,
+        **_world_filters(request),
+    )
+
+
+def retrieve_worldbuilding_structured(request: SearchRequest) -> list[SearchResult]:
+    """仅在存在世界观过滤条件时执行结构化召回。"""
+    filters = _world_filters(request)
+    if not filters:
+        return []
+    return search_worldbuilding(query="", limit=request.candidate_limit, **filters)
+
+
+def _world_filters(request: SearchRequest) -> dict:
+    aliases = {"dimension": "entity_type"}
+    names = ("entity_type", "dimension", "genre", "importance", "material_id")
+    return {
+        aliases.get(name, name): request.filters[name]
+        for name in names
+        if name in request.filters
+    }

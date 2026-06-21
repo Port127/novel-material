@@ -5,13 +5,13 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from .common import build_like_terms
 from .db import readonly_connection
-from .models import SearchResult
+from .models import SearchRequest, SearchResult
+from .text import tokenize_for_search
 from novel_material.infra.embedding import get_embedding, load_embedding_config
 
 
-def search_chapters(query, genre=None, chapter_function=None, chapter_num=None, tension_min=None, tension_max=None, element=None, style=None, plot_point=None, limit=10, semantic=False):
+def search_chapters(query, genre=None, chapter_function=None, chapter_num=None, tension_min=None, tension_max=None, element=None, style=None, plot_point=None, limit=10, semantic=False, material_id=None):
     """检索章节，支持向量语义搜索。"""
     with readonly_connection() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
         # 向量语义搜索（优先）
@@ -32,6 +32,10 @@ def search_chapters(query, genre=None, chapter_function=None, chapter_num=None, 
             """
             # 将 Python 列表转为 PostgreSQL vector 格式
             params = [str(query_embedding)]
+
+            if material_id:
+                sql += " AND c.material_id = %s"
+                params.append(material_id)
 
             # 其他过滤条件
             if genre:
@@ -70,21 +74,17 @@ def search_chapters(query, genre=None, chapter_function=None, chapter_num=None, 
             """
             params = []
 
-            terms = build_like_terms(query)
-            if terms:
-                clauses = []
-                for term in terms:
-                    fuzzy = f"%{term}%"
-                    clauses.append(
-                        """(
-                            c.title ILIKE %s
-                            OR c.summary ILIKE %s
-                            OR COALESCE(c.key_event, '') ILIKE %s
-                            OR array_to_string(c.chapter_functions, ' ') ILIKE %s
-                        )"""
-                    )
-                    params.extend([fuzzy, fuzzy, fuzzy, fuzzy])
-                sql += " AND (" + " OR ".join(clauses) + ")"
+            if material_id:
+                sql += " AND c.material_id = %s"
+                params.append(material_id)
+
+            query_tokens = tokenize_for_search(query or "")
+            if query_tokens:
+                sql += """ AND (
+                    c.search_document @@ plainto_tsquery('simple', %s)
+                    OR c.title %% %s
+                )"""
+                params.extend([query_tokens, query])
 
             if genre:
                 sql += " AND n.genre @> ARRAY[%s]"
@@ -118,8 +118,16 @@ def search_chapters(query, genre=None, chapter_function=None, chapter_num=None, 
                 sql += " AND c.key_plot_point = %s"
                 params.append(plot_point)
 
-            sql += " ORDER BY c.tension_level DESC NULLS LAST, c.chapter ASC LIMIT %s"
-            params.append(limit)
+            if query_tokens:
+                sql += """ ORDER BY
+                    ts_rank_cd(c.search_document, plainto_tsquery('simple', %s)) DESC,
+                    similarity(c.title, %s) DESC,
+                    c.chapter ASC LIMIT %s
+                """
+                params.extend([query_tokens, query, limit])
+            else:
+                sql += " ORDER BY c.tension_level DESC NULLS LAST, c.chapter ASC LIMIT %s"
+                params.append(limit)
 
         cur.execute(sql, params)
         rows = cur.fetchall()
@@ -149,3 +157,46 @@ def search_chapters(query, genre=None, chapter_function=None, chapter_num=None, 
         )
         for row in rows
     ]
+
+
+def retrieve_chapters_lexical(request: SearchRequest) -> list[SearchResult]:
+    """使用中文词法索引召回章节。"""
+    return search_chapters(
+        request.query,
+        limit=request.candidate_limit,
+        semantic=False,
+        **_chapter_filters(request),
+    )
+
+
+def retrieve_chapters_semantic(request: SearchRequest) -> list[SearchResult]:
+    """使用完整 4096 维向量精确召回章节。"""
+    return search_chapters(
+        request.query,
+        limit=request.candidate_limit,
+        semantic=True,
+        **_chapter_filters(request),
+    )
+
+
+def retrieve_chapters_structured(request: SearchRequest) -> list[SearchResult]:
+    """仅在存在章节过滤条件时执行结构化召回。"""
+    filters = _chapter_filters(request)
+    if not filters:
+        return []
+    return search_chapters("", limit=request.candidate_limit, semantic=False, **filters)
+
+
+def _chapter_filters(request: SearchRequest) -> dict:
+    names = (
+        "genre",
+        "chapter_function",
+        "chapter_num",
+        "tension_min",
+        "tension_max",
+        "element",
+        "style",
+        "plot_point",
+        "material_id",
+    )
+    return {name: request.filters[name] for name in names if name in request.filters}

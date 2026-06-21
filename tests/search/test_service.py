@@ -3,7 +3,12 @@ from collections.abc import Callable
 import pytest
 
 from novel_material.search.models import SearchRequest, SearchResult
-from novel_material.search.service import SearchService, SearchServiceError
+from novel_material.search.service import (
+    DEFAULT_RETRIEVERS,
+    SearchService,
+    SearchServiceError,
+    create_default_search_service,
+)
 
 
 def result(result_id: str, material_id: str) -> SearchResult:
@@ -103,3 +108,60 @@ def test_time_budget_skips_remaining_retrievers():
     assert calls == ["lexical"]
     assert response.trace.degraded is True
     assert any("时间预算" in reason for reason in response.trace.degradation_reasons)
+
+
+def test_default_service_routes_only_requested_document_types(monkeypatch):
+    calls: list[tuple[str, str]] = []
+
+    def routed(document_type: str, stage: str):
+        def retrieve(_request):
+            calls.append((document_type, stage))
+            return [result(f"{document_type}:{stage}", document_type)]
+
+        return retrieve
+
+    for document_type in ("chapter", "world"):
+        for stage in ("lexical", "semantic", "structured"):
+            monkeypatch.setitem(
+                DEFAULT_RETRIEVERS[document_type],
+                stage,
+                routed(document_type, stage),
+            )
+
+    service = create_default_search_service(context_enricher=None)
+    service.search(
+        SearchRequest(
+            query="宗门",
+            document_types=["chapter", "world"],
+            limit=3,
+        )
+    )
+
+    assert set(calls) == {
+        (document_type, stage)
+        for document_type in ("chapter", "world")
+        for stage in ("lexical", "semantic", "structured")
+    }
+
+
+def test_service_applies_context_enricher_after_diversity():
+    received: list[str] = []
+
+    def enrich(results, trace):
+        received.extend(item.result_id for item in results)
+        enriched = [item.model_copy(deep=True) for item in results]
+        enriched[0].rank_reason = "已补充上下文"
+        return enriched
+
+    service = SearchService(
+        lexical=lambda _request: [result("a", "n1")],
+        semantic=lambda _request: [],
+        structured=lambda _request: [],
+        context_enricher=enrich,
+    )
+
+    response = service.search(SearchRequest(query="宗门", limit=1))
+
+    assert received == ["a"]
+    assert response.results[0].rank_reason == "已补充上下文"
+    assert response.trace.stages[-1] == "context"
