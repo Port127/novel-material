@@ -28,7 +28,7 @@ description: >-
 
 | EnterPlanMode | plan-first |
 |--------------|------------|
-| Claude Code 内置机制，进入 plan mode | Skill，在正常对话中输出规划 |
+| 宿主工具内置机制，进入 plan mode | Skill，在正常对话中输出规划 |
 | 用户说"帮我实现 X"时触发 | 用户说"使用 plan-first"时触发 |
 | 生成 plan.md 文件，正式审批流程 | 对话中输出规划文本，非正式 |
 | 适合需要代码编写的实现任务 | 适合任何需要先规划的复杂任务 |

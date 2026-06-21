@@ -1,12 +1,11 @@
 ---
 name: nm-search
-description: >-
-  素材检索：世界观、大纲、章节、人物。支持语义搜索。仅当用户明确说出"使用 nm-search"或"启动 nm-search"时触发。不适用于任何隐式场景。
+description: 使用 nm-search 或启动 nm-search 时，用于检索小说素材参考；不适用于未显式点名该 Skill 的普通搜索请求。
 ---
 
 # nm-search
 
-统一检索入口，根据查询意图路由到具体检索命令。
+统一检索入口，根据查询意图路由到七类质量优先检索命令。
 
 ## 触发约束
 
@@ -25,20 +24,7 @@ description: >-
 ## 执行命令
 
 ```bash
-# 章节检索（支持语义搜索）
-nm search chapter "开局困境" --limit 10
-
-# 世界观检索
-nm search world "势力" --dimension faction
-
-# 大纲检索
-nm search outline --genre 修仙 --query "废柴逆袭"
-
-# 人物检索
-nm search character --archetype 导师
-
-# 事件检索
-nm search event "雨中告别" --limit 10
+nm search chapter "开局困境" --limit 10 --mode quality --json
 ```
 
 ## 检索类型与路由
@@ -47,10 +33,22 @@ nm search event "雨中告别" --limit 10
 
 | 用户意图 | 命令 | 主要参数 | 返回内容 |
 |----------|------|------|----------|
-| 世界观/力量体系/势力 | `nm search world` | `--dimension/--genre` | 世界观设定实体 |
-| 全书大纲/结构 | `nm search outline` | `--genre/--limit` | 大纲结构树 |
-| 章节写法/章纲 | `nm search chapter` | `--genre/--limit` | 章节摘要+功能标签+张力 |
-| 人物塑造/出场 | `nm search character` | `--genre/--role/--limit` | 人物小传+出场统计 |
+| 章纲/章节功能 | `nm search chapter` | 章节摘要、来源、邻章 |
+| 具体事件/情境 | `nm search event` | 事件参考 |
+| 全书前提/结构 | `nm search outline` | 大纲结构 |
+| 人物塑造 | `nm search character` | 人物档案 |
+| 世界观/势力/规则 | `nm search world` | 设定实体 |
+| 序列/节拍 | `nm search detail` | 细纲参考 |
+| 深度写作洞察 | `nm search insight` | insight YAML |
+
+通用参数：`--mode quality|exact`、`--candidate-limit N`、`--time-budget N`、`--limit N`、`--json`。
+
+## 结果约束
+
+- 检查 `trace.degraded` 与 `degradation_reasons`，说明召回、重排或上下文降级。
+- 保留 `result_id`、`material_id`、`source` 和 `neighbors`。
+- 结果是参考样例，不是事实答案或最终小说内容；理解、糅合与生成由外部 Agent 完成。
+- 人工 Golden Query 基线尚未完成，不得声称混合检索或重排优于 4096 维精确模式。
 
 ## 前置条件
 

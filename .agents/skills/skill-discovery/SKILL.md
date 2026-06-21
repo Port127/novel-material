@@ -120,7 +120,7 @@ Step 5: 评估模式质量（参考）
 #### 1b. JSONL 主扫描（用户未指定时执行）
 
 **扫描目标**：
-- **Codex**: `~/.Codex/projects/{project-name}/*.jsonl`
+- **Claude Code**: `~/.claude/projects/{project-name}/*.jsonl`
 - **Cursor**: `~/.cursor/projects/{project-name}/agent-transcripts/*.jsonl`
 - **Codex**: `~/.codex/history.jsonl`（单文件；按 cwd 过滤当前项目）
 - 范围：最近 30 天
@@ -207,8 +207,8 @@ git log --all --oneline --grep="fix" --grep="修复" --grep="bug" -i -50
 检查现有 skill 是否已覆盖。
 
 **扫描目标**：
-- 项目级：`.Codex/skills/`、`.cursor/rules/`
-- 全局级：`~/.Codex/skills/`
+- 项目级：`.agents/skills/`、`.claude/skills/`、`.cursor/rules/`
+- 全局级：`~/.codex/skills/`、`~/.claude/skills/`
 
 **覆盖情况判断**：
 
@@ -225,7 +225,8 @@ git log --all --oneline --grep="fix" --grep="修复" --grep="bug" -i -50
 首先检查 my-create-skill 是否可用：
 
 扫描 skill 目录：
-- `.Codex/skills/my-create-skill/SKILL.md`
+- `.agents/skills/my-create-skill/SKILL.md`
+- `.claude/skills/my-create-skill/SKILL.md`
 - `.cursor/skills/my-create-skill/SKILL.md`
 
 **如果可用**：
@@ -296,7 +297,7 @@ my-create-skill 可用，建议执行：
 - 默认输出文本报告（对话中展示）
 - 用户明确要求时可写入文件：
   - 报告：用户指定路径
-  - 草案：`.Codex/skills/{skill-name}/SKILL.md`（仅当 my-create-skill 不可用时）
+  - 草案：宿主项目 Skills 目录中的 `{skill-name}/SKILL.md`（仅当 my-create-skill 不可用时）
 
 ---
 

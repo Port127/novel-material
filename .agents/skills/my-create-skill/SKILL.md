@@ -120,7 +120,8 @@ description: {1句话描述功能，第三人称，关键词密集}
 2. **名称** — kebab-case，动词/动名词优先
 3. **触发词** — 用户会说什么话时用到它？
 4. **存储位置** — 个人全局还是项目级？
-   - Codex: `~/.Codex/skills/` 或项目 `.Codex/skills/`
+   - Codex: `~/.codex/skills/` 或项目 `.agents/skills/`
+   - Claude Code: `~/.claude/skills/` 或项目 `.claude/skills/`
    - Cursor: `~/.cursor/skills/` 或项目 `.cursor/skills/`
    - 其他编辑器: 查阅对应文档
 5. **是否需要脚本/参考/资源** — 基于场景判断
@@ -207,7 +208,8 @@ description: {1句话描述功能，第三人称，关键词密集}
 
 1. 写出创建好的 skill 文件路径
 2. 提醒用户：需安装到对应编辑器的 skill 目录才能生效
-   - Codex: `~/.Codex/skills/` 或项目 `.Codex/skills/`
+   - Codex: `~/.codex/skills/` 或项目 `.agents/skills/`
+   - Claude Code: `~/.claude/skills/` 或项目 `.claude/skills/`
    - Cursor: `~/.cursor/skills/` 或项目 `.cursor/skills/`
 3. 建议用户将 SKILL.md 同步到 skill 仓库存档
 

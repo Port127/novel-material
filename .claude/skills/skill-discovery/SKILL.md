@@ -207,8 +207,8 @@ git log --all --oneline --grep="fix" --grep="修复" --grep="bug" -i -50
 检查现有 skill 是否已覆盖。
 
 **扫描目标**：
-- 项目级：`.claude/skills/`、`.cursor/rules/`
-- 全局级：`~/.claude/skills/`
+- 项目级：`.agents/skills/`、`.claude/skills/`、`.cursor/rules/`
+- 全局级：`~/.codex/skills/`、`~/.claude/skills/`
 
 **覆盖情况判断**：
 
@@ -225,6 +225,7 @@ git log --all --oneline --grep="fix" --grep="修复" --grep="bug" -i -50
 首先检查 my-create-skill 是否可用：
 
 扫描 skill 目录：
+- `.agents/skills/my-create-skill/SKILL.md`
 - `.claude/skills/my-create-skill/SKILL.md`
 - `.cursor/skills/my-create-skill/SKILL.md`
 
@@ -296,7 +297,7 @@ my-create-skill 可用，建议执行：
 - 默认输出文本报告（对话中展示）
 - 用户明确要求时可写入文件：
   - 报告：用户指定路径
-  - 草案：`.claude/skills/{skill-name}/SKILL.md`（仅当 my-create-skill 不可用时）
+  - 草案：宿主项目 Skills 目录中的 `{skill-name}/SKILL.md`（仅当 my-create-skill 不可用时）
 
 ---
 
