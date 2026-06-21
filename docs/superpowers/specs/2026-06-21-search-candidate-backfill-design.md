@@ -12,10 +12,11 @@
 
 ## 2. 方案
 
-候选准备分两步：
+候选准备最多分三步：
 
 1. 使用原始查询和全部过滤条件执行严格检索。
 2. 严格结果少于目标数量时，使用相同查询移除结构化过滤条件再次检索，并按 `result_id` 去重补足。
+3. `detail` 在前两步仍不足时，使用空关键词和空过滤条件读取细纲库存，并按 `result_id` 去重补足人工标注池。
 
 严格结果始终排在放宽结果之前。补足达到目标数量后停止；放宽检索仍不足时保留实际结果，并继续输出 `no_candidates` 或不足数量状态，禁止复制结果凑数。
 
@@ -23,6 +24,7 @@
 
 - `candidate_source: strict`：来自原始查询与过滤条件。
 - `candidate_source: relaxed`：来自移除过滤条件的补足检索。
+- `candidate_source: inventory`：仅用于 `detail`，来自无关键词细纲库存。
 
 候选的 `relevance` 仍初始化为 `null`，只允许人工填写 0～3 分。
 
@@ -39,7 +41,7 @@
 Golden Query
   ├─ 原始 filters ─→ strict candidates ─┐
   └─ filters={} ───→ relaxed candidates ├─→ 按 result_id 去重 → 标注池
-                                         ┘
+  └─ detail query="" → inventory ────────┘
 ```
 
 ## 4. 错误与边界处理
@@ -47,8 +49,11 @@ Golden Query
 - 严格检索异常：候选准备失败并非零退出，不用放宽结果掩盖故障。
 - 严格检索成功但数量不足：执行放宽检索。
 - 放宽检索异常：候选准备失败并非零退出，避免生成不可复现的部分标注池。
+- `detail` 库存检索异常：候选准备失败并非零退出。
 - 严格结果已达到目标数量：不得执行放宽检索。
+- 严格与放宽结果已达到目标数量：不得执行库存检索。
 - 相同 `result_id` 同时出现在两路：只保留严格结果并标记为 `strict`。
+- 非 `detail` 类型不得执行库存检索，避免用无查询样本稀释语义候选。
 - 两路合计仍不足：输出实际结果；零结果 case 保留 `status: no_candidates`。
 - 标签导入仍拒绝 `null`、未知结果和没有候选的 case。
 
@@ -59,9 +64,10 @@ Golden Query
 1. 严格结果足够时不调用放宽检索。
 2. 严格结果不足时调用放宽检索并补足目标数量。
 3. 严格结果优先，跨路按 `result_id` 去重。
-4. YAML 正确记录 `candidate_source`。
-5. 查询文件内容不被修改。
-6. `score --mode exact` 不读取 `search_candidates.yaml`，评分语义保持不变。
-7. 全量单测不低于当前 `97 passed, 1 skipped`。
+4. `detail` 前两路不足时使用库存补足，其他类型不使用库存。
+5. YAML 正确记录 `candidate_source`。
+6. 查询文件内容不被修改。
+7. `score --mode exact` 不读取 `search_candidates.yaml`，评分语义保持不变。
+8. 全量单测不低于当前 `99 passed, 1 skipped`。
 
 真实候选导出完成后统计 30 个 case：目标是每个 case 至少 10 条真实候选；若底层实体总量不足 10 条，则记录实际数量并作为数据覆盖缺口报告，不复制或伪造候选。

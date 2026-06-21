@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 当严格过滤的 Golden Query 少于 10 个候选时，用移除过滤条件的同查询结果补足人工标注池，同时保持精确评分语义不变。
+**Goal:** 当严格过滤的 Golden Query 少于 10 个候选时，依次用移除过滤条件的同查询结果以及 `detail` 无关键词库存补足人工标注池，同时保持精确评分语义不变。
 
-**Architecture:** `search_eval.py` 负责合并两路候选、按 `result_id` 去重并标记来源；`cli/eval.py` 负责为 `prepare` 提供严格和放宽两个检索调用。`score` 继续直接使用原始 `SearchEvalCase`，不读取候选文件。
+**Architecture:** `search_eval.py` 负责合并严格、放宽和可选库存候选，按 `result_id` 去重并标记来源；`cli/eval.py` 负责为 `prepare` 提供严格、放宽及仅限 `detail` 的无关键词库存调用。`score` 继续直接使用原始 `SearchEvalCase`，不读取候选文件。
 
 **Tech Stack:** Python 3.10+、dataclasses、Typer、PyYAML、pytest。
 
@@ -12,8 +12,8 @@
 
 ## 文件结构与职责
 
-- `src/novel_material/eval/search_eval.py`：扩展候选导出接口，按需调用放宽检索、合并、去重、截断并写入 `candidate_source`。
-- `src/novel_material/cli/eval.py`：只在 `prepare` 中构造 `filters={}` 的临时查询并传给候选导出；评分路径不变。
+- `src/novel_material/eval/search_eval.py`：扩展候选导出接口，按需调用放宽与库存检索、合并、去重、截断并写入 `candidate_source`。
+- `src/novel_material/cli/eval.py`：只在 `prepare` 中构造 `filters={}` 的放宽查询和 `detail query=""` 的库存查询；评分路径不变。
 - `tests/eval/test_search_eval.py`：验证补足、去重、来源标记和无需补足时不调用放宽检索。
 - `tests/eval/test_search_eval_cli.py`：验证 `prepare` 传入放宽检索，`score` 仍拒绝未标注查询。
 - `eval/search_candidates.yaml`：重新生成的人工工作文件，不提交。
@@ -230,7 +230,115 @@ git commit -m "feat(eval): 接入放宽候选检索" -m "主要改动：
 - python -m pytest -q：通过"
 ```
 
-### Task 3：恢复 Task 6 人工标注检查点
+### Task 3：为 detail 增加库存候选兜底
+
+**Files:**
+- Modify: `src/novel_material/eval/search_eval.py`
+- Modify: `src/novel_material/cli/eval.py`
+- Modify: `tests/eval/test_search_eval.py`
+- Modify: `tests/eval/test_search_eval_cli.py`
+- Regenerate: `eval/search_candidates.yaml`（不提交）
+
+- [ ] **Step 1: 编写库存候选合并失败测试**
+
+```python
+def test_export_candidates_backfills_from_inventory_after_relaxed_pool(tmp_path):
+    cases = [SearchEvalCase("detail_001", "感情线节拍", "detail", {}, {}, True, False)]
+    inventory = [_detail_result(f"detail:nm_demo:1:{index}") for index in range(1, 4)]
+    output = tmp_path / "candidates.yaml"
+
+    export_candidates(
+        cases,
+        lambda _case, _limit: [],
+        output,
+        limit=3,
+        minimum_candidates=3,
+        relaxed_search_callable=lambda _case, _limit: [],
+        inventory_search_callable=lambda _case, _limit: inventory,
+    )
+    rows = yaml.safe_load(output.read_text(encoding="utf-8"))
+    assert len(rows) == 3
+    assert {row["candidate_source"] for row in rows} == {"inventory"}
+```
+
+- [ ] **Step 2: 运行测试并确认失败**
+
+Run: `python -m pytest tests/eval/test_search_eval.py::test_export_candidates_backfills_from_inventory_after_relaxed_pool -v`
+
+Expected: FAIL，提示 `export_candidates()` 不接受 `inventory_search_callable`。
+
+- [ ] **Step 3: 实现库存候选合并**
+
+为 `export_candidates` 增加关键字参数：
+
+```python
+inventory_search_callable: SearchCallable | None = None,
+```
+
+放宽候选合并后仍不足目标数量时，按相同 `seen` 集合去重合并库存结果并标记 `inventory`。严格、放宽或库存任一路达到目标数量后停止后续调用。
+
+- [ ] **Step 4: 编写 detail 专用库存调度失败测试**
+
+新增 CLI 测试，构造 `document_type: detail`、`query: 感情线节拍`。让 fake `_search_case` 只在 `query == ""` 时返回一个 detail 结果，执行 `prepare --limit 1` 后断言调用顺序为：
+
+```python
+[("感情线节拍", {}), ("感情线节拍", {}), ("", {})]
+```
+
+并断言导出候选的 `candidate_source == "inventory"`。
+
+- [ ] **Step 5: 实现 detail 专用库存调度**
+
+在 `cli/eval.py` 新增：
+
+```python
+def _search_inventory_case(case: SearchEvalCase, limit: int, mode: str):
+    if case.document_type != "detail":
+        return []
+    return _search_case(replace(case, query="", filters={}), limit, mode)
+```
+
+`prepare` 传入：
+
+```python
+inventory_search_callable=lambda case, candidate_limit: _search_inventory_case(
+    case, candidate_limit, mode
+),
+```
+
+- [ ] **Step 6: 运行专项与全量测试**
+
+Run: `python -m pytest tests/eval/test_search_eval.py tests/eval/test_search_eval_cli.py -v && python -m pytest -q`
+
+Expected: 专项全部通过；全量不少于 `99 passed, 1 skipped`。
+
+- [ ] **Step 7: 重新导出并统计真实候选**
+
+Run:
+
+```bash
+python -m novel_material.cli.main eval search prepare \
+  --queries eval/search_queries.yaml \
+  --output eval/search_candidates.yaml \
+  --limit 30
+```
+
+Expected: `detail_001` 至少 10 条真实候选且来源为 `inventory`；30 个 case 均至少 10 条，不复制结果。
+
+- [ ] **Step 8: 提交**
+
+```bash
+git add src/novel_material/eval/search_eval.py src/novel_material/cli/eval.py tests/eval/test_search_eval.py tests/eval/test_search_eval_cli.py
+git commit -m "feat(eval): 为细纲补充库存候选" -m "主要改动：
+- detail 严格与放宽候选不足时使用无关键词库存补足
+- 库存候选记录独立来源且不进入 exact 评分
+
+验证结果：
+- 搜索评测专项测试：通过
+- python -m pytest -q：通过"
+```
+
+### Task 4：恢复 Task 6 人工标注检查点
 
 **Files:**
 - Modify manually: `eval/search_candidates.yaml`
