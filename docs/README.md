@@ -25,6 +25,16 @@
 
 工作记录不属于现行功能说明。历史计划与当前代码冲突时，以现行文档和代码为准。
 
+## 待办与已知缺口
+
+### 检索 Golden Query 人工标注
+
+- `eval/search_queries.yaml` 已包含 30 条真实业务查询，候选准备和标签导入命令已经实现。
+- `eval/search_candidates.yaml` 是本地人工标注工作文件，当前标注尚未完成，不纳入版本控制；不得由 Agent 猜测或自动填写 `relevance`。
+- 人工标注延期处理，因此暂未生成 `eval/baselines/4096-exact.json`。在基线补齐前，后续实现可以继续，但不得声称混合检索或重排质量已经达到、不低于或优于 4096 维精确基线。
+- 恢复该待办时，应先保留已有人工填写内容，再完善候选证据和不确定项处理；禁止直接重新生成候选文件覆盖人工修改。
+- 完成人工标注后，依次执行 `nm eval search import-labels` 和 `nm eval search score --mode exact`，再恢复依赖质量基线的门禁验收。
+
 ## 子系统契约
 
 - [标签体系](../data/tag-system/README.md)：标签分类、维度和平台映射。
