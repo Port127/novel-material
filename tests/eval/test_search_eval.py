@@ -46,6 +46,16 @@ def _result(result_id: str, material_id: str = "nm_demo") -> SearchResult:
     )
 
 
+def _detail_result(result_id: str) -> SearchResult:
+    return SearchResult(
+        result_id=result_id,
+        document_type="detail",
+        material_id="nm_demo",
+        title="关系推进",
+        summary="人物关系发生变化。",
+    )
+
+
 def test_validate_labeled_cases_rejects_missing_judgments(tmp_path):
     """评分前必须拒绝没有人工判断的查询。"""
     path = tmp_path / "queries.yaml"
@@ -180,6 +190,31 @@ def test_export_candidates_backfills_from_relaxed_search_and_deduplicates(
         "relaxed",
         "relaxed",
     ]
+
+
+def test_export_candidates_backfills_from_inventory_after_relaxed_pool(tmp_path):
+    """前两路不足时应继续合并库存候选。"""
+    cases = [SearchEvalCase(
+        "detail_001", "感情线节拍", "detail", {}, {}, True, False
+    )]
+    inventory = [
+        _detail_result(f"detail:nm_demo:1:{index}") for index in range(1, 4)
+    ]
+    output = tmp_path / "candidates.yaml"
+
+    export_candidates(
+        cases,
+        lambda _case, _limit: [],
+        output,
+        limit=3,
+        minimum_candidates=3,
+        relaxed_search_callable=lambda _case, _limit: [],
+        inventory_search_callable=lambda _case, _limit: inventory,
+    )
+
+    rows = yaml.safe_load(output.read_text(encoding="utf-8"))
+    assert len(rows) == 3
+    assert {row["candidate_source"] for row in rows} == {"inventory"}
 
 
 def test_import_candidate_labels_merges_scores_into_queries(tmp_path):

@@ -83,6 +83,7 @@ def export_candidates(
     *,
     minimum_candidates: int = 10,
     relaxed_search_callable: SearchCallable | None = None,
+    inventory_search_callable: SearchCallable | None = None,
 ) -> None:
     """执行检索并导出不带猜测分数的人工标注候选。"""
     if not 1 <= minimum_candidates <= limit:
@@ -106,6 +107,15 @@ def export_candidates(
                     continue
                 seen.add(result.result_id)
                 pool.append((result, "relaxed"))
+                if len(pool) >= target:
+                    break
+
+        if len(pool) < target and inventory_search_callable is not None:
+            for result in inventory_search_callable(case, limit):
+                if result.result_id in seen:
+                    continue
+                seen.add(result.result_id)
+                pool.append((result, "inventory"))
                 if len(pool) >= target:
                     break
 

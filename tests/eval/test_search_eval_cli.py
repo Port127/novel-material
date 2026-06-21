@@ -11,12 +11,18 @@ from novel_material.search.models import SearchResult
 runner = CliRunner()
 
 
-def _query_file(path: Path, filters: dict | None = None) -> None:
+def _query_file(
+    path: Path,
+    filters: dict | None = None,
+    *,
+    query: str = "开局困境",
+    document_type: str = "chapter",
+) -> None:
     path.write_text(
         yaml.safe_dump([{
             "id": "chapter_001",
-            "query": "开局困境",
-            "document_type": "chapter",
+            "query": query,
+            "document_type": document_type,
             "filters": filters or {},
             "judgments": {},
             "require_diversity": True,
@@ -83,3 +89,48 @@ def test_eval_score_rejects_unlabeled_queries(tmp_path):
     assert result.exit_code == 1
     assert "chapter_001" in result.stdout
     assert not output.exists()
+
+
+def test_eval_prepare_uses_inventory_only_after_detail_searches_are_empty(
+    monkeypatch,
+    tmp_path,
+):
+    """detail 前两路为空时才使用无关键词库存。"""
+    queries = tmp_path / "queries.yaml"
+    output = tmp_path / "candidates.yaml"
+    _query_file(
+        queries,
+        query="感情线节拍",
+        document_type="detail",
+    )
+    observed = []
+
+    def fake_search(case, _limit, _mode):
+        observed.append((case.query, case.filters))
+        if case.query:
+            return []
+        return [SearchResult(
+            result_id="detail:nm_demo:1:1",
+            document_type="detail",
+            material_id="nm_demo",
+            title="关系推进",
+            summary="人物关系发生变化。",
+        )]
+
+    monkeypatch.setattr("novel_material.cli.eval._search_case", fake_search)
+
+    result = runner.invoke(app, [
+        "eval", "search", "prepare",
+        "--queries", str(queries),
+        "--output", str(output),
+        "--limit", "1",
+    ])
+
+    assert result.exit_code == 0
+    assert observed == [
+        ("感情线节拍", {}),
+        ("感情线节拍", {}),
+        ("", {}),
+    ]
+    row = yaml.safe_load(output.read_text(encoding="utf-8"))[0]
+    assert row["candidate_source"] == "inventory"

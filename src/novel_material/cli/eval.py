@@ -99,6 +99,17 @@ def _search_case(
     raise ValueError(f"不支持的 document_type: {case.document_type}")
 
 
+def _search_inventory_case(
+    case: SearchEvalCase,
+    limit: int,
+    mode: str,
+) -> list[SearchResult]:
+    """只为细纲标注池提供无关键词库存候选。"""
+    if case.document_type != "detail":
+        return []
+    return _search_case(replace(case, query="", filters={}), limit, mode)
+
+
 def _validate_mode(mode: str) -> None:
     if mode not in {"exact", "quality"}:
         raise ValueError("mode 必须是 exact 或 quality")
@@ -127,6 +138,9 @@ def prepare(
                 replace(case, filters={}),
                 candidate_limit,
                 mode,
+            ),
+            inventory_search_callable=lambda case, candidate_limit: (
+                _search_inventory_case(case, candidate_limit, mode)
             ),
         )
     except Exception as exc:
