@@ -8,6 +8,18 @@ from novel_material.infra.logging_config import get_embedding_logger
 logger = get_embedding_logger()
 
 
+def _validate_embedding_dimension(vector, config):
+    """校验 provider 返回维度与配置声明一致。"""
+    expected_dimension = config["embedding"]["dimension"]
+    actual_dimension = len(vector)
+    if actual_dimension != expected_dimension:
+        raise ValueError(
+            f"Embedding 维度不一致：期望 {expected_dimension}，"
+            f"实际 {actual_dimension}"
+        )
+    return vector
+
+
 def load_embedding_config():
     """从 .env 加载向量化配置。"""
     return {
@@ -48,7 +60,7 @@ def get_embedding(text, config=None):
             model=model,
             input=text
         )
-        return response.data[0].embedding
+        embedding = response.data[0].embedding
 
     elif provider == "ollama":
         # Ollama（本地部署）
@@ -63,7 +75,7 @@ def get_embedding(text, config=None):
         )
         response.raise_for_status()
         data = response.json()
-        return data["embeddings"][0]
+        embedding = data["embeddings"][0]
 
     elif provider == "bge":
         # BGE 本地模型（需要 transformers）
@@ -78,10 +90,12 @@ def get_embedding(text, config=None):
             outputs = model_obj(**inputs)
             embeddings = outputs.last_hidden_state[:, 0, :]
 
-        return embeddings[0].numpy().tolist()
+        embedding = embeddings[0].numpy().tolist()
 
     else:
         raise ValueError(f"不支持的 embedding provider: {provider}")
+
+    return _validate_embedding_dimension(embedding, config)
 
 
 def get_embeddings_batch(texts, config=None):

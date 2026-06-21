@@ -16,6 +16,12 @@ from novel_material.infra.config import NOVELS_DIR
 from novel_material.infra.embedding import get_embedding, load_embedding_config
 from novel_material.infra.logging_config import get_embedding_logger
 from novel_material.infra.yaml_io import load_yaml, load_yaml_list
+from novel_material.storage.embedding_manifest import (
+    EmbeddingManifest,
+    manifest_from_config,
+    save_manifest,
+    validate_vector,
+)
 
 logger = get_embedding_logger()
 
@@ -44,7 +50,12 @@ def _load_chapter_embeddings(npz_path: Path) -> dict[int, list]:
     return {int(ch): vectors_arr[i].tolist() for i, ch in enumerate(chapters_arr)}
 
 
-def _save_chapter_embeddings(npz_path: Path, embeddings: dict[int, list]) -> None:
+def _save_chapter_embeddings(
+    npz_path: Path,
+    embeddings: dict[int, list],
+    *,
+    manifest: EmbeddingManifest,
+) -> None:
     """保存章节向量（整数 key + chapters 数组格式）。
 
     Args:
@@ -53,10 +64,13 @@ def _save_chapter_embeddings(npz_path: Path, embeddings: dict[int, list]) -> Non
     """
     if not embeddings:
         return
+    for vector in embeddings.values():
+        validate_vector(vector, manifest)
     chapters_sorted = sorted(embeddings.keys())
     vectors_matrix = np.array([embeddings[k] for k in chapters_sorted], dtype=np.float32)
     chapters_arr = np.array(chapters_sorted, dtype=np.int32)
     np.savez_compressed(str(npz_path), chapters=chapters_arr, vectors=vectors_matrix)
+    save_manifest(npz_path, manifest)
 
 
 # ============================================================
@@ -80,7 +94,12 @@ def _load_embeddings(npz_path: Path) -> dict[str, list]:
     return {str(k): vectors_arr[i].tolist() for i, k in enumerate(keys_arr)}
 
 
-def _save_embeddings(npz_path: Path, embeddings: dict[str, list]) -> None:
+def _save_embeddings(
+    npz_path: Path,
+    embeddings: dict[str, list],
+    *,
+    manifest: EmbeddingManifest,
+) -> None:
     """保存向量（字符串 key + keys 数组格式）。
 
     Args:
@@ -89,10 +108,13 @@ def _save_embeddings(npz_path: Path, embeddings: dict[str, list]) -> None:
     """
     if not embeddings:
         return
+    for vector in embeddings.values():
+        validate_vector(vector, manifest)
     keys_sorted = sorted(embeddings.keys())
     vectors_matrix = np.array([embeddings[k] for k in keys_sorted], dtype=np.float32)
     keys_arr = np.array(keys_sorted, dtype=np.str_)
     np.savez_compressed(str(npz_path), keys=keys_arr, vectors=vectors_matrix)
+    save_manifest(npz_path, manifest)
 
 
 def embed_chapters(material_id: str) -> None:
@@ -136,6 +158,7 @@ def embed_chapters(material_id: str) -> None:
     logger.info(f"待向量化: {len(pending)} 章（共 {len(chapters)} 章）")
 
     config = load_embedding_config()
+    manifest = manifest_from_config(config, "chapter-summary-v1")
     done = 0
     errors = 0
 
@@ -153,7 +176,11 @@ def embed_chapters(material_id: str) -> None:
                 errors += 1
                 continue
 
-        _save_chapter_embeddings(embeddings_npz, existing)
+        _save_chapter_embeddings(
+            embeddings_npz,
+            existing,
+            manifest=manifest,
+        )
         logger.info(f"已完成 {done}/{len(pending)} 章")
 
         if i + _BATCH_SIZE < len(pending):
@@ -244,6 +271,7 @@ def embed_characters(material_id: str) -> None:
     logger.info(f"[{material_id}] 待向量化人物: {len(pending)} 人（共 {len(profile_files)} 人）")
 
     config = load_embedding_config()
+    manifest = manifest_from_config(config, "character-profile-v1")
     done = 0
     errors = 0
 
@@ -258,11 +286,11 @@ def embed_characters(material_id: str) -> None:
 
         # 每 10 条保存一次
         if done % 10 == 0:
-            _save_embeddings(embeddings_npz, existing)
+            _save_embeddings(embeddings_npz, existing, manifest=manifest)
 
     # 最终保存
     if existing:
-        _save_embeddings(embeddings_npz, existing)
+        _save_embeddings(embeddings_npz, existing, manifest=manifest)
     _log_stats(existing)
     if errors > 0:
         logger.warning(f"[{material_id}] 人物向量化失败: {errors} 人")
@@ -371,6 +399,7 @@ def embed_worldbuilding(material_id: str) -> None:
     logger.info(f"[{material_id}] 待向量化世界观: {len(pending)} 条")
 
     config = load_embedding_config()
+    manifest = manifest_from_config(config, "worldbuilding-entity-v1")
     done = 0
     errors = 0
 
@@ -386,11 +415,11 @@ def embed_worldbuilding(material_id: str) -> None:
 
         # 每 10 条保存一次
         if done % 10 == 0:
-            _save_embeddings(embeddings_npz, existing)
+            _save_embeddings(embeddings_npz, existing, manifest=manifest)
 
     # 最终保存
     if existing:
-        _save_embeddings(embeddings_npz, existing)
+        _save_embeddings(embeddings_npz, existing, manifest=manifest)
     _log_stats(existing)
     if errors > 0:
         logger.warning(f"[{material_id}] 世界观向量化失败: {errors} 条")
@@ -414,6 +443,7 @@ def embed_outline(material_id: str) -> None:
     existing = _load_embeddings(embeddings_npz)
 
     config = load_embedding_config()
+    manifest = manifest_from_config(config, "outline-premise-beat-v1")
     done = 0
     errors = 0
 
@@ -488,7 +518,7 @@ def embed_outline(material_id: str) -> None:
 
     # 统一保存（premise + beats）
     if existing:
-        _save_embeddings(embeddings_npz, existing)
+        _save_embeddings(embeddings_npz, existing, manifest=manifest)
     _log_stats(existing)
     if errors > 0:
         logger.warning(f"[{material_id}] 大纲向量化失败: {errors} 条")

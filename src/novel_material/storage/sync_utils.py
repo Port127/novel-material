@@ -11,12 +11,17 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from novel_material.infra.progress import get_pipeline_logger
+from novel_material.storage.embedding_manifest import load_manifest, validate_vector
 
 logger = get_pipeline_logger()
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 
-def _load_embeddings_npz(npz_path: Path) -> dict:
+def _load_embeddings_npz(
+    npz_path: Path,
+    *,
+    return_manifest: bool = False,
+):
     """从 NPZ 文件加载向量。
 
     支持两种格式：
@@ -30,21 +35,36 @@ def _load_embeddings_npz(npz_path: Path) -> dict:
         dict: {key: embedding_list}
     """
     if not npz_path.exists():
-        return {}
-    data = np.load(str(npz_path))
-    vectors_arr = data["vectors"]
+        return ({}, None) if return_manifest else {}
 
-    # 章节格式（整数 key）
-    if "chapters" in data:
-        chapters_arr = data["chapters"]
-        return {str(int(ch)): vectors_arr[i].tolist() for i, ch in enumerate(chapters_arr)}
+    with np.load(str(npz_path)) as data:
+        vectors_arr = data["vectors"]
 
-    # 通用格式（字符串 key）
-    if "keys" in data:
-        keys_arr = data["keys"]
-        return {str(k): vectors_arr[i].tolist() for i, k in enumerate(keys_arr)}
+        if "chapters" in data:
+            chapters_arr = data["chapters"]
+            embeddings = {
+                str(int(ch)): vectors_arr[i].tolist()
+                for i, ch in enumerate(chapters_arr)
+            }
+        elif "keys" in data:
+            keys_arr = data["keys"]
+            embeddings = {
+                str(key): vectors_arr[i].tolist()
+                for i, key in enumerate(keys_arr)
+            }
+        else:
+            embeddings = {}
 
-    return {}
+    manifest = load_manifest(npz_path)
+    if manifest is None:
+        logger.warning(f"Embedding 缓存 legacy-unverified: {npz_path}")
+    else:
+        for vector in embeddings.values():
+            validate_vector(vector, manifest)
+
+    if return_manifest:
+        return embeddings, manifest
+    return embeddings
 
 
 class DatabaseConfigError(Exception):
