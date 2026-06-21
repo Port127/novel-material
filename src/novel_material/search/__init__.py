@@ -6,6 +6,16 @@ from .world import search_worldbuilding
 from .detail import search_detail
 from .chapter import search_chapters
 from .event import search_events
+from .models import (
+    DocumentType,
+    NeighborContext,
+    SearchMode,
+    SearchRequest,
+    SearchResponse,
+    SearchResult,
+    SearchTrace,
+    SourceLocation,
+)
 
 __all__ = [
     "search_outlines",
@@ -14,4 +24,12 @@ __all__ = [
     "search_detail",
     "search_chapters",
     "search_events",
+    "DocumentType",
+    "NeighborContext",
+    "SearchMode",
+    "SearchRequest",
+    "SearchResponse",
+    "SearchResult",
+    "SearchTrace",
+    "SourceLocation",
 ]
