@@ -3,6 +3,23 @@
 from novel_material.infra.common import is_special_chapter_type
 from novel_material.infra.yaml_io import load_yaml, load_yaml_list
 from novel_material.storage.sync_utils import logger, _load_embeddings_npz
+from novel_material.search.text import build_search_text, tokenize_for_search
+
+
+def build_chapter_search_tokens(chapter: dict) -> str:
+    """构造章节词法检索文本。"""
+    text = build_search_text(
+        chapter.get("title"),
+        chapter.get("summary"),
+        chapter.get("key_event"),
+        chapter.get("plot_progress"),
+        chapter.get("chapter_functions", chapter.get("chapter_function", [])),
+        chapter.get("emotional_tone"),
+        chapter.get("scene_type"),
+        chapter.get("technique"),
+        chapter.get("hook_type"),
+    )
+    return tokenize_for_search(text)
 
 
 def sync_chapters(conn, novel_dir, material_id):
@@ -40,6 +57,7 @@ def sync_chapters(conn, novel_dir, material_id):
                 ch_num = ch.get("chapter")
                 ch_type = ch.get("type", "normal")
                 vec = embeddings.get(ch_num)
+                search_tokens = build_chapter_search_tokens(ch)
 
                 if vec is not None:
                     cur.execute("""
@@ -49,7 +67,53 @@ def sync_chapters(conn, novel_dir, material_id):
                             tension_change, emotion_transition, plot_progress,
                             chapter_functions, characters_appear,
                             emotional_tone, scene_type, technique, hook_type,
-                            summary_embedding
+                            summary_embedding, search_tokens
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (material_id, chapter) DO UPDATE SET
+                            title = EXCLUDED.title,
+                            type = EXCLUDED.type,
+                            summary = EXCLUDED.summary,
+                            word_count = EXCLUDED.word_count,
+                            tension_level = EXCLUDED.tension_level,
+                            pacing = EXCLUDED.pacing,
+                            setting = EXCLUDED.setting,
+                            key_plot_point = EXCLUDED.key_plot_point,
+                            key_event = EXCLUDED.key_event,
+                            tension_change = EXCLUDED.tension_change,
+                            emotion_transition = EXCLUDED.emotion_transition,
+                            plot_progress = EXCLUDED.plot_progress,
+                            chapter_functions = EXCLUDED.chapter_functions,
+                            characters_appear = EXCLUDED.characters_appear,
+                            emotional_tone = EXCLUDED.emotional_tone,
+                            scene_type = EXCLUDED.scene_type,
+                            technique = EXCLUDED.technique,
+                            hook_type = EXCLUDED.hook_type,
+                            summary_embedding = EXCLUDED.summary_embedding,
+                            search_tokens = EXCLUDED.search_tokens
+                    """, (
+                        material_id, ch_num,
+                        ch.get("title"), ch_type, ch.get("summary"), ch.get("word_count"),
+                        ch.get("tension_level"), ch.get("pacing"),
+                        ch.get("setting", []), ch.get("key_plot_point"), ch.get("key_event"),
+                        ch.get("tension_change"), ch.get("emotion_transition"), ch.get("plot_progress"),
+                        ch.get("chapter_function", ch.get("chapter_functions", [])),
+                        ch.get("characters_appear", []),
+                        ch.get("emotional_tone", []),
+                        ch.get("scene_type", []),
+                        ch.get("technique", []),
+                        ch.get("hook_type"),
+                        vec,
+                        search_tokens,
+                    ))
+                else:
+                    cur.execute("""
+                        INSERT INTO chapters (
+                            material_id, chapter, title, type, summary, word_count,
+                            tension_level, pacing, setting, key_plot_point, key_event,
+                            tension_change, emotion_transition, plot_progress,
+                            chapter_functions, characters_appear,
+                            emotional_tone, scene_type, technique, hook_type,
+                            search_tokens
                         ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         ON CONFLICT (material_id, chapter) DO UPDATE SET
                             title = EXCLUDED.title,
@@ -70,7 +134,7 @@ def sync_chapters(conn, novel_dir, material_id):
                             scene_type = EXCLUDED.scene_type,
                             technique = EXCLUDED.technique,
                             hook_type = EXCLUDED.hook_type,
-                            summary_embedding = EXCLUDED.summary_embedding
+                            search_tokens = EXCLUDED.search_tokens
                     """, (
                         material_id, ch_num,
                         ch.get("title"), ch_type, ch.get("summary"), ch.get("word_count"),
@@ -83,48 +147,7 @@ def sync_chapters(conn, novel_dir, material_id):
                         ch.get("scene_type", []),
                         ch.get("technique", []),
                         ch.get("hook_type"),
-                        vec,
-                    ))
-                else:
-                    cur.execute("""
-                        INSERT INTO chapters (
-                            material_id, chapter, title, type, summary, word_count,
-                            tension_level, pacing, setting, key_plot_point, key_event,
-                            tension_change, emotion_transition, plot_progress,
-                            chapter_functions, characters_appear,
-                            emotional_tone, scene_type, technique, hook_type
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                        ON CONFLICT (material_id, chapter) DO UPDATE SET
-                            title = EXCLUDED.title,
-                            type = EXCLUDED.type,
-                            summary = EXCLUDED.summary,
-                            word_count = EXCLUDED.word_count,
-                            tension_level = EXCLUDED.tension_level,
-                            pacing = EXCLUDED.pacing,
-                            setting = EXCLUDED.setting,
-                            key_plot_point = EXCLUDED.key_plot_point,
-                            key_event = EXCLUDED.key_event,
-                            tension_change = EXCLUDED.tension_change,
-                            emotion_transition = EXCLUDED.emotion_transition,
-                            plot_progress = EXCLUDED.plot_progress,
-                            chapter_functions = EXCLUDED.chapter_functions,
-                            characters_appear = EXCLUDED.characters_appear,
-                            emotional_tone = EXCLUDED.emotional_tone,
-                            scene_type = EXCLUDED.scene_type,
-                            technique = EXCLUDED.technique,
-                            hook_type = EXCLUDED.hook_type
-                    """, (
-                        material_id, ch_num,
-                        ch.get("title"), ch_type, ch.get("summary"), ch.get("word_count"),
-                        ch.get("tension_level"), ch.get("pacing"),
-                        ch.get("setting", []), ch.get("key_plot_point"), ch.get("key_event"),
-                        ch.get("tension_change"), ch.get("emotion_transition"), ch.get("plot_progress"),
-                        ch.get("chapter_function", ch.get("chapter_functions", [])),
-                        ch.get("characters_appear", []),
-                        ch.get("emotional_tone", []),
-                        ch.get("scene_type", []),
-                        ch.get("technique", []),
-                        ch.get("hook_type"),
+                        search_tokens,
                     ))
         synced += len(batch)
         logger.info(f"已同步章节 {synced}/{len(chapters)}")

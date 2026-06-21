@@ -3,6 +3,18 @@ import json
 
 from novel_material.infra.yaml_io import load_yaml_list
 from novel_material.storage.sync_utils import logger, _load_embeddings_npz
+from novel_material.search.text import build_search_text, tokenize_for_search
+
+
+def build_worldbuilding_search_tokens(entity: dict, entity_type: str) -> str:
+    """构造世界观实体词法检索文本。"""
+    text = build_search_text(
+        entity.get("name"),
+        entity_type,
+        entity.get("description"),
+        entity.get("properties"),
+    )
+    return tokenize_for_search(text)
 
 
 def sync_worldbuilding(conn, novel_dir, material_id):
@@ -67,20 +79,22 @@ def sync_worldbuilding(conn, novel_dir, material_id):
                 entity_name = entity.get("name", "")
                 vec_key = f"{entity_type}:{entity_name}"
                 vec = embeddings.get(vec_key)
+                search_tokens = build_worldbuilding_search_tokens(entity, entity_type)
 
                 if vec is not None:
                     cur.execute("""
                         INSERT INTO worldbuilding_entities (
                             material_id, entity_type, name, description,
                             properties, first_appearance, importance,
-                            description_embedding
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                            description_embedding, search_tokens
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                         ON CONFLICT (material_id, entity_type, name) DO UPDATE SET
                             description = EXCLUDED.description,
                             properties = EXCLUDED.properties,
                             first_appearance = EXCLUDED.first_appearance,
                             importance = EXCLUDED.importance,
-                            description_embedding = EXCLUDED.description_embedding
+                            description_embedding = EXCLUDED.description_embedding,
+                            search_tokens = EXCLUDED.search_tokens
                     """, (
                         material_id,
                         entity_type,
@@ -90,19 +104,21 @@ def sync_worldbuilding(conn, novel_dir, material_id):
                         entity.get("first_appearance"),
                         entity.get("importance", "secondary"),
                         vec,
+                        search_tokens,
                     ))
                     synced_with_vec += 1
                 else:
                     cur.execute("""
                         INSERT INTO worldbuilding_entities (
                             material_id, entity_type, name, description,
-                            properties, first_appearance, importance
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                            properties, first_appearance, importance, search_tokens
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                         ON CONFLICT (material_id, entity_type, name) DO UPDATE SET
                             description = EXCLUDED.description,
                             properties = EXCLUDED.properties,
                             first_appearance = EXCLUDED.first_appearance,
-                            importance = EXCLUDED.importance
+                            importance = EXCLUDED.importance,
+                            search_tokens = EXCLUDED.search_tokens
                     """, (
                         material_id,
                         entity_type,
@@ -111,6 +127,7 @@ def sync_worldbuilding(conn, novel_dir, material_id):
                         properties_value,
                         entity.get("first_appearance"),
                         entity.get("importance", "secondary"),
+                        search_tokens,
                     ))
                 synced += 1
 

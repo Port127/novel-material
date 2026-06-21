@@ -4,6 +4,21 @@ import json
 from novel_material.infra.yaml_io import load_yaml
 from novel_material.storage.sync_utils import logger, _load_embeddings_npz
 from novel_material.storage.sync_chapters import sync_character_appearances
+from novel_material.search.text import build_search_text, tokenize_for_search
+
+
+def build_character_search_tokens(profile: dict) -> str:
+    """构造人物档案词法检索文本。"""
+    text = build_search_text(
+        profile.get("name"),
+        profile.get("archetype"),
+        profile.get("role"),
+        profile.get("arc_summary"),
+        profile.get("narrative_function"),
+        profile.get("description"),
+        profile.get("psychology"),
+    )
+    return tokenize_for_search(text)
 
 
 def sync_characters(conn, novel_dir, material_id):
@@ -36,6 +51,7 @@ def sync_characters(conn, novel_dir, material_id):
             if not char_name:
                 continue
             vec = embeddings.get(char_name)
+            search_tokens = build_character_search_tokens(profile)
 
             if vec is not None:
                 cur.execute("""
@@ -44,8 +60,8 @@ def sync_characters(conn, novel_dir, material_id):
                         moral_spectrum, arc_summary, narrative_function,
                         psychology, first_appearance, last_appearance,
                         appearance_count, file_path, description,
-                        arc_summary_embedding
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        arc_summary_embedding, search_tokens
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (material_id, name) DO UPDATE SET
                         role = EXCLUDED.role,
                         archetype = EXCLUDED.archetype,
@@ -58,7 +74,8 @@ def sync_characters(conn, novel_dir, material_id):
                         appearance_count = EXCLUDED.appearance_count,
                         description = EXCLUDED.description,
                         file_path = EXCLUDED.file_path,
-                        arc_summary_embedding = EXCLUDED.arc_summary_embedding
+                        arc_summary_embedding = EXCLUDED.arc_summary_embedding,
+                        search_tokens = EXCLUDED.search_tokens
                 """, (
                     material_id,
                     char_name,
@@ -74,6 +91,7 @@ def sync_characters(conn, novel_dir, material_id):
                     str(profile_file),
                     profile.get("description"),
                     vec,
+                    search_tokens,
                 ))
             else:
                 cur.execute("""
@@ -81,8 +99,8 @@ def sync_characters(conn, novel_dir, material_id):
                         material_id, name, role, archetype,
                         moral_spectrum, arc_summary, narrative_function,
                         psychology, first_appearance, last_appearance,
-                        appearance_count, file_path, description
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        appearance_count, file_path, description, search_tokens
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (material_id, name) DO UPDATE SET
                         role = EXCLUDED.role,
                         archetype = EXCLUDED.archetype,
@@ -94,7 +112,8 @@ def sync_characters(conn, novel_dir, material_id):
                         last_appearance = EXCLUDED.last_appearance,
                         appearance_count = EXCLUDED.appearance_count,
                         description = EXCLUDED.description,
-                        file_path = EXCLUDED.file_path
+                        file_path = EXCLUDED.file_path,
+                        search_tokens = EXCLUDED.search_tokens
                 """, (
                     material_id,
                     char_name,
@@ -109,6 +128,7 @@ def sync_characters(conn, novel_dir, material_id):
                     profile.get("appearance_count", 0),
                     str(profile_file),
                     profile.get("description"),
+                    search_tokens,
                 ))
 
     logger.info(f"已同步人物: {len(profile_files)} 个，其中 {len(embeddings)} 条含向量")

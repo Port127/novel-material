@@ -2,6 +2,41 @@
 
 from novel_material.infra.yaml_io import load_yaml
 from novel_material.storage.sync_utils import logger, _load_embeddings_npz
+from novel_material.search.text import build_search_text, tokenize_for_search
+
+
+def build_outline_sequence_search_tokens(
+    sequence_data: dict,
+    *,
+    act: int | None,
+    sequence: int | None,
+) -> str:
+    """构造大纲序列词法检索文本。"""
+    text = build_search_text(
+        sequence_data.get("title"),
+        sequence_data.get("description"),
+        f"第{act}幕" if act is not None else None,
+        f"序列{sequence}" if sequence is not None else None,
+    )
+    return tokenize_for_search(text)
+
+
+def build_outline_beat_search_tokens(
+    beat_data: dict,
+    *,
+    act: int | None,
+    sequence: int | None,
+    beat: int | None,
+) -> str:
+    """构造大纲节拍词法检索文本。"""
+    text = build_search_text(
+        beat_data.get("title"),
+        beat_data.get("description"),
+        f"第{act}幕" if act is not None else None,
+        f"序列{sequence}" if sequence is not None else None,
+        f"节拍{beat}" if beat is not None else None,
+    )
+    return tokenize_for_search(text)
 
 
 def sync_outline(conn, novel_dir, material_id):
@@ -124,13 +159,18 @@ def sync_outline(conn, novel_dir, material_id):
                 cur.execute("""
                     INSERT INTO outline_sequences (
                         material_id, act, sequence, title,
-                        chapters_start, chapters_end, description
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        chapters_start, chapters_end, description, search_tokens
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 """, (
                     material_id, act_num, seq_num,
                     seq_data.get("title"),
                     chapters_start, chapters_end,
                     seq_data.get("description"),
+                    build_outline_sequence_search_tokens(
+                        seq_data,
+                        act=act_num,
+                        sequence=seq_num,
+                    ),
                 ))
                 seq_count += 1
 
@@ -144,8 +184,8 @@ def sync_outline(conn, novel_dir, material_id):
                             INSERT INTO outline_beats (
                                 material_id, act, sequence, beat,
                                 title, chapter, description, tension,
-                                description_embedding
-                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                description_embedding, search_tokens
+                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         """, (
                             material_id, act_num, seq_num, beat_num,
                             beat_data.get("title"),
@@ -153,20 +193,32 @@ def sync_outline(conn, novel_dir, material_id):
                             beat_data.get("description"),
                             beat_data.get("tension"),
                             beat_vec,
+                            build_outline_beat_search_tokens(
+                                beat_data,
+                                act=act_num,
+                                sequence=seq_num,
+                                beat=beat_num,
+                            ),
                         ))
                         beat_with_vec += 1
                     else:
                         cur.execute("""
                             INSERT INTO outline_beats (
                                 material_id, act, sequence, beat,
-                                title, chapter, description, tension
-                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                                title, chapter, description, tension, search_tokens
+                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                         """, (
                             material_id, act_num, seq_num, beat_num,
                             beat_data.get("title"),
                             beat_data.get("chapter"),
                             beat_data.get("description"),
                             beat_data.get("tension"),
+                            build_outline_beat_search_tokens(
+                                beat_data,
+                                act=act_num,
+                                sequence=seq_num,
+                                beat=beat_num,
+                            ),
                         ))
                     beat_count += 1
 
