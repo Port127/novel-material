@@ -165,3 +165,35 @@ def test_service_applies_context_enricher_after_diversity():
     assert received == ["a"]
     assert response.results[0].rank_reason == "已补充上下文"
     assert response.trace.stages[-1] == "context"
+
+
+def test_reranker_failure_returns_fused_order_and_records_degradation():
+    class FailingReranker:
+        def rerank(self, *_args, **_kwargs):
+            raise RuntimeError("invalid JSON")
+
+    service = SearchService(
+        lexical=lambda _request: [result("a", "n1")],
+        semantic=lambda _request: [result("b", "n2"), result("a", "n1")],
+        structured=lambda _request: [],
+        reranker=FailingReranker(),
+    )
+
+    response = service.search(SearchRequest(query="宗门", limit=2))
+
+    assert [item.result_id for item in response.results] == ["a", "b"]
+    assert response.trace.degraded is True
+    assert any("rerank_failed" in reason for reason in response.trace.degradation_reasons)
+
+
+def test_default_service_rejects_unknown_configured_reranker(monkeypatch):
+    service_module = __import__("novel_material.search.service", fromlist=["service"])
+    monkeypatch.setattr(
+        service_module,
+        "get_settings",
+        lambda: {"SEARCH_RERANKER": "unknown"},
+        raising=False,
+    )
+
+    with pytest.raises(ValueError, match="SEARCH_RERANKER"):
+        create_default_search_service(context_enricher=None)

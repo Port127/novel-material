@@ -98,6 +98,17 @@ LLM_PRICE_INPUT_1K: 0.0004
 LLM_PRICE_OUTPUT_1K: 0.0012
 
 # ──────────────────────────────────────────────
+# 质量优先检索
+# ──────────────────────────────────────────────
+
+# 尚未完成人工 Golden Query 对比，默认保持确定性的融合排序
+SEARCH_RERANKER: "identity"
+SEARCH_RERANK_BATCH_SIZE: 20
+SEARCH_RERANK_CANDIDATES: 60
+SEARCH_TIME_BUDGET_SECONDS: 180
+SEARCH_PER_MATERIAL_LIMIT: 3
+
+# ──────────────────────────────────────────────
 # 路径配置（留空则使用项目内默认值）
 # ──────────────────────────────────────────────
 

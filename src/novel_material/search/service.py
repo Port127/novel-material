@@ -32,6 +32,9 @@ from novel_material.search.models import (
     SearchResult,
     SearchTrace,
 )
+from novel_material.search.rerank import Reranker
+from novel_material.search.rerank import LLMReranker
+from novel_material.infra.config import get_settings
 from novel_material.search.outline import (
     retrieve_outlines_lexical,
     retrieve_outlines_semantic,
@@ -111,6 +114,8 @@ class SearchService:
         rrf_k: int = 60,
         clock: Callable[[], float] = perf_counter,
         context_enricher: ContextEnricher | None = None,
+        reranker: Reranker | None = None,
+        rerank_candidates: int = 60,
     ) -> None:
         self._retrievers = {
             "lexical": lexical,
@@ -121,6 +126,8 @@ class SearchService:
         self._rrf_k = rrf_k
         self._clock = clock
         self._context_enricher = context_enricher
+        self._reranker = reranker
+        self._rerank_candidates = rerank_candidates
 
     def search(self, request: SearchRequest) -> SearchResponse:
         """执行请求；质量模式允许单路失败，精确模式只走语义召回。"""
@@ -164,8 +171,27 @@ class SearchService:
             fused = reciprocal_rank_fusion(ranked_results, k=self._rrf_k)
             trace.elapsed_ms["fusion"] = (self._clock() - fusion_started) * 1000
             trace.stages.append("fusion")
+            ranked = fused
+            if self._reranker is not None:
+                rerank_started = self._clock()
+                remaining = request.time_budget_seconds - (rerank_started - started_at)
+                if remaining > 0:
+                    try:
+                        ranked = self._reranker.rerank(
+                            request.query,
+                            fused[: self._rerank_candidates],
+                            time_budget_seconds=remaining,
+                        )
+                        trace.elapsed_ms["rerank"] = (
+                            self._clock() - rerank_started
+                        ) * 1000
+                        trace.stages.append("rerank")
+                    except Exception as exc:
+                        _degrade(trace, f"rerank_failed：{exc}")
+                else:
+                    _degrade(trace, "达到时间预算，跳过 rerank 阶段")
             results = diversify_results(
-                fused,
+                ranked,
                 limit=request.limit,
                 per_material_limit=self._per_material_limit,
                 material_id=request.filters.get("material_id"),
@@ -192,7 +218,24 @@ def _degrade(trace: SearchTrace, reason: str) -> None:
 
 def create_default_search_service(**kwargs) -> SearchService:
     """创建按 ``document_types`` 路由项目内置召回器的搜索服务。"""
+    settings = get_settings()
     context_enricher = kwargs.pop("context_enricher", enrich_results_from_storage)
+    kwargs.setdefault(
+        "per_material_limit",
+        int(settings.get("SEARCH_PER_MATERIAL_LIMIT", 3)),
+    )
+    kwargs.setdefault(
+        "rerank_candidates",
+        int(settings.get("SEARCH_RERANK_CANDIDATES", 60)),
+    )
+    if "reranker" not in kwargs:
+        reranker_name = str(settings.get("SEARCH_RERANKER", "identity")).lower()
+        if reranker_name == "llm":
+            kwargs["reranker"] = LLMReranker(
+                batch_size=int(settings.get("SEARCH_RERANK_BATCH_SIZE", 20))
+            )
+        elif reranker_name != "identity":
+            raise ValueError(f"不支持的 SEARCH_RERANKER：{reranker_name}")
 
     def route(stage: str) -> Retriever:
         def retrieve(request: SearchRequest) -> list[SearchResult]:
