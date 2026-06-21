@@ -6,9 +6,25 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from novel_material.storage.init_db import init_db
 from novel_material.storage.init_data import init_data
 from novel_material.storage.sync import sync_novel, sync_all
+from novel_material.storage.migrate import MigrationError, run_migrations
 
 app = typer.Typer(help="数据库和存储管理")
 console = Console()
+
+
+@app.command("migrate")
+def cmd_migrate():
+    """按版本顺序升级已有数据库结构。"""
+    try:
+        versions = run_migrations()
+    except MigrationError as exc:
+        console.print(f"[red]数据库迁移失败：{exc}[/red]")
+        raise typer.Exit(1) from exc
+
+    if versions:
+        console.print(f"[green]已应用迁移: {', '.join(versions)}[/green]")
+    else:
+        console.print("[green]无待执行迁移[/green]")
 
 
 @app.command("init-db")

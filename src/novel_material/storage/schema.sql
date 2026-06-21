@@ -3,6 +3,8 @@
 
 -- 启用 pgvector 扩展
 CREATE EXTENSION IF NOT EXISTS vector;
+-- 启用名称和标题模糊匹配
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
 -- ============================================================
 -- novels 表：小说元信息
@@ -25,6 +27,9 @@ CREATE TABLE IF NOT EXISTS novels (
     hook_count INTEGER,
     subplot_count INTEGER,
     tags JSONB,                          -- 小说级标签
+    search_tokens TEXT NOT NULL DEFAULT '',
+    search_document tsvector GENERATED ALWAYS AS
+        (to_tsvector('simple', search_tokens)) STORED,
     built_at TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -57,6 +62,9 @@ CREATE TABLE IF NOT EXISTS chapters (
     scene_type TEXT[],                   -- 场景类型数组
     technique TEXT[],                    -- 叙事技巧数组
     hook_type TEXT,                      -- 章末钩子类型
+    search_tokens TEXT NOT NULL DEFAULT '',
+    search_document tsvector GENERATED ALWAYS AS
+        (to_tsvector('simple', search_tokens)) STORED,
     PRIMARY KEY (material_id, chapter),
     FOREIGN KEY (material_id) REFERENCES novels(material_id) ON DELETE CASCADE
 );
@@ -76,6 +84,9 @@ CREATE TABLE IF NOT EXISTS outline_sequences (
     chapters_start INTEGER,
     chapters_end INTEGER,
     description TEXT,
+    search_tokens TEXT NOT NULL DEFAULT '',
+    search_document tsvector GENERATED ALWAYS AS
+        (to_tsvector('simple', search_tokens)) STORED,
     FOREIGN KEY (material_id) REFERENCES novels(material_id) ON DELETE CASCADE
 );
 
@@ -93,6 +104,9 @@ CREATE TABLE IF NOT EXISTS outline_beats (
     description TEXT,
     description_embedding vector(4096),
     tension INTEGER,
+    search_tokens TEXT NOT NULL DEFAULT '',
+    search_document tsvector GENERATED ALWAYS AS
+        (to_tsvector('simple', search_tokens)) STORED,
     FOREIGN KEY (material_id) REFERENCES novels(material_id) ON DELETE CASCADE
 );
 
@@ -115,6 +129,9 @@ CREATE TABLE IF NOT EXISTS characters (
     appearance_count INTEGER DEFAULT 0,
     file_path TEXT,
     description TEXT,
+    search_tokens TEXT NOT NULL DEFAULT '',
+    search_document tsvector GENERATED ALWAYS AS
+        (to_tsvector('simple', search_tokens)) STORED,
     FOREIGN KEY (material_id) REFERENCES novels(material_id) ON DELETE CASCADE,
     UNIQUE(material_id, name)
 );
@@ -145,6 +162,9 @@ CREATE TABLE IF NOT EXISTS worldbuilding_entities (
     properties JSONB,                    -- 类型相关的属性
     first_appearance TEXT,
     importance TEXT,                     -- primary/secondary/minor
+    search_tokens TEXT NOT NULL DEFAULT '',
+    search_document tsvector GENERATED ALWAYS AS
+        (to_tsvector('simple', search_tokens)) STORED,
     FOREIGN KEY (material_id) REFERENCES novels(material_id) ON DELETE CASCADE,
     UNIQUE(material_id, entity_type, name)
 );
@@ -164,20 +184,34 @@ CREATE INDEX IF NOT EXISTS idx_chapters_emotional_tone ON chapters USING GIN(emo
 CREATE INDEX IF NOT EXISTS idx_chapters_scene_type ON chapters USING GIN(scene_type);
 CREATE INDEX IF NOT EXISTS idx_chapters_technique ON chapters USING GIN(technique);
 CREATE INDEX IF NOT EXISTS idx_chapters_hook_type ON chapters(hook_type);
+CREATE INDEX IF NOT EXISTS idx_chapters_search_document ON chapters USING GIN(search_document);
+CREATE INDEX IF NOT EXISTS idx_chapters_title_trgm ON chapters USING GIN(title gin_trgm_ops);
+
+-- 小说检索索引
+CREATE INDEX IF NOT EXISTS idx_novels_search_document ON novels USING GIN(search_document);
+CREATE INDEX IF NOT EXISTS idx_novels_name_trgm ON novels USING GIN(name gin_trgm_ops);
 
 -- 人物检索索引
 CREATE INDEX IF NOT EXISTS idx_characters_material ON characters(material_id);
 CREATE INDEX IF NOT EXISTS idx_characters_name ON characters(name);
 CREATE INDEX IF NOT EXISTS idx_characters_archetype ON characters(archetype);
 CREATE INDEX IF NOT EXISTS idx_characters_role ON characters(role);
+CREATE INDEX IF NOT EXISTS idx_characters_search_document ON characters USING GIN(search_document);
+CREATE INDEX IF NOT EXISTS idx_characters_name_trgm ON characters USING GIN(name gin_trgm_ops);
 
 -- 大纲检索索引
 CREATE INDEX IF NOT EXISTS idx_sequences_material ON outline_sequences(material_id);
 CREATE INDEX IF NOT EXISTS idx_beats_material ON outline_beats(material_id);
+CREATE INDEX IF NOT EXISTS idx_outline_sequences_search_document ON outline_sequences USING GIN(search_document);
+CREATE INDEX IF NOT EXISTS idx_outline_sequences_title_trgm ON outline_sequences USING GIN(title gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_outline_beats_search_document ON outline_beats USING GIN(search_document);
+CREATE INDEX IF NOT EXISTS idx_outline_beats_title_trgm ON outline_beats USING GIN(title gin_trgm_ops);
 
 -- 世界观检索索引
 CREATE INDEX IF NOT EXISTS idx_wb_material ON worldbuilding_entities(material_id);
 CREATE INDEX IF NOT EXISTS idx_wb_type ON worldbuilding_entities(entity_type);
+CREATE INDEX IF NOT EXISTS idx_worldbuilding_search_document ON worldbuilding_entities USING GIN(search_document);
+CREATE INDEX IF NOT EXISTS idx_worldbuilding_name_trgm ON worldbuilding_entities USING GIN(name gin_trgm_ops);
 
 -- 向量搜索索引
 -- 注意: pgvector (IVFFLAT/HNSW) 不支持超过 2000 维的向量索引
@@ -256,4 +290,3 @@ CREATE TABLE IF NOT EXISTS free_tags_stats (
 );
 
 CREATE INDEX IF NOT EXISTS idx_free_tags_count ON free_tags_stats(occurrence_count DESC);
-
