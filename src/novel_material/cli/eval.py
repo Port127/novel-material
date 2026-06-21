@@ -1,5 +1,6 @@
 """Eval 子命令：检索质量评测。"""
 
+from dataclasses import replace
 from pathlib import Path
 
 import typer
@@ -121,6 +122,12 @@ def prepare(
             ),
             output,
             limit=limit,
+            minimum_candidates=min(10, limit),
+            relaxed_search_callable=lambda case, candidate_limit: _search_case(
+                replace(case, filters={}),
+                candidate_limit,
+                mode,
+            ),
         )
     except Exception as exc:
         console.print(f"[red]候选导出失败：{exc}[/red]")
