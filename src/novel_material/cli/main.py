@@ -8,6 +8,7 @@ from .tags import app as tags_app
 from .material import app as material_app
 from .validate import app as validate_app
 from .storage import app as storage_app
+from .eval import app as eval_app
 
 app = typer.Typer(
     name="nm",
@@ -23,6 +24,7 @@ app.add_typer(tags_app, name="tags", help="标签管理")
 app.add_typer(material_app, name="material", help="素材管理")
 app.add_typer(validate_app, name="validate", help="数据校验")
 app.add_typer(storage_app, name="storage", help="数据库和存储管理")
+app.add_typer(eval_app, name="eval", help="质量评测")
 
 
 @app.command()
