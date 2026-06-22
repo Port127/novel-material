@@ -86,3 +86,14 @@ def validate_material_insights(material_id: str) -> list[str]:
         for error in validate_insight(insight, profile):
             errors.append(f"{path.name}: {error}")
     return errors
+
+
+def validate_insight_file(path, profile: AnalysisProfile) -> list[str]:
+    """读取并校验单个 insight 文件；读取失败也视为无效。"""
+    try:
+        insight = load_yaml(path)
+    except Exception as exc:
+        return [f"无法读取 insight: {exc}"]
+    if not isinstance(insight, dict):
+        return ["insight 必须是对象"]
+    return validate_insight(insight, profile)

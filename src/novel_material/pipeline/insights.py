@@ -17,6 +17,14 @@ from novel_material.pipeline.insights_prompt import (
 )
 from novel_material.pipeline.profile_resolver import resolve_profile_names
 from novel_material.validation.insights import validate_insight
+from novel_material.validation.insights import validate_insight_file
+from novel_material.runtime.context import current_context, new_id
+from novel_material.runtime.contracts import (
+    Diagnostic,
+    ProgressCounts,
+    RunStatus,
+    StageResult,
+)
 
 logger = get_pipeline_logger()
 
@@ -115,12 +123,12 @@ def generate_chapter_insights(
     provider: str | None = None,
     explicit_profiles: list[str] | None = None,
     progress_callback: Callable[[int, int, str], None] | None = None,
-) -> bool:
+) -> StageResult:
     """Generate genre-aware insights for analyzed chapters."""
     novel_dir = NOVELS_DIR / material_id
     if not novel_dir.exists():
         logger.error(f"[{material_id}] 小说目录不存在: {novel_dir}")
-        return False
+        return _insight_result(RunStatus.FAILED, diagnostics=(Diagnostic(code="material_not_found", message=f"小说目录不存在: {novel_dir}", severity="error"),))
 
     meta_file = novel_dir / "meta.yaml"
     meta = load_yaml(meta_file) if meta_file.exists() else {}
@@ -130,7 +138,7 @@ def generate_chapter_insights(
     chapters_file = novel_dir / "chapters.yaml"
     if not chapters_file.exists():
         logger.error(f"[{material_id}] chapters.yaml 不存在，请先运行 nm pipeline analyze")
-        return False
+        return _insight_result(RunStatus.FAILED, diagnostics=(Diagnostic(code="chapters_missing", message="chapters.yaml 不存在", severity="error"),))
 
     chapters = [
         ch for ch in load_yaml_list(chapters_file)
@@ -141,7 +149,7 @@ def generate_chapter_insights(
     total = len(chapters)
     if total == 0:
         logger.warning(f"[{material_id}] 没有可分析章节")
-        return True
+        return _insight_result(RunStatus.SUCCESS)
 
     insights_dir = novel_dir / "chapter_insights"
     insights_dir.mkdir(exist_ok=True)
@@ -152,9 +160,17 @@ def generate_chapter_insights(
 
     pending = [
         chapter for chapter in chapters
-        if not get_insight_file(novel_dir, int(chapter["chapter"])).exists()
+        if (
+            not get_insight_file(novel_dir, int(chapter["chapter"])).exists()
+            or validate_insight_file(
+                get_insight_file(novel_dir, int(chapter["chapter"])), profile
+            )
+        )
     ]
     done = total - len(pending)
+    succeeded = done
+    failed = 0
+    diagnostics: list[Diagnostic] = []
     if progress_callback:
         progress_callback(done, total, f"断点续传：已完成 {done} 章")
 
@@ -168,7 +184,7 @@ def generate_chapter_insights(
                 context=f"{material_id} insights_batch#{batch_idx}",
             )
         except Exception as exc:
-            logger.warning(f"[{material_id}] insight 批次 {batch_idx} 失败，写入失败占位并继续: {exc}")
+            logger.warning(f"[{material_id}] insight 批次 {batch_idx} 失败并继续: {exc}")
             result = {}
 
         by_chapter = {
@@ -180,6 +196,13 @@ def generate_chapter_insights(
         for chapter in batch:
             ch_num = int(chapter["chapter"])
             raw = by_chapter.get(ch_num, {})
+            if not raw:
+                diagnostics.append(Diagnostic(code="insight_missing_from_batch", message=f"批次 {batch_idx} 未返回第 {ch_num} 章", severity="error", retryable=True))
+                failed += 1
+                done += 1
+                if progress_callback:
+                    progress_callback(done, total, f"insight 批次 {batch_idx}: 第 {ch_num} 章失败")
+                continue
             repaired = False
             insight = {
                 **raw,
@@ -215,8 +238,13 @@ def generate_chapter_insights(
                 }
                 errors = validate_insight(insight, profile)
 
-            if not raw:
-                errors = [f"批次 {batch_idx} 未返回本章结果"]
+            if errors:
+                diagnostics.append(Diagnostic(code="insight_schema_invalid", message=f"第 {ch_num} 章 repair 后仍有 {len(errors)} 项错误", severity="error", retryable=True))
+                failed += 1
+                done += 1
+                if progress_callback:
+                    progress_callback(done, total, f"insight 批次 {batch_idx}: 第 {ch_num} 章无效")
+                continue
 
             quality = insight.get("quality")
             if not isinstance(quality, dict):
@@ -226,9 +254,45 @@ def generate_chapter_insights(
             insight["quality"]["validation_errors"] = errors
             _cap_confidence(insight, errors)
             save_yaml(get_insight_file(novel_dir, ch_num), insight)
+            succeeded += 1
 
             done += 1
             if progress_callback:
                 progress_callback(done, total, f"完成 insight 批次 {batch_idx}: 第 {ch_num} 章")
 
-    return True
+    status = RunStatus.SUCCESS
+    if failed:
+        status = RunStatus.DEGRADED if succeeded else RunStatus.FAILED
+    return _insight_result(
+        status,
+        expected=total,
+        processed=total,
+        succeeded=succeeded,
+        failed=failed,
+        diagnostics=tuple(diagnostics),
+    )
+
+
+def _insight_result(
+    status: RunStatus,
+    *,
+    expected: int = 0,
+    processed: int = 0,
+    succeeded: int = 0,
+    failed: int = 0,
+    diagnostics: tuple[Diagnostic, ...] = (),
+) -> StageResult:
+    context = current_context()
+    return StageResult(
+        stage_id=context.stage_id if context and context.stage_id else new_id("stage"),
+        name="insights",
+        status=status,
+        counts=ProgressCounts(
+            expected=expected,
+            processed=processed,
+            succeeded=succeeded,
+            failed=failed,
+            remaining=expected - processed,
+        ),
+        diagnostics=diagnostics,
+    )

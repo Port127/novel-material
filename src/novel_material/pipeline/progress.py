@@ -1,6 +1,7 @@
 """流水线进度检查：检查各阶段完成情况，支持断点续传。"""
 import os
 import psycopg2
+from dataclasses import dataclass
 from dotenv import load_dotenv
 from pathlib import Path
 from rich.console import Console
@@ -8,6 +9,16 @@ from rich.table import Table
 
 from novel_material.infra.config import NOVELS_DIR
 from novel_material.infra.yaml_io import load_yaml, load_yaml_list
+from novel_material.analysis_profiles import load_profiles, merge_profiles
+from novel_material.pipeline.profile_resolver import resolve_profile_names
+from novel_material.validation.insights import validate_insight_file
+from novel_material.runtime.contracts import (
+    Diagnostic,
+    ProgressCounts,
+    RunStatus,
+    StageResult,
+)
+from novel_material.pipeline.state import PipelineStateStore
 
 load_dotenv()
 console = Console()
@@ -34,6 +45,130 @@ WORLDBUILDING_STAGES = 1       # 世界观：提取（向量化单独阶段）
 OUTLINE_STAGES = 3             # 大纲：前提/幕序列/beats
 
 
+@dataclass(frozen=True)
+class DatabaseProbeResult:
+    status: str
+    diagnostic: Diagnostic | None = None
+
+
+@dataclass(frozen=True)
+class PipelineInspection:
+    exists: bool
+    legacy_unverified: bool
+    stages: dict[str, StageResult]
+    database: DatabaseProbeResult
+
+
+def probe_database_status(material_id: str) -> DatabaseProbeResult:
+    """返回 synced/not_synced/unknown 三态数据库状态。"""
+    try:
+        conn = psycopg2.connect(os.getenv("DATABASE_URL"))
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1 FROM novels WHERE material_id = %s", [material_id])
+                synced = cur.fetchone() is not None
+        finally:
+            conn.close()
+    except Exception as exc:
+        return DatabaseProbeResult(
+            status="unknown",
+            diagnostic=Diagnostic(
+                code="database_unreachable",
+                message=f"数据库状态不可用: {type(exc).__name__}",
+                severity="warning",
+                retryable=True,
+            ),
+        )
+    return DatabaseProbeResult(status="synced" if synced else "not_synced")
+
+
+def inspect_pipeline_state(
+    material_id: str,
+    *,
+    novels_dir: Path = NOVELS_DIR,
+) -> PipelineInspection:
+    """读取新 sidecar；旧素材仅执行只读事实校验。"""
+    novel_dir = novels_dir / material_id
+    database = probe_database_status(material_id)
+    if not novel_dir.exists():
+        return PipelineInspection(False, False, {}, database)
+
+    if (novel_dir / "runs").exists():
+        persisted = PipelineStateStore(novel_dir).read_latest()
+        return PipelineInspection(
+            True,
+            False,
+            {stage.name: stage for stage in persisted.stages},
+            database,
+        )
+
+    meta_file = novel_dir / "meta.yaml"
+    meta = load_yaml(meta_file) if meta_file.exists() else {}
+    stages = {
+        "ingest": _legacy_presence_stage("ingest", (novel_dir / "chapter_index.yaml").exists()),
+        "analyze": _legacy_presence_stage("analyze", (novel_dir / "chapters.yaml").exists()),
+        "outline": _legacy_presence_stage("outline", (novel_dir / "outline/_index.yaml").exists()),
+        "worldbuilding": _legacy_presence_stage("worldbuilding", (novel_dir / "worldbuilding/_index.yaml").exists()),
+        "characters": _legacy_presence_stage("characters", (novel_dir / "characters/_index.yaml").exists()),
+        "tags": _legacy_presence_stage("tags", (novel_dir / "tags.yaml").exists()),
+        "insights": _inspect_legacy_insights(novel_dir, meta),
+        "refine": _legacy_presence_stage("refine", meta.get("refined_at") is not None),
+        "sync": _legacy_presence_stage("sync", database.status == "synced"),
+    }
+    return PipelineInspection(True, True, stages, database)
+
+
+def next_pending_stage(inspection: PipelineInspection) -> str | None:
+    """按公开流水线顺序返回第一个非成功阶段。"""
+    if not inspection.exists:
+        return None
+    for name in (
+        "ingest", "analyze", "outline", "worldbuilding", "characters",
+        "tags", "insights", "refine", "sync",
+    ):
+        stage = inspection.stages.get(name)
+        if stage is None or stage.status is not RunStatus.SUCCESS:
+            return name
+    return None
+
+
+def _legacy_presence_stage(name: str, present: bool) -> StageResult:
+    return StageResult(
+        stage_id=f"legacy-{name}",
+        name=name,
+        status=RunStatus.SUCCESS if present else RunStatus.PENDING,
+    )
+
+
+def _inspect_legacy_insights(novel_dir: Path, meta: dict) -> StageResult:
+    chapter_index_file = novel_dir / "chapter_index.yaml"
+    chapters = load_yaml_list(chapter_index_file) if chapter_index_file.exists() else []
+    expected = len(chapters)
+    profile = merge_profiles(load_profiles(resolve_profile_names(meta)))
+    succeeded = 0
+    failed = 0
+    for chapter in chapters:
+        number = chapter.get("chapter") if isinstance(chapter, dict) else None
+        path = novel_dir / "chapter_insights" / f"{number:04d}.yaml" if isinstance(number, int) else None
+        if path is not None and path.exists() and not validate_insight_file(path, profile):
+            succeeded += 1
+        else:
+            failed += 1
+    status = RunStatus.SUCCESS if expected > 0 and failed == 0 else RunStatus.DEGRADED
+    return StageResult(
+        stage_id="legacy-insights",
+        name="insights",
+        status=status,
+        counts=ProgressCounts(
+            expected=expected,
+            processed=expected,
+            succeeded=succeeded,
+            failed=failed,
+            remaining=0,
+        ),
+    )
+
+
 def get_pipeline_stages(include_evaluation: bool = False, include_insights: bool = True) -> list:
     """获取流水线阶段列表（不含数据库同步）。
 
@@ -53,7 +188,7 @@ def get_pipeline_stages(include_evaluation: bool = False, include_insights: bool
 
 
 def has_complete_insights(novel_dir: Path) -> bool:
-    """Return True when chapter_insights has one YAML per indexed chapter."""
+    """仅当每个索引章节都有 schema 合法的 insight 时返回 True。"""
     chapter_index_file = novel_dir / "chapter_index.yaml"
     if not chapter_index_file.exists():
         return False
@@ -64,7 +199,16 @@ def has_complete_insights(novel_dir: Path) -> bool:
     insights_dir = novel_dir / "chapter_insights"
     if not insights_dir.exists():
         return False
-    return len(list(insights_dir.glob("*.yaml"))) >= total
+    meta_file = novel_dir / "meta.yaml"
+    meta = load_yaml(meta_file) if meta_file.exists() else {}
+    profile = merge_profiles(load_profiles(resolve_profile_names(meta)))
+    for chapter in chapter_index:
+        if not isinstance(chapter, dict) or not isinstance(chapter.get("chapter"), int):
+            return False
+        path = insights_dir / f"{chapter['chapter']:04d}.yaml"
+        if not path.exists() or validate_insight_file(path, profile):
+            return False
+    return True
 
 
 def get_pipeline_progress(material_id: str) -> dict:
@@ -107,15 +251,7 @@ def get_pipeline_progress(material_id: str) -> dict:
         analyzed = analyzed_count >= total_chapters and total_chapters > 0
 
     # 检查数据库同步
-    synced = False
-    try:
-        conn = psycopg2.connect(os.getenv("DATABASE_URL"))
-        with conn.cursor() as cur:
-            cur.execute("SELECT 1 FROM novels WHERE material_id = %s", [material_id])
-            synced = cur.fetchone() is not None
-        conn.close()
-    except Exception:
-        synced = False
+    database = probe_database_status(material_id)
 
     return {
         "exists": True,
@@ -132,7 +268,9 @@ def get_pipeline_progress(material_id: str) -> dict:
         "tags": (novel_dir / "tags.yaml").exists(),
         "insights": has_complete_insights(novel_dir),
         "refined": meta.get("refined_at") is not None,
-        "synced": synced,
+        "synced": database.status == "synced",
+        "database_status": database.status,
+        "database_diagnostic": database.diagnostic,
         "meta_status": meta.get("status"),
         "name": meta.get("name", "未知"),
         "chapter_count": meta.get("chapter_count", 0),
