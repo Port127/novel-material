@@ -5,62 +5,120 @@
 import json
 import logging
 import time
+from contextvars import ContextVar
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from dotenv import load_dotenv
 import os
+import warnings
 from pathlib import Path
+from functools import wraps
 
 load_dotenv()
 
 from .progress import get_pipeline_logger
 from .config import get_settings
 from .yaml_io import load_yaml
+from novel_material.runtime.context import (
+    current_context,
+    new_id,
+    request_context,
+    run_context,
+)
+from novel_material.runtime.contracts import RunEvent
+from novel_material.runtime.dispatcher import NullDispatcher, RuntimeDispatcher
 logger = get_pipeline_logger()
 
 # 多服务商配置文件路径
 PROVIDERS_CONFIG_FILE = Path(__file__).resolve().parent.parent.parent.parent / "config" / "providers.yaml"
 
 
-# API 调用统计
-_api_stats = {"calls": 0, "errors": 0, "tokens_total": 0}
+@dataclass(frozen=True)
+class _CompatibilityTelemetry:
+    run_id: str | None
+    calls: int = 0
+    errors: int = 0
+    tokens_total: int = 0
+    details: tuple[dict, ...] = ()
 
-# 单次调用详情列表（供 StageTracker 使用）
-_call_details: list[dict] = []
+
+_COMPAT_TELEMETRY: ContextVar[_CompatibilityTelemetry | None] = ContextVar(
+    "novel_material_llm_compat_telemetry",
+    default=None,
+)
+
+
+def _compatibility_state() -> _CompatibilityTelemetry:
+    run_id = current_context().run_id if current_context() else None
+    state = _COMPAT_TELEMETRY.get()
+    if state is None or state.run_id != run_id:
+        state = _CompatibilityTelemetry(run_id=run_id)
+        _COMPAT_TELEMETRY.set(state)
+    return state
+
+
+def _set_compatibility_state(state: _CompatibilityTelemetry) -> None:
+    _COMPAT_TELEMETRY.set(state)
+
+
+def _warn_compatibility_accessor(name: str) -> None:
+    warnings.warn(
+        f"{name} 已弃用，请改用 RunSummaryAccumulator 或请求级 telemetry",
+        DeprecationWarning,
+        stacklevel=2,
+    )
 
 
 def get_api_stats() -> dict:
     """获取当前 API 调用统计。"""
-    return dict(_api_stats)
+    _warn_compatibility_accessor("get_api_stats")
+    state = _compatibility_state()
+    return {"calls": state.calls, "errors": state.errors, "tokens_total": state.tokens_total}
 
 
 def reset_api_stats() -> None:
     """清零统计。"""
-    _api_stats["calls"] = 0
-    _api_stats["errors"] = 0
-    _api_stats["tokens_total"] = 0
+    _warn_compatibility_accessor("reset_api_stats")
+    state = _compatibility_state()
+    _set_compatibility_state(_CompatibilityTelemetry(run_id=state.run_id, details=state.details))
 
 
 def get_call_details() -> list[dict]:
     """获取单次调用详情列表（供 StageTracker 使用）。"""
-    return list(_call_details)
+    _warn_compatibility_accessor("get_call_details")
+    return list(_compatibility_state().details)
 
 
 def clear_call_details() -> None:
     """清空单次调用详情（每个阶段开始时调用）。"""
-    _call_details.clear()
+    _warn_compatibility_accessor("clear_call_details")
+    state = _compatibility_state()
+    _set_compatibility_state(
+        _CompatibilityTelemetry(
+            run_id=state.run_id,
+            calls=state.calls,
+            errors=state.errors,
+            tokens_total=state.tokens_total,
+        )
+    )
 
 
 def get_last_call_tokens() -> tuple[int, int]:
     """获取最近一次调用的 tokens（供实时更新使用）。"""
-    if _call_details:
-        last = _call_details[-1]
+    _warn_compatibility_accessor("get_last_call_tokens")
+    details = _compatibility_state().details
+    if details:
+        last = details[-1]
         return last.get("input_tokens", 0), last.get("output_tokens", 0)
     return 0, 0
 
 
 def get_last_call_finish_reason() -> str:
     """获取最近一次调用的 finish_reason（供调试使用）。"""
-    if _call_details:
-        return _call_details[-1].get("finish_reason", "")
+    _warn_compatibility_accessor("get_last_call_finish_reason")
+    details = _compatibility_state().details
+    if details:
+        return details[-1].get("finish_reason", "")
     return ""
 
 
@@ -203,6 +261,64 @@ def _format_prefix(context: str | None) -> str:
     return f"[{context}] "
 
 
+def _record_compatibility_call(detail: dict) -> None:
+    state = _compatibility_state()
+    _set_compatibility_state(
+        _CompatibilityTelemetry(
+            run_id=state.run_id,
+            calls=state.calls + 1,
+            errors=state.errors,
+            tokens_total=state.tokens_total + int(detail.get("total_tokens", 0)),
+            details=(*state.details, detail)[-100:],
+        )
+    )
+
+
+def _record_compatibility_error() -> None:
+    state = _compatibility_state()
+    _set_compatibility_state(
+        _CompatibilityTelemetry(
+            run_id=state.run_id,
+            calls=state.calls,
+            errors=state.errors + 1,
+            tokens_total=state.tokens_total,
+            details=state.details,
+        )
+    )
+
+
+def _emit_llm_event(
+    dispatcher: RuntimeDispatcher,
+    event_name: str,
+    *,
+    provider_request_id: str | None = None,
+    severity_text: str = "INFO",
+    attributes: dict | None = None,
+) -> None:
+    context = current_context()
+    if context is None:
+        return
+    now = datetime.now(timezone.utc)
+    dispatcher.emit(
+        RunEvent(
+            event_name=event_name,
+            event_id=new_id("event"),
+            occurred_at=now,
+            observed_at=now,
+            severity_text=severity_text,
+            run_id=context.run_id,
+            stage_id=context.stage_id,
+            request_id=context.request_id,
+            provider_request_id=provider_request_id,
+            command=context.command,
+            component="llm",
+            operation="request",
+            material_id=context.material_id,
+            attributes=attributes or {},
+        )
+    )
+
+
 def call_llm_with_args(args) -> dict:
     """调用 LLM API（参数对象版本），返回 JSON 结果。
 
@@ -233,6 +349,7 @@ def call_llm(
     context: str | None = None,
     thinking_budget: int | None = None,
     temperature_override: float | None = None,
+    dispatcher: RuntimeDispatcher | None = None,
 ) -> dict:
     """调用 LLM API，返回 JSON 结果。
 
@@ -257,6 +374,7 @@ def call_llm(
 
     effective_max_tokens = max_tokens_override or config["llm"].get("max_tokens", 2048)
     total_timeout = timeout_override or config["llm"].get("other_timeout", 120)
+    event_dispatcher = dispatcher or NullDispatcher()
 
     # 外部计时起点（用于错误日志）
     _outer_start = time.monotonic()
@@ -271,6 +389,38 @@ def call_llm(
             return False
         return isinstance(exc, (APIConnectionError, APITimeoutError, APIStatusError))
 
+    def _request_scoped(function):
+        @wraps(function)
+        def wrapped():
+            def execute():
+                with request_context():
+                    _emit_llm_event(
+                        event_dispatcher,
+                        "OperationStarted",
+                        attributes={
+                            "model": config["llm"]["model"],
+                            "thinking_requested": thinking_budget is not None,
+                        },
+                    )
+                    try:
+                        return function()
+                    except Exception as exc:
+                        _emit_llm_event(
+                            event_dispatcher,
+                            "DiagnosticRaised",
+                            severity_text="ERROR",
+                            attributes={
+                                "diagnostic_code": _classify_error(exc).strip("[]").lower(),
+                                "error_type": type(exc).__name__,
+                            },
+                        )
+                        raise
+            if current_context() is None:
+                with run_context(command=context or "llm call"):
+                    return execute()
+            return execute()
+        return wrapped
+
     @retry(
         retry=retry_if_exception(_should_retry),
         stop=(stop_after_attempt(8) | stop_after_delay(total_timeout)),
@@ -278,6 +428,7 @@ def call_llm(
         before_sleep=_retry_log_callback,
         reraise=True,
     )
+    @_request_scoped
     def _call() -> dict:
         call_start = time.monotonic()
         client = OpenAI(
@@ -335,7 +486,6 @@ def call_llm(
 
         usage = response.usage
         finish_reason = response.choices[0].finish_reason if response.choices else None
-        _api_stats["calls"] += 1
 
         # 记录调用详情（无论 usage 是否存在）
         detail = {
@@ -352,7 +502,6 @@ def call_llm(
 
         prefix = _format_prefix(context)
         if usage:
-            _api_stats["tokens_total"] += usage.total_tokens
             detail["input_tokens"] = usage.prompt_tokens
             detail["output_tokens"] = usage.completion_tokens
             detail["total_tokens"] = usage.total_tokens
@@ -364,7 +513,7 @@ def call_llm(
                     detail["thinking_tokens"] = thinking
                     # 阈值检查：thinking tokens 异常低时发出警告
                     threshold = int(get_settings().get("LLM_THINKING_TOKENS_MIN_THRESHOLD", 1000))
-                    if thinking < threshold:
+                    if thinking_budget is not None and thinking < threshold:
                         logger.warning(
                             f"{prefix}thinking tokens 异常低: {thinking} < {threshold}，可能导致输出质量下降"
                         )
@@ -397,10 +546,22 @@ def call_llm(
         raw_content = response.choices[0].message.content
         detail["_raw_content"] = raw_content
 
-        _call_details.append(detail)
-        # 限制列表长度，防止无界增长（只需最后一条供 get_last_call_* 使用）
-        if len(_call_details) > 100:
-            _call_details.pop(0)
+        _record_compatibility_call(detail)
+        _emit_llm_event(
+            event_dispatcher,
+            "OperationCompleted",
+            provider_request_id=request_id or None,
+            attributes={
+                "model": model_name,
+                "finish_reason": finish_reason,
+                "input_tokens": detail["input_tokens"],
+                "output_tokens": detail["output_tokens"],
+                "total_tokens": detail["total_tokens"],
+                "reasoning_tokens_observed": detail["thinking_tokens"],
+                "thinking_requested": thinking_budget is not None,
+                "thinking_budget_requested": thinking_budget,
+            },
+        )
         return json.loads(raw_content)
 
     # JSON 解析失败时自动加大 max_tokens 重试（最多 2 次）
@@ -410,7 +571,8 @@ def call_llm(
             return _call()
         except json.JSONDecodeError as e:
             # 从最后一次调用获取详细信息
-            last_detail = _call_details[-1] if _call_details else {}
+            details = _compatibility_state().details
+            last_detail = details[-1] if details else {}
             raw_snippet = last_detail.get("_raw_content", "")[:200] if last_detail.get("_raw_content") else "(无内容)"
             last_req_id = last_detail.get("request_id", "N/A")[:12]
             last_elapsed = last_detail.get("elapsed_sec", 0)
@@ -426,7 +588,7 @@ def call_llm(
                 )
                 effective_max_tokens = new_max
             else:
-                _api_stats["errors"] += 1
+                _record_compatibility_error()
                 elapsed = time.monotonic() - _outer_start
                 prefix = _format_prefix(context)
                 logger.error(
@@ -435,12 +597,13 @@ def call_llm(
                 )
                 raise
         except Exception as e:
-            _api_stats["errors"] += 1
+            _record_compatibility_error()
             elapsed = time.monotonic() - _outer_start
             error_tag = _classify_error(e)
             prefix = _format_prefix(context)
             # 从最后一次调用获取详细信息（如果有）
-            last_detail = _call_details[-1] if _call_details else {}
+            details = _compatibility_state().details
+            last_detail = details[-1] if details else {}
             last_req_id = last_detail.get("request_id", "N/A")[:12]
             last_elapsed = last_detail.get("elapsed_sec", 0)
             logger.error(
