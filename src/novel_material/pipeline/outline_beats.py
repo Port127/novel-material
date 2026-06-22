@@ -3,7 +3,7 @@
 此模块包含逐序列生成节拍的函数，
 供 outline_core.py 使用。
 """
-from novel_material.infra.llm import call_llm, get_last_call_finish_reason
+from novel_material.infra.llm import call_llm, start_llm_telemetry
 from novel_material.infra.progress import get_pipeline_logger
 from novel_material.pipeline.loader import build_summary_pool
 
@@ -88,8 +88,9 @@ def _generate_beats_for_sequence(
 请为此序列生成节拍列表。
 节拍的 tension 值应与章节实际张力一致，高张力章节应是关键节拍。"""
 
+    telemetry = start_llm_telemetry()
     result = call_llm(system_prompt, user_prompt, config, max_tokens_override=2000, timeout_override=config["llm"]["outline_timeout"], context=f"{material_id} beats#{seq.get('sequence_number', '?')}")
-    logger.debug(f"{prefix}beats#{seq.get('sequence_number', '?')}: finish={get_last_call_finish_reason()}")
+    logger.debug(f"{prefix}beats#{seq.get('sequence_number', '?')}: finish={telemetry.last.get('finish_reason', '')}")
     # 兼容 LLM 直接返回数组的情况
     if isinstance(result, list):
         logger.warning(f"{prefix}beats#{seq.get('sequence_number', '?')} 返回裸数组，自动适配")

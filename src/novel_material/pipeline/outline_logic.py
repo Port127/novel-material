@@ -11,7 +11,7 @@ from pathlib import Path
 from collections.abc import Callable
 
 from novel_material.infra.config import NOVELS_DIR
-from novel_material.infra.llm import load_config, call_llm, get_last_call_finish_reason, get_call_details
+from novel_material.infra.llm import load_config, call_llm, start_llm_telemetry
 from novel_material.infra.common import is_special_chapter_type
 from novel_material.infra.progress import get_pipeline_logger, PipelineRunner
 from novel_material.pipeline.progress import OUTLINE_STAGES
@@ -74,6 +74,7 @@ def extract_premise(
 返回 JSON 格式如上。"""
 
     result = {}
+    telemetry = start_llm_telemetry()
     try:
         result = call_llm(
             system_prompt,
@@ -82,7 +83,7 @@ def extract_premise(
             timeout_override=config["llm"]["outline_timeout"],
             context=f"{material_id} 前提提炼",
         )
-        logger.info(f"[{material_id}] 前提提炼完成: finish={get_last_call_finish_reason()}")
+        logger.info(f"[{material_id}] 前提提炼完成: finish={telemetry.last.get('finish_reason', '')}")
     except Exception as e:
         logger.error(f"[{material_id}] 前提提炼失败: {e}")
         logger.warning(f"[{material_id}] 使用默认值继续，不中断流程")
@@ -295,7 +296,7 @@ def record_stage_stats(
     runner: PipelineRunner,
     stage_name: str,
     elapsed: float,
-    base_call_len: int,
+    telemetry,
 ) -> None:
     """记录阶段统计信息。
 
@@ -303,11 +304,11 @@ def record_stage_stats(
         runner: PipelineRunner 实例
         stage_name: 阶段名称
         elapsed: 耗时（秒）
-        base_call_len: 该阶段开始时的 LLM 调用记录长度
+        telemetry: 当前阶段显式 telemetry collector
     """
-    call_details = get_call_details()
-    tokens_in = sum(d.get("input_tokens", 0) for d in call_details[base_call_len:])
-    tokens_out = sum(d.get("output_tokens", 0) for d in call_details[base_call_len:])
+    call_details = telemetry.details
+    tokens_in = sum(d.get("input_tokens", 0) for d in call_details)
+    tokens_out = sum(d.get("output_tokens", 0) for d in call_details)
     runner.record_stage_complete(
         stage_name=stage_name,
         elapsed=elapsed,

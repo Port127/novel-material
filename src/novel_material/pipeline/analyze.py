@@ -29,7 +29,7 @@ from collections.abc import Callable
 
 from novel_material.infra.config import NOVELS_DIR, update_meta_status, get_settings
 from novel_material.infra.yaml_io import load_yaml, load_yaml_list
-from novel_material.infra.llm import load_config, get_last_call_finish_reason, get_call_details
+from novel_material.infra.llm import load_config, start_llm_telemetry
 from novel_material.validation.quality import run_quality_check, get_short_summary_chapters, get_missing_chapters
 from novel_material.validation.schema import get_schema_error_chapters
 from novel_material.validation.pacing_normalize import normalize_pacing
@@ -342,8 +342,7 @@ def chapter_analyze(
         batch_errors = 0
         batch_downgrades = 0
         batch_api_calls = 0
-        # 记录 call_details 基准（用于计算增量）
-        call_details_base_len = len(get_call_details())
+        telemetry = start_llm_telemetry()
 
         # 批量分析
         batch_results: dict[int, dict] = {}
@@ -477,10 +476,10 @@ def chapter_analyze(
         total_batch_errors += batch_errors
 
         # 计算批次 tokens 增量
-        call_details = get_call_details()
+        call_details = telemetry.details
         batch_tokens_in = 0
         batch_tokens_out = 0
-        for detail in call_details[call_details_base_len:]:
+        for detail in call_details:
             batch_tokens_in += detail.get("input_tokens", 0)
             batch_tokens_out += detail.get("output_tokens", 0)
 
@@ -496,7 +495,7 @@ def chapter_analyze(
             )
 
         if not progress_callback:
-            finish_reason = get_last_call_finish_reason()
+            finish_reason = telemetry.last.get("finish_reason", "")
             logger.info(
                 f"[{material_id}] [批次 {batch_idx + 1}/{n_batches}] 完成: {batch_elapsed:.1f}s | "
                 f"返回 {len(batch_results)}/{len(batch)} 章 | "

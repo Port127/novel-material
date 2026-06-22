@@ -17,7 +17,7 @@ from collections.abc import Callable
 
 from novel_material.infra.config import NOVELS_DIR
 from novel_material.infra.yaml_io import load_yaml, save_yaml, load_yaml_list
-from novel_material.infra.llm import load_config, call_llm, truncate_to_tokens, get_last_call_tokens, get_last_call_finish_reason
+from novel_material.infra.llm import load_config, call_llm, truncate_to_tokens, start_llm_telemetry
 from novel_material.infra.progress import StageTracker, save_run_history, get_pipeline_logger
 from novel_material.pipeline.progress import EVALUATION_STAGES
 from novel_material.infra.common import NOVEL_TYPE_VALUES
@@ -248,6 +248,7 @@ def evaluate_batch(
 
     # 调用 LLM
     tracker.start_spinner(f"批次{batch_num}评估")
+    telemetry = start_llm_telemetry()
 
     try:
         result = call_llm(
@@ -261,7 +262,8 @@ def evaluate_batch(
         tracker.record_api_call(success=True)
 
         # 记录 tokens
-        in_tokens, out_tokens = get_last_call_tokens()
+        in_tokens = telemetry.last.get("input_tokens", 0)
+        out_tokens = telemetry.last.get("output_tokens", 0)
         tracker.record_tokens(in_tokens, out_tokens)
 
     except Exception as e:
@@ -287,6 +289,7 @@ def evaluate_batch(
         "main_thread_summary": merged_main_thread,
         "core_characters_hint": merged_characters[:10],  # 最多10个人物
         "stage_summary": stage_summary,
+        "_finish_reason": telemetry.last.get("finish_reason", ""),
     }
 
 
@@ -438,7 +441,7 @@ def run_evaluation(
         # 保存进度（断点续传）
         save_evaluation_progress(material_id, progress)
 
-        finish_reason = get_last_call_finish_reason()
+        finish_reason = result.pop("_finish_reason", "")
         logger.info(
             f"[{material_id}] 批次#{batch_num} 完成: {batch_elapsed:.1f}s | "
             f"tokens {tracker._tokens_in}/{tracker._tokens_out} | finish={finish_reason}"

@@ -3,7 +3,7 @@
 此模块包含幕序列生成函数，
 供 outline_core.py 使用。
 """
-from novel_material.infra.llm import call_llm, get_last_call_finish_reason
+from novel_material.infra.llm import call_llm, start_llm_telemetry
 from novel_material.infra.progress import get_pipeline_logger
 
 logger = get_pipeline_logger()
@@ -95,8 +95,9 @@ def _generate_acts_sequences(
 请生成完整的幕/序列划分（仅需章节范围和描述，不需要 beats）。
 序列划分应让高潮章节（高张力章节）成为序列的转折点或结尾。"""
 
+    telemetry = start_llm_telemetry()
     result = call_llm(system_prompt, user_prompt, config, max_tokens_override=4000, timeout_override=config["llm"]["outline_timeout"], context=f"{material_id} 幕序列划分")
-    logger.info(f"{prefix}幕序列划分完成: finish={get_last_call_finish_reason()}")
+    logger.info(f"{prefix}幕序列划分完成: finish={telemetry.last.get('finish_reason', '')}")
     # 兼容 LLM 直接返回数组的情况
     if isinstance(result, list):
         logger.warning(f"{prefix}幕序列划分返回裸数组，自动适配")

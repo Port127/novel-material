@@ -6,7 +6,7 @@ import json
 import logging
 import time
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 import os
@@ -46,6 +46,41 @@ _COMPAT_TELEMETRY: ContextVar[_CompatibilityTelemetry | None] = ContextVar(
     "novel_material_llm_compat_telemetry",
     default=None,
 )
+
+
+@dataclass
+class LLMTelemetryCollector:
+    """由业务调用方显式持有的请求级 telemetry 汇总。"""
+
+    calls: int = 0
+    errors: int = 0
+    tokens_total: int = 0
+    details: list[dict] = field(default_factory=list)
+
+    def record_call(self, detail: dict) -> None:
+        self.calls += 1
+        self.tokens_total += int(detail.get("total_tokens", 0))
+        self.details.append(dict(detail))
+
+    def record_error(self) -> None:
+        self.errors += 1
+
+    @property
+    def last(self) -> dict:
+        return self.details[-1] if self.details else {}
+
+
+_ACTIVE_TELEMETRY: ContextVar[LLMTelemetryCollector | None] = ContextVar(
+    "novel_material_llm_explicit_telemetry",
+    default=None,
+)
+
+
+def start_llm_telemetry() -> LLMTelemetryCollector:
+    """开始新的显式 telemetry scope，并返回供调用方读取的 collector。"""
+    collector = LLMTelemetryCollector()
+    _ACTIVE_TELEMETRY.set(collector)
+    return collector
 
 
 def _compatibility_state() -> _CompatibilityTelemetry:
@@ -262,6 +297,9 @@ def _format_prefix(context: str | None) -> str:
 
 
 def _record_compatibility_call(detail: dict) -> None:
+    collector = _ACTIVE_TELEMETRY.get()
+    if collector is not None:
+        collector.record_call(detail)
     state = _compatibility_state()
     _set_compatibility_state(
         _CompatibilityTelemetry(
@@ -275,6 +313,9 @@ def _record_compatibility_call(detail: dict) -> None:
 
 
 def _record_compatibility_error() -> None:
+    collector = _ACTIVE_TELEMETRY.get()
+    if collector is not None:
+        collector.record_error()
     state = _compatibility_state()
     _set_compatibility_state(
         _CompatibilityTelemetry(

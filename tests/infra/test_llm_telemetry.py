@@ -6,7 +6,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from novel_material.infra.llm import call_llm, get_call_details
+from novel_material.infra.llm import (
+    call_llm,
+    get_call_details,
+    start_llm_telemetry,
+)
 from novel_material.runtime.context import run_context
 from novel_material.runtime.dispatcher import RuntimeDispatcher
 from novel_material.runtime.testing import MemoryEventSink
@@ -102,3 +106,16 @@ def test_disabled_thinking_does_not_emit_low_thinking_warning(monkeypatch):
 def test_legacy_call_detail_accessor_warns_about_deprecation():
     with pytest.warns(DeprecationWarning, match="RunSummaryAccumulator"):
         get_call_details()
+
+
+def test_explicit_telemetry_collector_receives_request_result(monkeypatch):
+    install_fake_openai(monkeypatch, [response("provider-explicit")])
+
+    with run_context(command="pipeline analyze"):
+        telemetry = start_llm_telemetry()
+        call_llm("system", "prompt", config())
+
+    assert telemetry.calls == 1
+    assert telemetry.tokens_total == 15
+    assert telemetry.details[-1]["finish_reason"] == "stop"
+    assert telemetry.details[-1]["request_id"] == "provider-explicit"

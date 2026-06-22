@@ -19,7 +19,7 @@ from collections.abc import Callable
 
 from novel_material.infra.config import NOVELS_DIR
 from novel_material.infra.yaml_io import load_yaml, save_yaml, load_yaml_list
-from novel_material.infra.llm import load_config, get_last_call_finish_reason, get_call_details
+from novel_material.infra.llm import load_config, start_llm_telemetry
 from novel_material.pipeline.loader import load_chapters_data, build_analysis_context
 from novel_material.infra.progress import get_pipeline_logger, PipelineRunner
 
@@ -140,7 +140,7 @@ def generate_characters(material_id, progress_callback: Callable[[int, int, str]
     total_batches = 3
 
     new_core_count = 0
-    core_base_len = len(get_call_details())
+    core_telemetry = start_llm_telemetry()
     if core_candidates:
         if progress_callback:
             progress_callback(0, total_batches, f"提取核心人物 ({len(core_candidates)} 人)")
@@ -186,9 +186,9 @@ def generate_characters(material_id, progress_callback: Callable[[int, int, str]
         logger.info(f"[{material_id}] 核心人物: 保存 {new_core_count} 人")
 
         core_elapsed = time.monotonic() - wall_start
-        call_details = get_call_details()
-        core_tokens_in = sum(d.get("input_tokens", 0) for d in call_details[core_base_len:])
-        core_tokens_out = sum(d.get("output_tokens", 0) for d in call_details[core_base_len:])
+        call_details = core_telemetry.details
+        core_tokens_in = sum(d.get("input_tokens", 0) for d in call_details)
+        core_tokens_out = sum(d.get("output_tokens", 0) for d in call_details)
         runner.record_stage_complete(
             stage_name=f"核心人物({len(core_candidates)}人)",
             elapsed=core_elapsed,
@@ -205,7 +205,7 @@ def generate_characters(material_id, progress_callback: Callable[[int, int, str]
         progress_callback(1, total_batches, f"核心人物完成 ({new_core_count} 人)")
 
     new_supporting_count = 0
-    supporting_base_len = len(get_call_details())
+    supporting_telemetry = start_llm_telemetry()
     if supporting_candidates:
         if progress_callback:
             progress_callback(1, total_batches, f"提取配角 ({len(supporting_candidates)} 人)")
@@ -247,9 +247,9 @@ def generate_characters(material_id, progress_callback: Callable[[int, int, str]
         logger.info(f"[{material_id}] 配角: 保存 {new_supporting_count} 人")
 
         supporting_elapsed = time.monotonic() - wall_start
-        call_details = get_call_details()
-        supporting_tokens_in = sum(d.get("input_tokens", 0) for d in call_details[supporting_base_len:])
-        supporting_tokens_out = sum(d.get("output_tokens", 0) for d in call_details[supporting_base_len:])
+        call_details = supporting_telemetry.details
+        supporting_tokens_in = sum(d.get("input_tokens", 0) for d in call_details)
+        supporting_tokens_out = sum(d.get("output_tokens", 0) for d in call_details)
         runner.record_stage_complete(
             stage_name=f"配角({len(supporting_candidates)}人)",
             elapsed=supporting_elapsed,
@@ -266,7 +266,7 @@ def generate_characters(material_id, progress_callback: Callable[[int, int, str]
         progress_callback(2, total_batches, f"配角完成 ({new_supporting_count} 人)")
 
     new_minor_count = 0
-    minor_base_len = len(get_call_details())
+    minor_telemetry = start_llm_telemetry()
     if minor_candidates:
         if progress_callback:
             progress_callback(2, total_batches, f"提取次要人物 ({len(minor_candidates)} 人)")
@@ -308,9 +308,9 @@ def generate_characters(material_id, progress_callback: Callable[[int, int, str]
         logger.info(f"[{material_id}] 次要人物: 保存 {new_minor_count} 人")
 
         minor_elapsed = time.monotonic() - wall_start
-        call_details = get_call_details()
-        minor_tokens_in = sum(d.get("input_tokens", 0) for d in call_details[minor_base_len:])
-        minor_tokens_out = sum(d.get("output_tokens", 0) for d in call_details[minor_base_len:])
+        call_details = minor_telemetry.details
+        minor_tokens_in = sum(d.get("input_tokens", 0) for d in call_details)
+        minor_tokens_out = sum(d.get("output_tokens", 0) for d in call_details)
         runner.record_stage_complete(
             stage_name=f"次要人物({len(minor_candidates)}人)",
             elapsed=minor_elapsed,

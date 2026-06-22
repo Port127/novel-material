@@ -13,7 +13,7 @@ from pathlib import Path
 
 from novel_material.infra.config import NOVELS_DIR
 from novel_material.infra.yaml_io import load_yaml, save_yaml, load_yaml_list
-from novel_material.infra.llm import load_config, call_llm, get_last_call_finish_reason, get_call_details, clear_call_details
+from novel_material.infra.llm import load_config, call_llm, start_llm_telemetry
 from novel_material.tags.load import load_tags_for_genre, format_tags_for_prompt, get_all_genres
 from novel_material.tags.validate import validate_tag, validate_tags_batch
 from novel_material.tags.scheduled import auto_approve_by_frequency
@@ -38,8 +38,7 @@ def generate_tags(material_id, provider: str | None = None) -> bool:
         material_id: 素材 ID
         provider: 服务商名称（可选，不指定则使用默认配置）
     """
-    # 清理历史调用记录（避免累积前序流水线的 tokens）
-    clear_call_details()
+    telemetry = start_llm_telemetry()
 
     novel_dir = NOVELS_DIR / material_id
     if not novel_dir.exists():
@@ -113,7 +112,7 @@ def generate_tags(material_id, provider: str | None = None) -> bool:
     result = {}
     try:
         result = call_llm(system_prompt, user_prompt, config, context=f"{material_id} 标签生成")
-        logger.info(f"[{material_id}] 标签生成完成: finish={get_last_call_finish_reason()}")
+        logger.info(f"[{material_id}] 标签生成完成: finish={telemetry.last.get('finish_reason', '')}")
         time.sleep(rate_limit)
     except Exception as e:
         logger.error(f"[{material_id}] 标签生成失败: {e}")
@@ -150,7 +149,7 @@ def generate_tags(material_id, provider: str | None = None) -> bool:
 
     # 保存运行历史
     elapsed = time.monotonic() - wall_start
-    call_details = get_call_details()
+    call_details = telemetry.details
     tokens_in = sum(d.get("input_tokens", 0) for d in call_details)
     tokens_out = sum(d.get("output_tokens", 0) for d in call_details)
     api_calls = len(call_details)

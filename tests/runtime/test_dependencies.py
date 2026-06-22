@@ -40,3 +40,28 @@ def test_runtime_package_exists_as_shared_dependency():
     package_root = ROOT / "src" / "novel_material" / "runtime"
     assert package_root.is_dir(), f"缺少 package：{package_root}"
 
+
+def test_business_code_does_not_call_legacy_llm_state_accessors():
+    forbidden = {
+        "get_call_details",
+        "get_last_call_tokens",
+        "get_last_call_finish_reason",
+        "clear_call_details",
+        "get_api_stats",
+        "reset_api_stats",
+    }
+    violations = []
+    source_root = ROOT / "src" / "novel_material"
+    compatibility_module = source_root / "infra" / "llm.py"
+    for path in source_root.rglob("*.py"):
+        if path == compatibility_module:
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            name = node.func.id if isinstance(node.func, ast.Name) else None
+            if name in forbidden:
+                violations.append(f"{path.relative_to(ROOT)}:{node.lineno}:{name}")
+
+    assert violations == [], "发现旧 LLM 调用状态读取：\n" + "\n".join(violations)
