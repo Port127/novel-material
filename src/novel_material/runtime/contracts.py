@@ -77,6 +77,7 @@ class StageResult(BaseModel):
     counts: ProgressCounts = Field(default_factory=ProgressCounts)
     duration_ms: float = Field(default=0, ge=0)
     diagnostics: tuple[Diagnostic, ...] = ()
+    outputs: dict[str, Any] = Field(default_factory=dict)
 
 
 class RunResult(BaseModel):

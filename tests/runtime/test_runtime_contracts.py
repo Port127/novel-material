@@ -87,6 +87,17 @@ def test_blocking_failure_preserves_unprocessed_stage_count():
     assert result.diagnostics[0].code == "analysis_failed"
 
 
+def test_stage_result_can_carry_ingest_material_id():
+    stage = StageResult(
+        stage_id="stage-1",
+        name="ingest",
+        status=RunStatus.SUCCESS,
+        outputs={"material_id": "nm_demo"},
+    )
+
+    assert stage.outputs["material_id"] == "nm_demo"
+
+
 def test_empty_stage_collection_is_successful():
     result = RunResult.from_stages(
         run_id="run-1",
