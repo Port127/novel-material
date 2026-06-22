@@ -6,7 +6,7 @@ phase: 1
 status: ready
 current_packet: task-01-audit-contracts.md
 last_completed_packet: null
-last_good_commit: 1c2a22b
+last_good_commit: 294213b
 worktree: not_created
 blocking_issue: null
 ```
