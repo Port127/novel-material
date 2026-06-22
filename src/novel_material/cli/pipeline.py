@@ -30,6 +30,14 @@ from novel_material.pipeline.progress import (
 )
 from novel_material.pipeline.insights import generate_chapter_insights
 from novel_material.pipeline.runtime_modes import get_runtime_mode
+from novel_material.pipeline.stages import (
+    run_characters_stage,
+    run_ingest_stage,
+    run_outline_stage,
+    run_refine_stage,
+    run_tags_stage,
+    run_worldbuilding_stage,
+)
 from novel_material.storage.sync import sync_novel
 
 app = typer.Typer(help="数据处理流水线")
@@ -52,13 +60,15 @@ def cmd_ingest(
         console=console,
     ) as progress:
         task = progress.add_task(f"正在入库: {file_path}", total=1)
-        material_id = ingest_file(file_path)
+        result = run_ingest_stage(file_path)
         progress.update(task, completed=1)
 
-    if material_id:
+    if result.status.value == "success":
+        material_id = result.outputs["material_id"]
         console.print(f"[green]入库成功[/green] material_id: [cyan]{material_id}[/cyan]")
     else:
-        console.print("[red]入库失败[/red]")
+        typer.echo("入库失败", err=True)
+        raise typer.Exit(1)
 
 
 @app.command("analyze")
@@ -266,8 +276,15 @@ def cmd_outline(
                 progress.update(task, description=f"生成大纲: {desc}")
 
         with silent_console():
-            generate_outline(material_id, progress_callback=update_progress, provider=provider)
+            result = run_outline_stage(
+                material_id,
+                progress_callback=update_progress,
+                provider=provider,
+            )
 
+    if result.status.value == "failed":
+        typer.echo("大纲生成失败", err=True)
+        raise typer.Exit(1)
     console.print("[green]大纲生成完成[/green]")
 
 
@@ -286,9 +303,12 @@ def cmd_worldbuilding(
         console=console,
     ) as progress:
         task = progress.add_task(f"提取世界观: {material_id}", total=WORLDBUILDING_STAGES)
-        generate_worldbuilding(material_id, provider=provider)
+        result = run_worldbuilding_stage(material_id, provider=provider)
         progress.update(task, completed=1)
 
+    if result.status.value == "failed":
+        typer.echo("世界观提取失败", err=True)
+        raise typer.Exit(1)
     console.print("[green]世界观提取完成[/green]")
 
 
@@ -312,8 +332,15 @@ def cmd_characters(
             progress.update(task, completed=done, description=f"提取人物: {desc}")
 
         with silent_console():
-            generate_characters(material_id, progress_callback=update_chars_progress, provider=provider)
+            result = run_characters_stage(
+                material_id,
+                progress_callback=update_chars_progress,
+                provider=provider,
+            )
 
+    if result.status.value == "failed":
+        typer.echo("人物提取失败", err=True)
+        raise typer.Exit(1)
     console.print("[green]人物提取完成[/green]")
 
 
@@ -332,9 +359,12 @@ def cmd_tags(
         console=console,
     ) as progress:
         task = progress.add_task(f"生成标签: {material_id}", total=1)
-        generate_tags(material_id, provider=provider)
+        result = run_tags_stage(material_id, provider=provider)
         progress.update(task, completed=1)
 
+    if result.status.value == "failed":
+        typer.echo("标签生成失败", err=True)
+        raise typer.Exit(1)
     console.print("[green]标签生成完成[/green]")
 
 
@@ -353,9 +383,10 @@ def cmd_refine(
     ) as progress:
         task = progress.add_task(f"精调 + 向量化: {material_id}", total=2)
         with silent_console():
-            if not refine(material_id):
+            result = run_refine_stage(material_id)
+            if result.status.value == "failed":
                 progress.update(task, completed=2)
-                console.print("[red]精调失败[/red]")
+                typer.echo("精调失败", err=True)
                 raise typer.Exit(1)
         progress.update(task, completed=2)
 
@@ -600,6 +631,9 @@ def cmd_status(
 ):
     """查看流水线进度。"""
     progress = get_pipeline_progress(material_id)
+    if not progress.get("exists"):
+        typer.echo("素材目录不存在", err=True)
+        raise typer.Exit(1)
     print_pipeline_status(progress)
 
     next_stage = get_next_pending_stage(progress)
