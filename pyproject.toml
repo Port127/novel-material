@@ -39,6 +39,7 @@ dev = [
 
 [project.scripts]
 nm = "novel_material.cli:main"
+novel-material = "novel_material.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

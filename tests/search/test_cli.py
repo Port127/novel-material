@@ -110,5 +110,6 @@ def test_database_failure_exits_nonzero(monkeypatch):
     result = runner.invoke(app, ["search", "chapter", "开局困境"])
 
     assert result.exit_code == 1
-    assert "数据库连接失败" in result.stdout
+    assert result.stdout == ""
+    assert "数据库连接失败" in result.stderr
     assert "未找到" not in result.stdout

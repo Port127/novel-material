@@ -1,4 +1,6 @@
 """CLI 主入口：注册所有子命令。"""
+from dataclasses import dataclass
+
 import typer
 from rich.console import Console
 
@@ -16,6 +18,29 @@ app = typer.Typer(
     add_completion=False,
 )
 console = Console()
+
+
+@dataclass(frozen=True)
+class TerminalOptions:
+    quiet: bool = False
+    no_progress: bool = False
+    no_color: bool = False
+
+
+@app.callback()
+def configure_cli(
+    ctx: typer.Context,
+    quiet: bool = typer.Option(False, "--quiet", help="仅输出最终结果或错误"),
+    no_progress: bool = typer.Option(False, "--no-progress", help="禁用动态进度显示"),
+    no_color: bool = typer.Option(False, "--no-color", help="禁用颜色输出"),
+):
+    """配置所有子命令共享的终端选项。"""
+    ctx.ensure_object(dict)
+    ctx.obj["terminal_options"] = TerminalOptions(
+        quiet=quiet,
+        no_progress=no_progress,
+        no_color=no_color,
+    )
 
 # 注册子命令
 app.add_typer(pipeline_app, name="pipeline", help="数据处理流水线")
