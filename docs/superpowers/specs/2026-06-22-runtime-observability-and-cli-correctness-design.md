@@ -117,7 +117,7 @@ src/novel_material/runtime/
 ├── context.py       # contextvars：run/stage/request 上下文
 ├── dispatcher.py    # 同步事件分发与 sink 故障隔离
 ├── diagnostics.py   # 无文件副作用的旧 logger 迁移适配
-├── heartbeat.py     # 长任务低频存活事件
+├── heartbeat.py     # 长任务低频存活事件与可停止 worker
 ├── summary.py       # 计数、Token、诊断聚合
 └── testing.py       # FakeClock、MemoryEventSink
 ```
@@ -145,13 +145,20 @@ pending → running → success
 
 ### 4.2 Pipeline 状态
 
-Pipeline 新增自己的运行状态 sidecar，例如：
+Pipeline 新增自己的运行状态 sidecar 和显式索引：
 
 ```text
-data/novels/{material_id}/runs/{run_id}.json
+data/novels/{material_id}/runs/
+├── {run_id}.json
+├── latest.json
+└── active.lock
 ```
 
-它只为新运行创建，记录阶段开始、完成、降级、失败和中断。更新采用临时文件加原子替换。该文件属于 Pipeline 状态，不属于日志。
+`{run_id}.json` 只为新运行创建，记录 `created_at`、`updated_at`、单调递增的 `generation`，以及阶段开始、完成、降级、失败和中断。每次先原子替换运行文件，再原子替换 `latest.json`；`status` 和 `continue` 禁止通过文件名、mtime 或目录遍历猜测最新运行。
+
+同一素材同一时刻只允许一个写运行。启动时通过独占创建 `active.lock` 获取 lease；并发运行返回稳定 diagnostic 和非零退出码。`status` 只读报告活跃或遗留 lease，不自动清理；用户显式执行 `continue` 时，只有确认原 PID 已不存在后才能接管 stale lease，并把上一运行记录为 interrupted。sidecar 或索引损坏时返回 `state_corrupt`，不得静默退回文件数量推断。
+
+所有状态和索引更新都采用同目录临时文件、flush、`fsync` 和 `os.replace`。这些文件属于 Pipeline 状态，不属于日志。
 
 当前运行使用内存中的 `RunResult`；`status` 和 `continue` 才读取持久化状态。没有 sidecar 的历史素材使用只读兼容检查，并明确标记未验证。
 
@@ -186,7 +193,7 @@ logs/YYYY-MM-DD/{command}_{run_id}.jsonl
 - `schema_version`、`event_name`、`event_id`；
 - `occurred_at`、`observed_at`；
 - `severity_text`、`severity_number`；
-- `run_id`、`stage_id`、`request_id`；
+- `run_id`、`stage_id`、内部 `request_id`、可空的 `provider_request_id`；
 - command、component、operation、material_id；
 - status、duration_ms、attributes。
 
@@ -203,7 +210,9 @@ logs/YYYY-MM-DD/{command}_{run_id}.jsonl
 - `HeartbeatRecorded`
 - `AuditRecorded`
 
-LLM attributes 记录 provider、model、operation、attempt、重试上限、退避、timeout、Token、finish reason、预期/返回/缺失数量、校验和降级原因。默认不记录 prompt、原文、完整模型输出或未清洗异常。
+每次 LLM attempt 在发送请求前生成新的内部 `request_id`；失败请求也必须拥有该 ID。服务商响应 ID 只在收到响应后写入 `provider_request_id`，不能借用上一次成功响应的值。
+
+LLM attributes 记录 provider、model、operation、attempt、重试上限、退避、timeout、Token、finish reason、预期/返回/缺失数量、校验和降级原因。默认不记录 prompt、原文、完整模型输出或未清洗异常。脱敏同时使用字段白名单、敏感键规则和值模式规则，覆盖 bearer token、常见 API key、数据库连接串和异常文本中的凭据片段。
 
 Search attributes 记录 mode、候选上限、时间预算、通道候选数、通道耗时、embedding 配置摘要、rerank 和降级原因。查询正文默认不进日志，只记录长度与指纹。
 
@@ -262,7 +271,8 @@ stdout/stderr：
 
 - 业务阶段失败：生成 failed `StageResult`，编排器决定是否继续。
 - 允许局部失败：继续处理，但总结果至少为 degraded。
-- 日志 sink 失败：不阻断业务；Dispatcher 返回 sink failure，运行结果标记 degraded，备用 stderr 只提示一次。
+- required sink（默认启用的 JSONL 持久化）失败：不阻断业务执行，但运行结果标记 degraded，备用 stderr 只提示一次。
+- best-effort sink 失败：记录内存诊断并隔离故障，不改变业务结果；终端渲染不作为 required sink。
 - Rich 渲染失败：切换到 plain reporter，不影响日志。
 - 一个消费者异常：不能阻止另一个消费者收到事件。
 - 数据库探测失败：状态为 unknown，并保留错误码；不能伪装成未同步。
@@ -276,7 +286,7 @@ stdout/stderr：
 - Storage 全量同步返回 total/succeeded/failed/skipped，不再只返回成功数量。
 - `storage sync` 默认不自动修复；增加显式 `--repair`，使用前提示会修改 YAML 和产生 API 成本。
 - Material 删除缺少 ID 属于使用错误；删除失败退出 1，用户取消仍退出 0。
-- Search 只保留 `--mode quality|exact`；`--semantic` 作为有提示的弃用别名或在一个版本后删除。
+- Search 只保留 `--mode quality|exact`；`--semantic` 保留一个版本作为弃用别名并映射为 `exact`。`mode` 的解析必须保留“未显式传入”状态，任何显式 `--mode` 与 `--semantic` 同时出现都退出 2。
 - 删除无效 `event --keyword`。
 - Typer/Pydantic 参数错误转换成简洁消息，不输出 traceback。
 - 修复包含 `{material_id}` 的提示，通过 next-action renderer 生成命令。
@@ -315,7 +325,9 @@ stdout/stderr：
 
 - 测试只使用 `tmp_path`、fake DB 和 fake LLM。
 - 禁止测试运行 `nm pipeline full`、真实 storage sync 或已有素材 repair。
-- 全量验证前后计算 `data/novels` 文件清单和摘要，确认零变化。
+- 阶段一开始就记录 `data/novels` 全量文件和旧日志的 SHA-256 基线；每个实施 Task 完成后都执行校验。
+- 基线必须覆盖未跟踪文件和嵌套旧日志，不能只依赖 `git diff`；基线缺失时不得宣称零变化。
+- 最终验收再次校验同一份基线，确认整个实施周期零变化。
 
 ## 8. 实施阶段
 
@@ -323,12 +335,14 @@ stdout/stderr：
 2. 建立 Runtime 契约、context 和 dispatcher。
 3. 修复 Pipeline 结果真实性和新运行状态 sidecar。
 4. 实现独立结构化日志模块。
-5. 实现独立终端模块和正确 ETA。
-6. 先接入短命令和搜索，验证 stdout/stderr/JSON。
-7. 接入 Pipeline 单阶段、`full` 和 `continue`。
-8. 接入 validate、storage、material 和 tags audit。
-9. 删除旧 progress/logging 耦合与全局 LLM 统计。
-10. 更新文档并执行全量零数据变更验收。
+5. 先把全局 LLM 统计替换为请求局部 telemetry，并保留无全局状态的短期兼容层。
+6. 接入 Pipeline、Search、Audit 领域事件和具有明确 start/stop/join 生命周期的 heartbeat worker。
+7. 实现独立终端模块和正确 ETA。
+8. 先接入短命令和搜索，验证 stdout/stderr/JSON。
+9. 先统一 Pipeline 阶段 adapter，再接入单阶段、`full` 和 `continue` 编排。
+10. 接入 validate、storage、material 和 tags audit。
+11. 迁移所有兼容 accessor 调用后，再删除旧 progress/logging 耦合与兼容层。
+12. 更新文档并执行全量零数据变更验收。
 
 每个阶段都必须先写失败测试、确认失败、实现最小闭环、运行定向与全量测试，再提交。日志和终端可以在 Runtime 完成后分别实现和测试，但只有 Pipeline 结果契约可靠后才能宣称整体完成。
 

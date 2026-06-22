@@ -21,6 +21,9 @@
 - `run_logging` 与 `terminal` 禁止相互 import；测试增加静态依赖断言。
 - 不增加 OpenTelemetry SDK、Collector、消息队列、远程日志服务或新数据库。
 - QueueHandler/QueueListener 只在实现后基准证明同步写日志阻塞业务时另立计划，本计划不实现。
+- 每次 LLM attempt 都生成内部 `request_id`；服务商响应 ID 单独保存为可空 `provider_request_id`，失败请求不得没有内部 ID。
+- sink 明确区分 `required` 和 `best_effort`；只有 required sink 失败能把原成功结果降级，终端不属于 required sink。
+- 阶段一记录零数据变更基线，后续每个 Task 都校验同一份基线；基线丢失时不得宣称零变化。
 - 每个 Task 先写失败测试、确认失败、写最小实现、运行定向与相关回归测试，再按项目中文提交规范提交。
 
 ## 文件结构与职责
@@ -62,6 +65,9 @@ src/novel_material/pipeline/
 
 src/novel_material/cli/
 └── pipeline_common.py
+
+scripts/
+└── check_runtime_workspace.py
 ```
 
 对应新增测试：
@@ -72,6 +78,7 @@ tests/runtime/test_context.py
 tests/runtime/test_dispatcher.py
 tests/runtime/test_summary.py
 tests/runtime/test_dependencies.py
+tests/runtime/test_workspace_guard.py
 tests/run_logging/test_serializer.py
 tests/run_logging/test_redaction.py
 tests/run_logging/test_sink.py
@@ -105,42 +112,42 @@ tests/infra/test_llm_telemetry.py
 
 | 问题 | 对应任务 |
 |---|---|
-| insight 失败占位、invalid 保存、无条件成功、断点跳过坏文件 | Task 4、Task 9 |
-| 文件数量被当作完成、DB 异常被当作未同步、当前运行二次猜测 | Task 4、Task 9 |
+| insight 失败占位、invalid 保存、无条件成功、断点跳过坏文件 | Task 4、Task 9A、Task 9B |
+| 文件数量被当作完成、DB 异常被当作未同步、当前运行二次猜测 | Task 4、Task 9B |
 | 测试污染正式日志、短进程碎片文件 | Task 1、Task 5 |
-| 全局 `_call_details`、错误 request ID/attempt 串线 | Task 3、Task 6 |
+| 全局 `_call_details`、错误 request ID/attempt 串线 | Task 3、Task 6A |
 | 跨日时间、文本不可解析、运行链路缺失 | Task 2、Task 5 |
-| WARNING 洪水、thinking 字段矛盾 | Task 5、Task 6 |
-| 原始输出/异常/密钥指纹泄漏与日志注入 | Task 5、Task 6 |
-| 轮转、保留、sink 故障、heartbeat 缺失 | Task 5、Task 6 |
-| 日志是否满足 pipeline、LLM、search、audit 项目需求 | Task 6、Task 10 |
+| WARNING 洪水、thinking 字段矛盾 | Task 5、Task 6A |
+| 原始输出/异常/密钥指纹泄漏与日志注入 | Task 5、Task 6A |
+| 轮转、保留、sink 故障、heartbeat 缺失 | Task 5、Task 6B |
+| 日志是否满足 pipeline、LLM、search、audit 项目需求 | Task 6A、Task 6B、Task 10 |
 | `--semantic` 命名不实 | Task 8 |
-| Progress 十余处重复、full/continue 漂移 | Task 7、Task 9、Task 11 |
+| Progress 十余处重复、full/continue 漂移 | Task 7、Task 9B、Task 11B |
 | `event --keyword` 无效 | Task 8 |
-| StageTracker 无效字段、时间列无语义 | Task 7、Task 11 |
-| 单阶段、full、continue、validate、delete、sync-all 错误退出码 | Task 8、Task 9、Task 10 |
-| 不存在素材同时显示不存在和完成 | Task 4、Task 9 |
+| StageTracker 无效字段、时间列无语义 | Task 7、Task 11B |
+| 单阶段、full、continue、validate、delete、sync-all 错误退出码 | Task 8、Task 9B、Task 10 |
+| 不存在素材同时显示不存在和完成 | Task 4、Task 9B |
 | `0:00:02` 双 ETA | Task 7 |
-| `silent_console` 隐藏 WARNING/ERROR | Task 7、Task 11 |
+| `silent_console` 隐藏 WARNING/ERROR | Task 7、Task 11B |
 | 非法参数暴露 traceback | Task 8 |
-| 进度 100% 被当作数据成功 | Task 2、Task 7、Task 9 |
+| 进度 100% 被当作数据成功 | Task 2、Task 7、Task 9A、Task 9B |
 | 不确定总量 spinner 不停止 | Task 7、Task 10 |
 | 分类 ETA 固定 45 秒 | Task 7、Task 10 |
-| 多套终端机制、`cli/pipeline.py` 职责过载 | Task 7、Task 9、Task 11 |
+| 多套终端机制、`cli/pipeline.py` 职责过载 | Task 7、Task 9B、Task 11B |
 | 所有错误写 stdout | Task 7、Task 8、Task 10 |
 | Rich markup 解释用户数据 | Task 7、Task 8 |
 | 非 TTY、窄终端、quiet/no-progress/no-color 缺失 | Task 7、Task 8 |
-| 日志路径文档矛盾、终端契约缺失 | Task 11 |
-| `{material_id}` 原样显示 | Task 9 |
-| macOS `nm` 冲突 | Task 8、Task 11 |
-| 帮助中英文混杂 | Task 11（明确保留 Typer 固定框架词，其余项目文案中文化） |
+| 日志路径文档矛盾、终端契约缺失 | Task 11B |
+| `{material_id}` 原样显示 | Task 9B |
+| macOS `nm` 冲突 | Task 8、Task 11B |
+| 帮助中英文混杂 | Task 11B（明确保留 Typer 固定框架词，其余项目文案中文化） |
 | 既有素材与旧日志不得被顺手修复 | 全部任务，Task 12 最终验证 |
 
 ## 对话需求追踪
 
 | 用户在本次对话中的要求 | 计划落实位置 |
 |---|---|
-| 仔细检查 `logs/`，不能只处理表面格式 | Task 4、Task 5、Task 6、Task 9 |
+| 仔细检查 `logs/`，不能只处理表面格式 | Task 4、Task 5、Task 6A、Task 6B、Task 9B |
 | 当前数据用于测试验证，重点是完善系统 | 实施前约束、Task 1、Task 12 |
 | 默认不修复、清洗或重跑已有数据，必要契约变化可以单独处理 | 数据边界、Task 4 sidecar、Task 10 显式 `--repair` |
 | 修复 `24%` 时出现 `0:00:02` 的错误计时 | Task 7 假时钟批次 ETA 回归 |
@@ -157,10 +164,62 @@ tests/infra/test_llm_telemetry.py
 
 **Files:**
 - Modify: `tests/conftest.py`
+- Create: `scripts/check_runtime_workspace.py`
 - Create: `tests/runtime/test_dependencies.py`
 - Create: `tests/runtime/test_workspace_safety.py`
+- Create: `tests/runtime/test_workspace_guard.py`
 
-- [ ] **Step 1: 编写正式日志零写入和模块依赖测试**
+- [ ] **Step 1: 编写工作区摘要工具的失败测试**
+
+测试通过 subprocess 对临时目录执行 `record` 和 `verify`：覆盖 `data/novels` 中全部文件及 `logs` 下任意层级的旧 `*.log`，新增、删除或修改文件都必须导致 verify 退出 1；JSONL 不属于旧日志基线。
+
+```python
+def test_workspace_guard_detects_untracked_data_change(tmp_path, guard_script):
+    novel = tmp_path / "data/novels/nm_demo/meta.yaml"
+    novel.parent.mkdir(parents=True)
+    novel.write_text("status: clean\n", encoding="utf-8")
+    baseline = tmp_path / "baseline.json"
+    run_guard(guard_script, "record", tmp_path, baseline, expected=0)
+    (novel.parent / "new.yaml").write_text("new: true\n", encoding="utf-8")
+    result = run_guard(guard_script, "verify", tmp_path, baseline, expected=1)
+    assert "new.yaml" in result.stderr
+
+
+def test_workspace_guard_includes_nested_legacy_logs(tmp_path, guard_script):
+    legacy = tmp_path / "logs/2025/pipeline.log"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text("before", encoding="utf-8")
+    baseline = tmp_path / "baseline.json"
+    run_guard(guard_script, "record", tmp_path, baseline, expected=0)
+    legacy.write_text("after", encoding="utf-8")
+    result = run_guard(guard_script, "verify", tmp_path, baseline, expected=1)
+    assert "pipeline.log" in result.stderr
+```
+
+- [ ] **Step 2: 运行测试并确认摘要工具尚不存在**
+
+Run: `python -m pytest tests/runtime/test_workspace_guard.py -v`
+
+Expected: FAIL，提示 `scripts/check_runtime_workspace.py` 不存在。
+
+- [ ] **Step 3: 实现 record/verify 工具并立即记录实施基线**
+
+工具使用 `hashlib.sha256` 计算内容摘要，路径相对项目根目录排序后写入 JSON；`verify` 在基线文件不存在、格式错误或任何路径/摘要不一致时退出 1。禁止自动重建缺失基线。
+
+Run:
+
+```bash
+python scripts/check_runtime_workspace.py record \
+  --root . \
+  --baseline /tmp/novel-material-runtime-observability-baseline.json
+python scripts/check_runtime_workspace.py verify \
+  --root . \
+  --baseline /tmp/novel-material-runtime-observability-baseline.json
+```
+
+Expected: 两条命令均退出 0；基线包含 `data/novels/**` 和 `logs/**/*.log`，不包含新 JSONL。
+
+- [ ] **Step 4: 编写正式日志零写入和模块依赖测试**
 
 ```python
 from pathlib import Path
@@ -192,13 +251,13 @@ def test_test_suite_uses_isolated_log_dir(isolated_log_dir: Path):
     assert isolated_log_dir.is_relative_to(Path(tempfile.gettempdir()))
 ```
 
-- [ ] **Step 2: 运行测试并确认依赖测试因新模块不存在而失败**
+- [ ] **Step 5: 运行测试并确认依赖测试因新模块不存在而失败**
 
 Run: `python -m pytest tests/runtime/test_dependencies.py tests/runtime/test_workspace_safety.py -v`
 
 Expected: FAIL，提示 `src/novel_material/run_logging` 或 fixture 不存在；正式 `logs/` 不应新增文件。
 
-- [ ] **Step 3: 在 conftest 中设置会话级临时路径**
+- [ ] **Step 6: 在 conftest 中设置会话级临时路径**
 
 ```python
 import os
@@ -227,21 +286,27 @@ def pytest_sessionfinish(session, exitstatus):
 
 同时创建三个新 package 的空 `__init__.py`，使依赖测试能够扫描目录；业务实现留给后续 Task。
 
-- [ ] **Step 4: 验证隔离护栏与现有测试**
+- [ ] **Step 7: 验证隔离护栏、现有测试和实施基线**
 
-Run: `python -m pytest tests/runtime/test_dependencies.py tests/runtime/test_workspace_safety.py -v && python -m pytest -q`
-
-Expected: 新测试 PASS；全量不少于现有 `186 passed, 1 skipped`，正式 `logs/` 文件数量不增加。
-
-- [ ] **Step 5: 提交测试护栏**
+Run:
 
 ```bash
-git add tests/conftest.py tests/runtime src/novel_material/runtime/__init__.py src/novel_material/run_logging/__init__.py src/novel_material/terminal/__init__.py
+python -m pytest tests/runtime/test_dependencies.py tests/runtime/test_workspace_safety.py tests/runtime/test_workspace_guard.py -v
+python -m pytest -q
+python scripts/check_runtime_workspace.py verify --root . --baseline /tmp/novel-material-runtime-observability-baseline.json
+```
+
+Expected: 新测试 PASS；全量不少于现有 `186 passed, 1 skipped`；实施基线 verify 退出 0。后续每个 Task 的最后一个验证步骤必须重复执行该 verify 命令。
+
+- [ ] **Step 8: 提交测试护栏**
+
+```bash
+git add tests/conftest.py tests/runtime scripts/check_runtime_workspace.py src/novel_material/runtime/__init__.py src/novel_material/run_logging/__init__.py src/novel_material/terminal/__init__.py
 git commit -m "test(runtime): 建立运行改造的副作用护栏" \
   -m "主要改动：
 - 将测试日志目录隔离到临时路径
 - 增加日志与终端反向依赖检查
-- 增加正式工作区零写入断言
+- 增加覆盖未跟踪文件和嵌套旧日志的工作区摘要护栏
 
 验证结果：
 - python -m pytest tests/runtime -v 通过
@@ -435,6 +500,7 @@ class RunEvent(BaseModel):
     run_id: str
     stage_id: str | None = None
     request_id: str | None = None
+    provider_request_id: str | None = None
     command: str
     component: str
     operation: str
@@ -444,7 +510,7 @@ class RunEvent(BaseModel):
     attributes: dict[str, Any] = Field(default_factory=dict)
 ```
 
-在同一文件实现 `aggregate_status` 和 `exit_code_for`，优先级固定为 `failed > interrupted > degraded > running > pending > success`；本次运行捕获 `KeyboardInterrupt` 时直接构造 interrupted 顶层结果并退出 130。RunResult 的 counts 统计阶段，StageResult 的 counts 统计阶段内部业务项，禁止把章节数、人物数等不同单位相加。
+在同一文件实现 `aggregate_status` 和 `exit_code_for`，优先级固定为 `failed > interrupted > degraded > running > pending > success`；本次运行捕获 `KeyboardInterrupt` 时直接构造 interrupted 顶层结果并退出 130。RunResult 的 counts 统计阶段，StageResult 的 counts 统计阶段内部业务项，禁止把章节数、人物数等不同单位相加。`request_id` 是系统在每次请求发送前生成的内部关联 ID；`provider_request_id` 只保存服务商响应 ID，二者不得互相回填。
 
 - [ ] **Step 4: 导出契约并运行测试**
 
@@ -502,12 +568,20 @@ def test_failing_sink_does_not_block_healthy_sink():
 
     class FailingSink:
         name = "broken"
+        criticality = SinkCriticality.REQUIRED
         def emit(self, _event):
             raise OSError("disk full")
 
     report = RuntimeDispatcher([FailingSink(), healthy]).emit(event("RunStarted"))
     assert len(healthy.events) == 1
     assert report.failed_sinks == ("broken",)
+    assert report.required_failed_sinks == ("broken",)
+
+
+def test_best_effort_sink_failure_is_reported_but_not_required():
+    report = RuntimeDispatcher([FailingBestEffortSink()]).emit(event("RunStarted"))
+    assert report.failed_sinks == ("preview",)
+    assert report.required_failed_sinks == ()
 ```
 
 - [ ] **Step 2: 确认测试失败**
@@ -532,6 +606,7 @@ class RuntimeContext:
     material_id: str | None
     stage_id: str | None = None
     request_id: str | None = None
+    provider_request_id: str | None = None
 
 
 _CURRENT: ContextVar[RuntimeContext | None] = ContextVar(
@@ -560,7 +635,12 @@ def run_context(command: str, material_id: str | None = None):
 @contextmanager
 def stage_context(name: str):
     parent = require_context()
-    context = replace(parent, stage_id=new_id("stage"), request_id=None)
+    context = replace(
+        parent,
+        stage_id=new_id("stage"),
+        request_id=None,
+        provider_request_id=None,
+    )
     token = _CURRENT.set(context)
     try:
         yield context
@@ -574,13 +654,20 @@ def stage_context(name: str):
 
 ```python
 from dataclasses import dataclass
+from enum import Enum
 from typing import Protocol
 
 from .contracts import RunEvent
 
 
+class SinkCriticality(str, Enum):
+    REQUIRED = "required"
+    BEST_EFFORT = "best_effort"
+
+
 class EventSink(Protocol):
     name: str
+    criticality: SinkCriticality
     def emit(self, event: RunEvent) -> None: ...
 
 
@@ -588,6 +675,7 @@ class EventSink(Protocol):
 class DispatchReport:
     delivered: int
     failed_sinks: tuple[str, ...] = ()
+    required_failed_sinks: tuple[str, ...] = ()
 
 
 class RuntimeDispatcher:
@@ -597,16 +685,19 @@ class RuntimeDispatcher:
     def emit(self, event: RunEvent) -> DispatchReport:
         delivered = 0
         failed = []
+        required_failed = []
         for sink in self._sinks:
             try:
                 sink.emit(event)
                 delivered += 1
             except Exception:
                 failed.append(sink.name)
-        return DispatchReport(delivered, tuple(failed))
+                if sink.criticality is SinkCriticality.REQUIRED:
+                    required_failed.append(sink.name)
+        return DispatchReport(delivered, tuple(failed), tuple(required_failed))
 ```
 
-`summary.py` 实现 `RunSummaryAccumulator`，只按事件中的 counts、token usage 和 diagnostic code 聚合；不得读取日志或终端状态。`testing.py` 提供 `MemoryEventSink`、`FakeClock` 和构造固定时间事件的 `event()`。
+`summary.py` 实现 `RunSummaryAccumulator`，只按事件中的 counts、token usage 和 diagnostic code 聚合；不得读取日志或终端状态。`testing.py` 提供 `MemoryEventSink`、`FakeClock` 和构造固定时间事件的 `event()`。Memory/Null/终端预览类 sink 默认为 `best_effort`；启用的正式 `JsonlSink` 才标记为 `required`。只有 `required_failed_sinks` 能在 Orchestrator 中将原成功结果降级。
 
 `diagnostics.py` 提供无文件副作用的 `get_runtime_logger(component)` 适配器。它在调用 `.info/.warning/.error` 时读取当前 RuntimeContext 并发布 `DiagnosticRaised`；没有运行 context 的库调用使用 NullDispatcher，不创建目录、handler 或 stdout 输出。该适配器只用于逐步迁移现有 logger 调用，新增业务代码直接发布结构化事件。
 
@@ -688,7 +779,30 @@ def test_state_store_replaces_file_atomically(tmp_path):
     store.write(run_state("run-1", status="running"))
     store.write(run_state("run-1", status="degraded"))
     assert store.read("run-1").status == "degraded"
+    assert store.read_latest().run_id == "run-1"
     assert not list((tmp_path / "runs").glob("*.tmp"))
+
+
+def test_latest_state_uses_index_not_filename_or_mtime(tmp_path):
+    store = PipelineStateStore(tmp_path)
+    store.write(run_state("run-z", generation=1, status="success"))
+    store.write(run_state("run-a", generation=1, status="failed"))
+    assert store.read_latest().run_id == "run-a"
+
+
+def test_second_writer_for_same_material_is_rejected(tmp_path):
+    store = PipelineStateStore(tmp_path, process_probe=lambda _pid: True)
+    with store.acquire_lease("run-1"):
+        with pytest.raises(ConcurrentRunError):
+            store.acquire_lease("run-2").__enter__()
+
+
+def test_corrupt_latest_index_does_not_fall_back_to_file_count(tmp_path):
+    store = PipelineStateStore(tmp_path)
+    (tmp_path / "runs").mkdir()
+    (tmp_path / "runs/latest.json").write_text("{bad", encoding="utf-8")
+    with pytest.raises(PipelineStateCorruptError):
+        store.read_latest()
 ```
 
 - [ ] **Step 3: 运行定向测试并确认失败**
@@ -708,17 +822,36 @@ class PipelineStateStore:
         self.runs_dir.mkdir(parents=True, exist_ok=True)
         target = self.runs_dir / f"{state.run_id}.json"
         temp = target.with_suffix(".json.tmp")
-        temp.write_text(state.model_dump_json(indent=2), encoding="utf-8")
-        temp.replace(target)
+        write_json_fsynced(temp, state.model_dump_json(indent=2))
+        os.replace(temp, target)
+        index = LatestRunIndex(
+            run_id=state.run_id,
+            generation=state.generation,
+            updated_at=state.updated_at,
+        )
+        index_temp = self.runs_dir / "latest.json.tmp"
+        write_json_fsynced(index_temp, index.model_dump_json(indent=2))
+        os.replace(index_temp, self.runs_dir / "latest.json")
         return target
 
     def read(self, run_id: str) -> PersistedRunState:
         return PersistedRunState.model_validate_json(
             (self.runs_dir / f"{run_id}.json").read_text(encoding="utf-8")
         )
+
+    def read_latest(self) -> PersistedRunState:
+        index = LatestRunIndex.model_validate_json(
+            (self.runs_dir / "latest.json").read_text(encoding="utf-8")
+        )
+        state = self.read(index.run_id)
+        if state.generation != index.generation:
+            raise PipelineStateCorruptError("latest 索引与运行状态不一致")
+        return state
 ```
 
-`inspect_pipeline_state` 优先读取最新 sidecar；不存在时只读验证已有文件并标记 `legacy_unverified=True`。`DatabaseProbeStatus` 使用 `synced/not_synced/unknown` 三态，异常必须保留 diagnostic。
+`PersistedRunState` 必须包含 UTC `created_at`、`updated_at` 和每次写入递增的 `generation`。`inspect_pipeline_state` 只通过 `latest.json` 读取最新 sidecar；仅当整个 `runs/` 不存在时才只读验证已有文件并标记 `legacy_unverified=True`。索引缺失、目标缺失、JSON 损坏或 generation 不一致统一返回 `state_corrupt`，禁止回退到 mtime、文件名或文件数量。
+
+`acquire_lease()` 使用 `O_CREAT | O_EXCL` 创建 `active.lock`，内容包含 `run_id`、PID 和 UTC started_at，并在 `finally` 中只删除属于当前 run 的 lease。`status` 只读报告 lease；显式 `continue` 通过可注入的 process probe 确认原 PID 不存在后，原子接管 stale lease，并把上一运行记录为 interrupted。活跃 lease 导致 `pipeline_run_already_active`。`DatabaseProbeStatus` 使用 `synced/not_synced/unknown` 三态，异常必须保留 diagnostic。
 
 - [ ] **Step 5: 改造 insights 保存与返回逻辑**
 
@@ -830,6 +963,22 @@ def test_sensitive_and_multiline_values_are_sanitized():
     assert payload["attributes"]["api_key"] == "[REDACTED]"
     assert "整段小说正文" not in json.dumps(payload, ensure_ascii=False)
     assert "\n" not in payload["attributes"]["error_message"]
+
+
+def test_credentials_embedded_in_exception_text_are_redacted():
+    source = event(
+        "DiagnosticRaised",
+        attributes={
+            "error_message": (
+                "request failed: Bearer abc.def.ghi; "
+                "postgresql://writer:secret@db.example/novels"
+            )
+        },
+    )
+    payload = json.loads(serialize_event(source))
+    message = payload["attributes"]["error_message"]
+    assert "abc.def.ghi" not in message
+    assert "writer:secret" not in message
 ```
 
 - [ ] **Step 2: 编写轮转、保留与测试 sink 失败测试**
@@ -861,12 +1010,13 @@ Expected: FAIL，提示 serializer、sink、retention 尚不存在。
 - [ ] **Step 4: 实现字段白名单和 RFC 3339 序列化**
 
 ```python
-ALLOWED_TOP_LEVEL = {
+ALLOWED_TOP_LEVEL = (
     "schema_version", "event_name", "event_id", "occurred_at",
     "observed_at", "severity_text", "severity_number", "run_id",
-    "stage_id", "request_id", "command", "component", "operation",
+    "stage_id", "request_id", "provider_request_id",
+    "command", "component", "operation",
     "material_id", "status", "duration_ms", "attributes",
-}
+)
 SENSITIVE_KEYS = {
     "authorization", "api_key", "password", "connection_string",
     "database_url", "prompt", "raw_content", "source_text",
@@ -878,7 +1028,8 @@ def sanitize_value(key: str, value):
     if normalized in SENSITIVE_KEYS or normalized.endswith("_secret"):
         return "[REDACTED]"
     if isinstance(value, str):
-        return " ".join(value.replace("\x1b", "").splitlines())[:2000]
+        cleaned = " ".join(value.replace("\x1b", "").splitlines())[:2000]
+        return redact_sensitive_patterns(cleaned)
     if isinstance(value, dict):
         return {k: sanitize_value(k, v) for k, v in value.items()}
     if isinstance(value, list):
@@ -897,7 +1048,9 @@ def serialize_event(event: RunEvent) -> str:
 
 - [ ] **Step 5: 实现 sink、诊断聚合与新日志保留策略**
 
-`JsonlSink.emit()` 在第一次实际事件时创建 `logs/YYYY-MM-DD/`，按 `max_bytes` 轮转为 `.1.jsonl`、`.2.jsonl`。`DiagnosticAggregator` 对相同 `(run_id, stage_id, code)` 只写前 3 条明细，结束时写一条包含总数和最多 3 个样例的汇总事件。`RetentionPolicy.apply()` 只匹配日期子目录内的 `*.jsonl`，不得匹配根目录 `*.log`。
+`redact_sensitive_patterns()` 使用预编译模式覆盖 Bearer token、常见 `sk-`/`key-` API key、带用户凭据的 PostgreSQL URL 和 `password=...` 片段；替换后再执行长度限制。测试必须证明异常文本中的凭据也不会落盘。
+
+`JsonlSink.emit()` 在第一次实际事件时创建 `logs/YYYY-MM-DD/`，按 `max_bytes` 轮转为 `.1.jsonl`、`.2.jsonl`，并声明 `criticality=required`。`DiagnosticAggregator` 对相同 `(run_id, stage_id, code)` 只写前 3 条明细，结束时写一条包含总数和最多 3 个样例的汇总事件。`RetentionPolicy.apply()` 只匹配日期子目录内的 `*.jsonl`，不得匹配根目录或嵌套目录中的旧 `*.log`，也不得删除当前打开的运行文件。
 
 在 `config/settings.yaml` 增加：
 
@@ -933,23 +1086,11 @@ git commit -m "feat(logging): 增加独立结构化运行日志" \
 - python -m pytest tests/run_logging -v 通过"
 ```
 
-### Task 6：接入 LLM、Pipeline、Search 和 Audit 领域事件
+### Task 6A：消除全局 LLM 调用状态并建立请求级 telemetry
 
 **Files:**
 - Modify: `src/novel_material/infra/llm.py`
-- Create: `src/novel_material/runtime/heartbeat.py`
-- Modify: `src/novel_material/pipeline/analyze.py`
-- Modify: `src/novel_material/pipeline/outline_logic.py`
-- Modify: `src/novel_material/pipeline/characters_core.py`
-- Modify: `src/novel_material/pipeline/worldbuilding.py`
-- Modify: `src/novel_material/pipeline/tags.py`
-- Modify: `src/novel_material/search/service.py`
-- Modify: `src/novel_material/material/import_material.py`
-- Modify: `src/novel_material/material/delete.py`
 - Test: `tests/infra/test_llm_telemetry.py`
-- Test: `tests/runtime/test_heartbeat.py`
-- Test: `tests/run_logging/test_domain_events.py`
-- Modify: `tests/search/test_service.py`
 
 - [ ] **Step 1: 编写失败请求不得继承上一请求 ID 的测试**
 
@@ -969,11 +1110,12 @@ def test_failed_request_does_not_reuse_previous_request_id(
     failures = runtime_recorder.events_named("DiagnosticRaised")
     second = failures[-1]
     assert second.attributes["error_type"] == "timeout"
-    assert second.request_id is None
+    assert second.request_id.startswith("req_")
+    assert second.provider_request_id is None
     assert "req-success" not in second.model_dump_json()
 ```
 
-- [ ] **Step 2: 编写 LLM 字段语义和 Search trace 测试**
+- [ ] **Step 2: 编写 LLM 字段语义测试**
 
 ```python
 def test_disabled_thinking_does_not_emit_low_thinking_warning(runtime_recorder):
@@ -989,37 +1131,13 @@ def test_disabled_thinking_does_not_emit_low_thinking_warning(runtime_recorder):
     assert event.attributes["reasoning_tokens_observed"] == 2503
 
 
-def test_search_emits_channel_counts_and_degradation(fake_search_service, runtime_recorder):
-    fake_search_service.semantic_error = TimeoutError("slow")
-    response = fake_search_service.search(search_request())
-    completed = runtime_recorder.operations(component="search", operation="query")[-1]
-    assert completed.attributes["mode"] == "quality"
-    assert completed.attributes["candidate_counts"]["lexical"] > 0
-    assert "semantic_timeout" in completed.attributes["degradation_reasons"]
-    assert response.trace.degraded is True
-
-
-def test_heartbeat_uses_context_without_business_payload(
-    runtime_recorder, fake_clock
-):
-    heartbeat = HeartbeatEmitter(
-        dispatcher=runtime_recorder.dispatcher,
-        context=runtime_context("run-1"),
-        clock=fake_clock,
-        interval_seconds=60,
-    )
-    fake_clock.advance(60)
-    heartbeat.emit_if_due()
-    event = runtime_recorder.events_named("HeartbeatRecorded")[-1]
-    assert event.run_id == "run-1"
-    assert set(event.attributes) == {"elapsed_ms"}
 ```
 
 - [ ] **Step 3: 确认当前全局统计和文本日志使测试失败**
 
-Run: `python -m pytest tests/infra/test_llm_telemetry.py tests/runtime/test_heartbeat.py tests/run_logging/test_domain_events.py tests/search/test_service.py -v`
+Run: `python -m pytest tests/infra/test_llm_telemetry.py -v`
 
-Expected: 新测试 FAIL；当前超时错误读取 `_call_details[-1]`，没有结构化领域事件。
+Expected: 新测试 FAIL；当前超时错误读取 `_call_details[-1]`，失败请求继承了上一次响应数据。
 
 - [ ] **Step 4: 将 LLM 调用改为请求局部 telemetry**
 
@@ -1027,7 +1145,7 @@ Expected: 新测试 FAIL；当前超时错误读取 `_call_details[-1]`，没有
 @contextmanager
 def llm_request_context(operation: str):
     parent = require_context()
-    local = replace(parent, request_id=None)
+    local = replace(parent, request_id=new_id("req"), provider_request_id=None)
     token = set_context(local)
     started = monotonic()
     try:
@@ -1056,9 +1174,58 @@ with llm_request_context(context or "llm.call") as request_state:
         raise
 ```
 
-收到 response 后才把服务商返回 ID 写入该请求的完成事件。删除 `_call_details`、`_api_stats`、`get_last_call_*` 和 `clear_call_details`；原调用方改为使用 `RunSummaryAccumulator` 或当前 `StageResult` 的 usage。
+收到 response 后才把服务商返回 ID 写入该请求的 `provider_request_id`。本 Task 删除 `_call_details` 和 `_api_stats` 两个进程全局容器；现有 `get_call_details/get_last_call_*/clear_call_details` 暂时保留为基于 `ContextVar` 的兼容层并发出一次 DeprecationWarning，错误路径禁止读取兼容层。这样当前调用方不会在本提交中断裂，也不会跨运行或跨线程串线。Task 11A 迁移最后一批调用方后再删除这些 accessor。
 
-- [ ] **Step 5: 发布项目领域事件**
+- [ ] **Step 5: 验证请求隔离并提交**
+
+Run: `python -m pytest tests/infra/test_llm_telemetry.py tests/pipeline -v && python scripts/check_runtime_workspace.py verify --root . --baseline /tmp/novel-material-runtime-observability-baseline.json`
+
+Expected: LLM telemetry 和既有 Pipeline 测试 PASS；源码中不存在 `_call_details =` 或 `_api_stats =`；工作区基线不变。
+
+提交 `infra/llm.py`、runtime context 和对应测试，提交标题使用 `refactor(llm): 改用请求级调用追踪`，正文记录兼容 accessor 尚保留且不再使用进程全局状态。
+
+### Task 6B：接入领域事件与可停止 heartbeat worker
+
+**Files:**
+- Create: `src/novel_material/runtime/heartbeat.py`
+- Modify: `src/novel_material/pipeline/analyze.py`
+- Modify: `src/novel_material/pipeline/outline_logic.py`
+- Modify: `src/novel_material/pipeline/characters_core.py`
+- Modify: `src/novel_material/pipeline/worldbuilding.py`
+- Modify: `src/novel_material/pipeline/tags.py`
+- Modify: `src/novel_material/search/service.py`
+- Modify: `src/novel_material/material/import_material.py`
+- Modify: `src/novel_material/material/delete.py`
+- Test: `tests/runtime/test_heartbeat.py`
+- Test: `tests/run_logging/test_domain_events.py`
+- Modify: `tests/search/test_service.py`
+
+- [ ] **Step 1: 编写 Search trace 和 heartbeat 生命周期测试**
+
+除原有通道降级断言外，增加以下 worker 生命周期断言：
+
+```python
+def test_heartbeat_worker_stops_and_joins_on_exit(runtime_recorder, fake_waiter):
+    worker = HeartbeatWorker(
+        dispatcher=runtime_recorder.dispatcher,
+        context=runtime_context("run-1"),
+        interval_seconds=60,
+        waiter=fake_waiter,
+    )
+    worker.start()
+    fake_waiter.tick()
+    worker.stop()
+    assert worker.is_alive() is False
+    assert runtime_recorder.events_named("HeartbeatRecorded")[-1].run_id == "run-1"
+
+
+def test_heartbeat_contains_no_business_payload(runtime_recorder, fake_waiter):
+    run_one_heartbeat(runtime_recorder, fake_waiter)
+    event = runtime_recorder.events_named("HeartbeatRecorded")[-1]
+    assert set(event.attributes) == {"elapsed_ms"}
+```
+
+- [ ] **Step 2: 发布项目领域事件**
 
 固定 attributes：
 
@@ -1086,23 +1253,22 @@ AUDIT_FIELDS = {
 
 Pipeline 批次事件记录 expected/returned/missing 和校验摘要；标签字典警告通过稳定 diagnostic code 聚合。Audit 事件只在操作实际开始和结束时发布，不记录完整 YAML。
 
-`HeartbeatEmitter` 保存显式 RuntimeContext，每 60 秒发布 `HeartbeatRecorded`；只记录 run/stage ID 和已用时间，不包含 prompt、查询或素材内容。CLI 在 RunStarted 后启动，并在 RunCompleted、异常或中断的 `finally` 中停止。测试调用 `emit_if_due()`，不真实等待。
+`HeartbeatWorker` 在构造时复制显式 RuntimeContext，不依赖子线程继承 contextvars。`start()` 创建单个 daemon thread，循环使用可中断 `Event.wait(interval)`；`stop()` 设置 Event 并 `join(timeout)`，重复 start/stop 保持幂等。每 60 秒发布 `HeartbeatRecorded`，只记录 run/stage ID 和已用时间。CLI 在 RunStarted 后启动，并在 RunCompleted、异常或中断的 `finally` 中停止；测试注入 fake waiter，不真实等待。
 
-- [ ] **Step 6: 运行领域事件与相关流水线测试**
+- [ ] **Step 3: 运行领域事件与相关流水线测试**
 
 Run: `python -m pytest tests/infra/test_llm_telemetry.py tests/runtime/test_heartbeat.py tests/run_logging/test_domain_events.py tests/search tests/pipeline -v`
 
 Expected: 所有测试 PASS；不存在全局调用详情；日志事件不含 prompt/raw content；SearchResponse trace 与事件降级原因一致。
 
-- [ ] **Step 7: 提交领域可观测性**
+- [ ] **Step 4: 提交领域可观测性**
 
 ```bash
 git add src/novel_material/infra/llm.py src/novel_material/runtime/heartbeat.py src/novel_material/pipeline src/novel_material/search/service.py src/novel_material/material src/novel_material/tags tests/infra tests/runtime/test_heartbeat.py tests/run_logging/test_domain_events.py tests/search
 git commit -m "refactor(runtime): 统一领域事件与请求级追踪" \
   -m "主要改动：
-- 移除全局 LLM 调用详情并改用请求上下文
 - 补充 LLM、Pipeline、Search 和数据变更审计事件
-- 统一 thinking、Token、校验和降级字段语义
+- 增加可停止并可回收的 heartbeat worker
 
 验证结果：
 - python -m pytest tests/infra/test_llm_telemetry.py tests/run_logging/test_domain_events.py tests/search tests/pipeline -v 通过"
@@ -1312,6 +1478,15 @@ def test_semantic_alias_warns_and_maps_to_exact(runner, fake_search_service):
     assert fake_search_service.last_request.mode == "exact"
 
 
+def test_semantic_alias_conflicts_with_explicit_quality_mode(runner):
+    result = runner.invoke(
+        app,
+        ["search", "chapter", "雨", "--mode", "quality", "--semantic"],
+    )
+    assert result.exit_code == 2
+    assert "不能同时使用" in result.stderr
+
+
 def test_pyproject_exposes_non_conflicting_entrypoint():
     scripts = tomllib.loads(Path("pyproject.toml").read_text())["project"]["scripts"]
     assert scripts["nm"] == "novel_material.cli:main"
@@ -1349,14 +1524,20 @@ def configure_cli(
 删除 `event` 的 `keyword_mode` 参数。`--semantic` 保留一个版本作为 hidden alias，使用时向 stderr 发弃用提示并映射为 `exact`；显式同时传 `--mode quality --semantic` 时退出 2，避免静默覆盖。
 
 ```python
-def _search_mode(mode: SearchMode, semantic: bool, reporter: TerminalReporter):
-    if semantic and mode != SearchMode.QUALITY:
-        raise typer.BadParameter("--semantic 不能与显式 --mode 同时使用")
+def _search_mode(
+    mode: SearchMode | None,
+    semantic: bool,
+    reporter: TerminalReporter,
+):
+    if semantic and mode is not None:
+        raise typer.BadParameter("--semantic 不能与 --mode 同时使用")
     if semantic:
         reporter.warning("--semantic 已弃用，请改用 --mode exact")
         return SearchMode.EXACT
-    return mode
+    return mode or SearchMode.QUALITY
 ```
+
+Typer 参数声明同步改为 `mode: SearchMode | None = typer.Option(None, "--mode")`，使“未传入”与“显式传入 quality”保持可区分；不得依赖默认枚举值猜测参数来源。
 
 所有表格单元使用 `Text(result.title)`、`Text(summary)`、`Text(material_id)`。
 
@@ -1392,12 +1573,10 @@ git commit -m "fix(cli): 统一参数错误与机器输出契约" \
 
 ## 阶段五：命令编排与失败语义
 
-### Task 9：统一 Pipeline 单阶段、full、continue 和 status
+### Task 9A：统一 Pipeline 阶段返回契约
 
 **Files:**
-- Create: `src/novel_material/pipeline/orchestrator.py`
 - Create: `src/novel_material/cli/pipeline_common.py`
-- Modify: `src/novel_material/cli/pipeline.py`
 - Modify: `src/novel_material/pipeline/ingest.py`
 - Modify: `src/novel_material/pipeline/analyze.py`
 - Modify: `src/novel_material/pipeline/outline.py`
@@ -1405,6 +1584,35 @@ git commit -m "fix(cli): 统一参数错误与机器输出契约" \
 - Modify: `src/novel_material/pipeline/characters.py`
 - Modify: `src/novel_material/pipeline/tags.py`
 - Modify: `src/novel_material/pipeline/refine.py`
+- Create: `tests/pipeline/test_stage_contracts.py`
+
+- [ ] **Step 1: 枚举阶段入口并为 bool/string 失败编写契约测试**
+
+测试逐个调用 fake 化后的公开阶段入口，断言全部返回 `StageResult`；旧 `False`、空字符串和异常分别映射为 failed 与稳定 diagnostic，禁止被 truthy/打印逻辑误判为成功。
+
+- [ ] **Step 2: 运行阶段契约测试并确认现有返回类型不一致**
+
+Run: `python -m pytest tests/pipeline/test_stage_contracts.py -v`
+
+Expected: FAIL，并列出仍返回 bool/string/None 的具体阶段。
+
+- [ ] **Step 3: 逐阶段迁移并移除该阶段 adapter**
+
+`adapt_stage_result()` 只允许作为单个阶段迁移时的局部过渡工具；本 Task 结束时公开阶段入口必须原生返回 `StageResult`，源码静态测试禁止 PipelineOrchestrator 接收 bool/string/None。
+
+- [ ] **Step 4: 验证并提交阶段契约**
+
+Run: `python -m pytest tests/pipeline/test_stage_contracts.py tests/pipeline -v && python scripts/check_runtime_workspace.py verify --root . --baseline /tmp/novel-material-runtime-observability-baseline.json`
+
+Expected: Pipeline 全量 PASS；所有公开阶段入口原生返回 `StageResult`；工作区基线不变。
+
+提交标题使用 `refactor(pipeline): 统一阶段返回结果契约`，正文逐项列出已迁移阶段。
+
+### Task 9B：统一 Pipeline 单阶段、full、continue 和 status
+
+**Files:**
+- Create: `src/novel_material/pipeline/orchestrator.py`
+- Modify: `src/novel_material/cli/pipeline.py`
 - Test: `tests/pipeline/test_orchestrator.py`
 - Create: `tests/cli/test_pipeline_contract.py`
 
@@ -1429,7 +1637,7 @@ def test_continue_uses_pipeline_state_not_file_count(legacy_invalid_state):
     assert "sync" in plan.stage_names
 
 
-def test_observability_sink_failure_degrades_successful_run(failing_log_sink):
+def test_required_log_sink_failure_degrades_successful_run(failing_log_sink):
     orchestrator = PipelineOrchestrator(
         [fake_stage("analyze", RunStatus.SUCCESS)],
         dispatcher=dispatcher_with(failing_log_sink, MemoryEventSink()),
@@ -1438,6 +1646,16 @@ def test_observability_sink_failure_degrades_successful_run(failing_log_sink):
     assert result.status is RunStatus.DEGRADED
     assert result.exit_code == 3
     assert result.diagnostics[0].code == "event_sink_failed"
+
+
+def test_best_effort_sink_failure_does_not_change_business_result(failing_preview_sink):
+    orchestrator = PipelineOrchestrator(
+        [fake_stage("analyze", RunStatus.SUCCESS)],
+        dispatcher=dispatcher_with(failing_preview_sink),
+    )
+    result = orchestrator.run(run_request())
+    assert result.status is RunStatus.SUCCESS
+    assert result.exit_code == 0
 ```
 
 - [ ] **Step 2: 编写 CLI 退出码和不存在素材测试**
@@ -1497,11 +1715,11 @@ class PipelineOrchestrator:
 
 `full` 和 `continue` 只负责构造 `RunRequest` 和 stage plan，不再复制阶段调用。当前运行摘要直接使用返回结果；`get_pipeline_progress()` 仅供 status/continue 的历史读取。
 
-Orchestrator 在开始、每阶段前后和结束分别发布 `RunStarted`、`StageStarted`、`StageCompleted`、`RunCompleted`。每次检查 `DispatchReport.failed_sinks`；业务结果原本成功但存在 sink failure 时，通过 `with_observability_degradation()` 增加 `event_sink_failed` diagnostic 并改为 degraded/exit 3。备用 stderr 由 CLI 直接写一次固定消息，不能再次经过 dispatcher，避免递归失败。
+Orchestrator 在开始、每阶段前后和结束分别发布 `RunStarted`、`StageStarted`、`StageCompleted`、`RunCompleted`。每次检查 `DispatchReport.required_failed_sinks`；业务结果原本成功但 required sink 失败时，通过 `with_observability_degradation()` 增加 `event_sink_failed` diagnostic 并改为 degraded/exit 3。best-effort sink 失败只隔离并记录内存 diagnostic，不改变业务状态。备用 stderr 由 CLI 直接写一次固定消息，不能再次经过 dispatcher，避免递归失败。
 
 - [ ] **Step 5: 统一阶段 adapter 和 next action**
 
-每个阶段返回 `StageResult`。过渡期间旧 bool/string 返回值通过 `adapt_stage_result(name, value)` 转换，并在一个 Task 内移除该阶段的适配。禁止 bool 失败被当作 success。
+每个阶段已经在 Task 9A 原生返回 `StageResult`。Orchestrator 遇到 bool/string/None 必须抛出 `StageContractError`，不得继续保留兼容转换。
 
 ```python
 def render_next_actions(result: RunResult, material_id: str) -> tuple[str, ...]:
@@ -1684,7 +1902,43 @@ git commit -m "fix(cli): 补齐校验同步与素材操作结果语义" \
 
 ## 阶段六：移除旧耦合、文档和最终验收
 
-### Task 11：删除旧终端/日志机制并同步文档
+### Task 11A：迁移剩余兼容调用点
+
+**Files:**
+- Modify: `src/novel_material/pipeline/analyze.py`
+- Modify: `src/novel_material/pipeline/evaluate.py`
+- Modify: `src/novel_material/pipeline/outline_logic.py`
+- Modify: `src/novel_material/pipeline/outline_acts.py`
+- Modify: `src/novel_material/pipeline/outline_beats.py`
+- Modify: `src/novel_material/pipeline/characters_core.py`
+- Modify: `src/novel_material/pipeline/worldbuilding.py`
+- Modify: `src/novel_material/pipeline/tags.py`
+- Modify: `src/novel_material/infra/progress.py`
+- Modify: `tests/runtime/test_dependencies.py`
+
+- [ ] **Step 1: 用静态测试锁定全部兼容 accessor 调用**
+
+使用 AST/文本组合扫描 `get_call_details`、`get_last_call_tokens`、`get_last_call_finish_reason`、`clear_call_details`、`get_api_stats` 和 `reset_api_stats`；允许定义暂时存在于 `infra/llm.py`，但不允许任何其他业务或 CLI 文件继续调用。
+
+- [ ] **Step 2: 运行测试并输出完整调用清单**
+
+Run: `python -m pytest tests/runtime/test_dependencies.py -v && rg -n "get_call_details|get_last_call_tokens|get_last_call_finish_reason|clear_call_details|get_api_stats|reset_api_stats" src/novel_material`
+
+Expected: pytest FAIL；`rg` 清单至少覆盖 analyze、evaluate、outline、characters、worldbuilding、tags 和旧 progress，防止 Task 6A 删除接口后遗漏调用方。
+
+- [ ] **Step 3: 迁移为显式 LLM telemetry/summary 输入**
+
+调用方通过当前请求返回的 telemetry 或 `RunSummaryAccumulator` 获取 finish reason、Token 和调用摘要，不再读取“最后一次调用”。每迁移一个调用方运行其定向测试；本 Task 不删除旧 progress/logging 文件。
+
+- [ ] **Step 4: 验证并提交兼容调用迁移**
+
+Run: `python -m pytest tests/pipeline tests/infra/test_llm_telemetry.py tests/runtime/test_dependencies.py -v && python scripts/check_runtime_workspace.py verify --root . --baseline /tmp/novel-material-runtime-observability-baseline.json`
+
+Expected: 除 `infra/llm.py` 的兼容定义外无 accessor 匹配；Pipeline 测试 PASS；工作区基线不变。
+
+提交标题使用 `refactor(llm): 移除业务层最后调用状态依赖`。
+
+### Task 11B：删除旧终端/日志机制并同步文档
 
 **Files:**
 - Delete after migration: `src/novel_material/infra/progress.py`
@@ -1755,6 +2009,7 @@ Expected: FAIL，并列出 `silent_console`、`TimeRemainingColumn`、直接 std
 
 - 所有调用点迁移完成后删除 `infra/progress.py`。
 - 上述所有 Pipeline/Storage 文件把 `get_pipeline_logger` 替换为 `get_runtime_logger(component)`；`PipelineRunner`、`StageTracker` 和 `save_run_history` 分别替换为 stage context、RunSummaryAccumulator 和 PipelineStateStore。
+- Task 11A 的调用清单为零后，删除 `infra/llm.py` 中 `get_call_details/get_last_call_*/clear_call_details/get_api_stats/reset_api_stats` 兼容定义及其 DeprecationWarning。
 - `infra/__init__.py` 停止导出 StageTracker、PipelineRunner 和 stage_context。
 - `logging_config.py` 不再创建 file/stream handler，只提供旧 `get_*_logger()` 到 Runtime diagnostic 的短期适配，并发出一次 DeprecationWarning。
 - `logging_service.py` 改为构造 `JsonlSink` 或删除；不得在 import 时创建目录或文件。
@@ -1804,16 +2059,18 @@ git commit -m "refactor(runtime): 移除旧日志终端耦合" \
 - Modify if coverage gaps remain: `docs/code-review-report.md`
 - Create: `docs/runtime-observability-verification.md`
 
-- [ ] **Step 1: 记录已有素材和旧日志基线摘要**
+- [ ] **Step 1: 验证阶段一记录的实施基线仍然存在且匹配**
 
 Run:
 
 ```bash
-find data/novels -type f -exec shasum -a 256 {} \; | sort > /tmp/novel-material-data-before.sha256
-find logs -maxdepth 1 -type f -name '*.log' -exec shasum -a 256 {} \; | sort > /tmp/novel-material-legacy-logs-before.sha256
+test -s /tmp/novel-material-runtime-observability-baseline.json
+python scripts/check_runtime_workspace.py verify \
+  --root . \
+  --baseline /tmp/novel-material-runtime-observability-baseline.json
 ```
 
-Expected: 两份摘要文件成功生成；不访问数据库或外部 API。
+Expected: 基线存在且 verify 退出 0。若基线缺失，立即停止验收；不得在实施完成后重新 record 并据此声称零变化。
 
 - [ ] **Step 2: 运行格式、编译和全量测试**
 
@@ -1845,18 +2102,17 @@ python -m pytest \
 
 Expected: 全部 PASS；覆盖 sink 故障、错误 request ID、invalid insight、DB unknown、退出码、stdout/stderr、JSON、TTY/plain、ETA 和 audit。
 
-- [ ] **Step 4: 验证已有数据和旧日志摘要完全不变**
+- [ ] **Step 4: 再次验证已有数据和全部旧日志完全不变**
 
 Run:
 
 ```bash
-find data/novels -type f -exec shasum -a 256 {} \; | sort > /tmp/novel-material-data-after.sha256
-find logs -maxdepth 1 -type f -name '*.log' -exec shasum -a 256 {} \; | sort > /tmp/novel-material-legacy-logs-after.sha256
-diff -u /tmp/novel-material-data-before.sha256 /tmp/novel-material-data-after.sha256
-diff -u /tmp/novel-material-legacy-logs-before.sha256 /tmp/novel-material-legacy-logs-after.sha256
+python scripts/check_runtime_workspace.py verify \
+  --root . \
+  --baseline /tmp/novel-material-runtime-observability-baseline.json
 ```
 
-Expected: 两次 `diff` 均无输出且退出 0。
+Expected: verify 退出 0；检测范围包含未跟踪的 `data/novels/**` 文件和任意层级旧 `logs/**/*.log`。
 
 - [ ] **Step 5: 逐项关闭审计报告问题**
 
@@ -1901,3 +2157,8 @@ git commit -m "docs(runtime): 记录运行可靠性改造验收结果" \
 8. 正式测试不生成日志文件。
 9. 审计报告 28 项问题均有测试证据或明确非阻断取舍。
 10. 已有素材、旧日志和用户工作区变更保持不变。
+11. `status/continue` 只通过 `latest.json` 读取状态；并发 lease、stale lease 和损坏 sidecar 都有稳定测试。
+12. 每个 LLM attempt 都有独立内部 `request_id`，服务商 ID 只进入 `provider_request_id`，失败请求不继承旧值。
+13. heartbeat worker 在成功、异常和中断路径都能 stop/join，不遗留后台线程。
+14. best-effort sink 故障不改变业务结果，只有 required JSONL sink 故障触发 degraded。
+15. 零数据验收使用阶段一记录的同一份基线；基线缺失时验收失败。
