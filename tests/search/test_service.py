@@ -9,6 +9,9 @@ from novel_material.search.service import (
     SearchServiceError,
     create_default_search_service,
 )
+from novel_material.runtime.context import run_context
+from novel_material.runtime.dispatcher import RuntimeDispatcher
+from novel_material.runtime.testing import MemoryEventSink
 
 
 def result(result_id: str, material_id: str) -> SearchResult:
@@ -197,3 +200,28 @@ def test_default_service_rejects_unknown_configured_reranker(monkeypatch):
 
     with pytest.raises(ValueError, match="SEARCH_RERANKER"):
         create_default_search_service(context_enricher=None)
+
+
+def test_search_emits_channel_counts_and_degradation_without_query_text():
+    def fail(_request):
+        raise TimeoutError("slow")
+
+    sink = MemoryEventSink()
+    service = SearchService(
+        lexical=lambda _request: [result("a", "n1")],
+        semantic=fail,
+        structured=lambda _request: [],
+        dispatcher=RuntimeDispatcher([sink]),
+    )
+
+    with run_context(command="search chapter"):
+        response = service.search(SearchRequest(query="不可写入日志的宗门正文"))
+
+    completed = [event for event in sink.events if event.event_name == "OperationCompleted"][-1]
+    assert completed.attributes["mode"] == "quality"
+    assert completed.attributes["candidate_counts"]["lexical"] == 1
+    assert completed.attributes["degraded"] is True
+    assert any("semantic" in reason for reason in completed.attributes["degradation_reasons"])
+    assert completed.attributes["query_length"] == len("不可写入日志的宗门正文")
+    assert "不可写入日志的宗门正文" not in completed.model_dump_json()
+    assert response.trace.degraded is True

@@ -1,6 +1,8 @@
 """质量优先检索的召回、融合、降级与时间预算编排。"""
 
 from collections.abc import Callable
+from datetime import datetime, timezone
+import hashlib
 from time import perf_counter
 
 from novel_material.search.fusion import diversify_results, reciprocal_rank_fusion
@@ -45,6 +47,9 @@ from novel_material.search.world import (
     retrieve_worldbuilding_semantic,
     retrieve_worldbuilding_structured,
 )
+from novel_material.runtime.context import current_context, new_id
+from novel_material.runtime.contracts import RunEvent
+from novel_material.runtime.dispatcher import NullDispatcher, RuntimeDispatcher
 
 Retriever = Callable[[SearchRequest], list[SearchResult]]
 ContextEnricher = Callable[[list[SearchResult], SearchTrace], list[SearchResult]]
@@ -116,6 +121,7 @@ class SearchService:
         context_enricher: ContextEnricher | None = None,
         reranker: Reranker | None = None,
         rerank_candidates: int = 60,
+        dispatcher: RuntimeDispatcher | None = None,
     ) -> None:
         self._retrievers = {
             "lexical": lexical,
@@ -128,11 +134,13 @@ class SearchService:
         self._context_enricher = context_enricher
         self._reranker = reranker
         self._rerank_candidates = rerank_candidates
+        self._dispatcher = dispatcher or NullDispatcher()
 
     def search(self, request: SearchRequest) -> SearchResponse:
         """执行请求；质量模式允许单路失败，精确模式只走语义召回。"""
         trace = SearchTrace()
         started_at = self._clock()
+        self._emit_search_event("OperationStarted", request, trace)
         stage_names = ["semantic"] if request.mode == "exact" else [
             "lexical",
             "semantic",
@@ -161,8 +169,11 @@ class SearchService:
 
         if not ranked_results:
             if failures:
+                self._emit_search_event("DiagnosticRaised", request, trace)
                 raise SearchServiceError("全部召回通道失败")
-            return SearchResponse(query=request.query, results=[], trace=trace)
+            response = SearchResponse(query=request.query, results=[], trace=trace)
+            self._emit_search_event("OperationCompleted", request, trace)
+            return response
 
         if request.mode == "exact":
             results = list(ranked_results["semantic"][: request.limit])
@@ -208,7 +219,52 @@ class SearchService:
             else:
                 _degrade(trace, "达到时间预算，跳过 context 阶段")
 
-        return SearchResponse(query=request.query, results=results, trace=trace)
+        response = SearchResponse(query=request.query, results=results, trace=trace)
+        self._emit_search_event("OperationCompleted", request, trace)
+        return response
+
+    def _emit_search_event(
+        self,
+        event_name: str,
+        request: SearchRequest,
+        trace: SearchTrace,
+    ) -> None:
+        context = current_context()
+        if context is None:
+            return
+        now = datetime.now(timezone.utc)
+        self._dispatcher.emit(
+            RunEvent(
+                event_name=event_name,
+                event_id=new_id("event"),
+                occurred_at=now,
+                observed_at=now,
+                severity_text="ERROR" if event_name == "DiagnosticRaised" else "INFO",
+                run_id=context.run_id,
+                stage_id=context.stage_id,
+                command=context.command,
+                component="search",
+                operation="query",
+                material_id=context.material_id,
+                attributes={
+                    "mode": request.mode,
+                    "candidate_limit": request.candidate_limit,
+                    "time_budget_seconds": request.time_budget_seconds,
+                    "candidate_counts": dict(trace.candidate_counts),
+                    "elapsed_ms": dict(trace.elapsed_ms),
+                    "degraded": trace.degraded,
+                    "degradation_reasons": list(trace.degradation_reasons),
+                    "query_length": len(request.query),
+                    "query_fingerprint": hashlib.sha256(
+                        request.query.encode("utf-8")
+                    ).hexdigest()[:16],
+                    "reranker": (
+                        type(self._reranker).__name__
+                        if self._reranker is not None else "identity"
+                    ),
+                },
+            )
+        )
 
 
 def _degrade(trace: SearchTrace, reason: str) -> None:
