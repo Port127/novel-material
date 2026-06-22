@@ -58,13 +58,11 @@ def _stage_specs(material_id: str, options: dict) -> tuple[StageSpec, ...]:
         StageSpec("refine", lambda _request: run_refine_stage(material_id), blocking=True),
         StageSpec(
             "sync",
-            lambda _request: adapt_stage_result(
-                "sync",
-                sync_novel(
-                    material_id,
-                    provider=provider,
-                    use_window=bool(options.get("use_window")),
-                ),
+            lambda _request: sync_novel(
+                material_id,
+                provider=provider,
+                use_window=bool(options.get("use_window")),
+                repair_allowed=False,
             ),
             blocking=True,
             enabled=lambda _request: not bool(options.get("skip_sync")),

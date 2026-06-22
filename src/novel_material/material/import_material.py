@@ -8,6 +8,9 @@ from novel_material.infra.config import NOVELS_DIR, INDEX_FILE
 from novel_material.infra.common import generate_material_id
 from novel_material.infra.yaml_io import load_yaml, save_yaml
 from novel_material.tags.validate import validate_tag, validate_tags_batch
+from novel_material.material.audit import emit_material_audit
+from novel_material.runtime.contracts import RunStatus
+from novel_material.runtime.dispatcher import NullDispatcher, RuntimeDispatcher
 
 
 def validate_tags_with_db(tags):
@@ -41,11 +44,26 @@ def validate_tags_with_db(tags):
     return invalid
 
 
-def import_material(source_path):
+def import_material(source_path, *, dispatcher: RuntimeDispatcher | None = None):
     """导入外部素材目录。"""
     source_path = Path(source_path).resolve()
+    event_dispatcher = dispatcher or NullDispatcher()
+    object_id = source_path.name
+    emit_material_audit(
+        event_dispatcher,
+        operation="material.import",
+        object_id=object_id,
+        phase="started",
+    )
     if not source_path.exists():
         print(f"错误: 源目录不存在: {source_path}")
+        emit_material_audit(
+            event_dispatcher,
+            operation="material.import",
+            object_id=object_id,
+            phase="failed",
+            status=RunStatus.FAILED,
+        )
         return
 
     new_id = generate_material_id()
@@ -92,6 +110,14 @@ def import_material(source_path):
     print(f"\n导入完成: {new_id}")
     print("请运行以下命令同步到数据库:")
     print(f"  nm storage sync {new_id}")
+
+    emit_material_audit(
+        event_dispatcher,
+        operation="material.import",
+        object_id=new_id,
+        phase="completed",
+        status=RunStatus.SUCCESS,
+    )
 
     return new_id
 

@@ -1,9 +1,14 @@
 """按版本顺序执行可重复的 PostgreSQL 迁移。"""
 
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 
 import psycopg2
+
+from novel_material.runtime.context import current_context, new_id
+from novel_material.runtime.contracts import RunEvent, RunStatus
+from novel_material.runtime.dispatcher import NullDispatcher, RuntimeDispatcher
 
 MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
@@ -16,7 +21,7 @@ def _migration_version(path: Path) -> str:
     return path.name.split("_", 1)[0]
 
 
-def run_migrations(
+def _run_migrations_impl(
     database_url: str | None = None,
     migrations_dir: Path | None = None,
 ) -> list[str]:
@@ -75,3 +80,60 @@ def run_migrations(
         return applied_now
     finally:
         conn.close()
+
+
+def run_migrations(
+    database_url: str | None = None,
+    migrations_dir: Path | None = None,
+    *,
+    dispatcher: RuntimeDispatcher | None = None,
+) -> list[str]:
+    """执行迁移，并发布不包含 SQL 内容的审计事件。"""
+    event_dispatcher = dispatcher or NullDispatcher()
+    _emit_migration_audit(event_dispatcher, phase="started")
+    try:
+        versions = _run_migrations_impl(database_url, migrations_dir)
+    except Exception:
+        _emit_migration_audit(
+            event_dispatcher,
+            phase="failed",
+            status=RunStatus.FAILED,
+        )
+        raise
+    _emit_migration_audit(
+        event_dispatcher,
+        phase="completed",
+        status=RunStatus.SUCCESS,
+    )
+    return versions
+
+
+def _emit_migration_audit(
+    dispatcher: RuntimeDispatcher,
+    *,
+    phase: str,
+    status: RunStatus | None = None,
+) -> None:
+    context = current_context()
+    if context is None:
+        return
+    now = datetime.now(timezone.utc)
+    dispatcher.emit(
+        RunEvent(
+            event_name="AuditRecorded",
+            event_id=new_id("event"),
+            occurred_at=now,
+            observed_at=now,
+            run_id=context.run_id,
+            stage_id=context.stage_id,
+            command=context.command,
+            component="storage",
+            operation="storage.migrate",
+            status=status,
+            attributes={
+                "phase": phase,
+                "object_type": "database_schema",
+                "object_id": "schema_migrations",
+            },
+        )
+    )

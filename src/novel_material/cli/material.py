@@ -23,11 +23,27 @@ from novel_material.material.classify import (
 from novel_material.infra.config import NOVELS_DIR, INDEX_FILE
 from novel_material.infra.yaml_io import load_yaml
 from novel_material.infra.llm import load_config
+from novel_material.terminal.eta import BatchEtaEstimator
+from novel_material.runtime.context import run_context
 
 app = typer.Typer(help="素材管理")
 classify_app = typer.Typer(help="素材分类")
 app.add_typer(classify_app, name="classify")
 console = Console()
+
+
+class _MonotonicClock:
+    @staticmethod
+    def monotonic() -> float:
+        return time.monotonic()
+
+
+def _print_classify_eta(estimator: BatchEtaEstimator, completed: int) -> None:
+    snapshot = estimator.snapshot(completed=completed)
+    if snapshot.remaining_seconds is None:
+        console.print("  [dim]预计剩余: 估算中[/dim]")
+        return
+    console.print(f"  [dim]预计剩余: {snapshot.remaining_seconds / 60:.1f} 分钟[/dim]")
 
 
 def list_materials():
@@ -50,36 +66,30 @@ def cmd_import(
     dir_path: str = typer.Argument(..., help="素材目录路径"),
 ):
     """批量导入素材目录。"""
-    count = import_material(dir_path)
+    with run_context(command="material import"):
+        count = import_material(dir_path)
     console.print(f"[green]成功导入 {count} 个素材[/green]")
 
 
 @app.command("delete")
 def cmd_delete(
-    material_id: str = typer.Option(None, "--id", "-i", help="素材 ID"),
+    material_id: str = typer.Option(..., "--id", "-i", help="素材 ID"),
     force: bool = typer.Option(False, "--force", "-f", help="强制删除，不确认"),
 ):
     """删除素材。"""
-    if not material_id:
-        # 列出可选素材
-        materials = list_materials()
-        console.print("[yellow]请指定素材 ID[/yellow]")
-        console.print("可用素材:")
-        for m in materials[:10]:
-            console.print(f"  [cyan]{m.get('material_id')}[/cyan] - {m.get('name')}")
-        return
-
     if not force:
         confirm = typer.confirm(f"确认删除素材 {material_id}?")
         if not confirm:
             console.print("[yellow]已取消[/yellow]")
             raise typer.Exit(0)
 
-    result = delete_material(material_id, confirm=False)
+    with run_context(command="material delete", material_id=material_id):
+        result = delete_material(material_id, confirm=False)
     if result:
         console.print(f"[green]素材 {material_id} 已删除[/green]")
     else:
-        console.print(f"[red]删除失败[/red]")
+        typer.echo("删除失败", err=True)
+        raise typer.Exit(1)
 
 
 @app.command("list")
@@ -127,10 +137,7 @@ def cmd_classify_status():
     if status['last_processed_time']:
         console.print(f"上次处理:    {status['last_processed_time']}")
 
-    # 预估剩余时间（假设每本书 45 秒）
-    remaining_time_sec = status['remaining'] * 45
-    remaining_hours = remaining_time_sec / 3600
-    console.print(f"预计剩余:    ~{remaining_hours:.1f}小时")
+    console.print("预计剩余:    估算中（至少需要两个真实样本）")
 
 
 @classify_app.command("start")
@@ -160,6 +167,8 @@ def cmd_classify_start(
     config = load_config()
 
     processed = 0
+    estimator = BatchEtaEstimator(clock=_MonotonicClock())
+    estimator.start(total=max(total - start_seq, 0))
     for novel in novels:
         seq = novel.get("sequence", 0)
         if seq <= start_seq:
@@ -190,6 +199,8 @@ def cmd_classify_start(
             progress["processed"] = progress.get("processed", 0) + 1
             save_progress(progress)
             processed += 1
+            estimator.complete_batch(items=1)
+            _print_classify_eta(estimator, processed)
             continue
 
         # 执行分类
@@ -208,6 +219,8 @@ def cmd_classify_start(
             progress["processed"] = progress.get("processed", 0) + 1
             save_progress(progress)
             processed += 1
+            estimator.complete_batch(items=1)
+            _print_classify_eta(estimator, processed)
             continue
 
         # 保存结果（新格式）
@@ -249,6 +262,8 @@ def cmd_classify_start(
             console.print(f"  [yellow]置信度低[/yellow]: {result['confidence']}")
 
         processed += 1
+        estimator.complete_batch(items=1)
+        _print_classify_eta(estimator, processed)
 
     console.print(f"\n[bold green]分类完成[/bold green]")
     console.print(f"本次处理: {processed}")

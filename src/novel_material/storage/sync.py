@@ -25,9 +25,11 @@ from novel_material.storage.sync_utils import (
     get_db_connection,
 )
 from novel_material.storage.sync_core import (
+    SyncSummary,
     sync_novel,
     sync_all,
 )
+from novel_material.runtime.contracts import RunStatus
 
 
 if __name__ == "__main__":
@@ -36,11 +38,13 @@ if __name__ == "__main__":
         sys.exit(1)
 
     if sys.argv[1] == "all":
-        count = sync_all()
-        print(f"已同步 {count} 个素材")
+        summary = sync_all()
+        print(f"已同步 {summary.succeeded}/{summary.total} 个素材")
+        if summary.status is not RunStatus.SUCCESS:
+            sys.exit(3 if summary.status is RunStatus.DEGRADED else 1)
     else:
-        success = sync_novel(sys.argv[1])
-        if success:
+        result = sync_novel(sys.argv[1])
+        if result.status is RunStatus.SUCCESS:
             print(f"同步完成: {sys.argv[1]}")
         else:
             print(f"同步失败: {sys.argv[1]}")

@@ -7,6 +7,8 @@ from novel_material.storage.init_db import init_db
 from novel_material.storage.init_data import init_data
 from novel_material.storage.sync import sync_novel, sync_all
 from novel_material.storage.migrate import MigrationError, run_migrations
+from novel_material.runtime.contracts import RunStatus
+from novel_material.runtime.context import run_context
 
 app = typer.Typer(help="数据库和存储管理")
 console = Console()
@@ -16,7 +18,8 @@ console = Console()
 def cmd_migrate():
     """按版本顺序升级已有数据库结构。"""
     try:
-        versions = run_migrations()
+        with run_context(command="storage migrate"):
+            versions = run_migrations()
     except MigrationError as exc:
         console.print(f"[red]数据库迁移失败：{exc}[/red]")
         raise typer.Exit(1) from exc
@@ -79,35 +82,50 @@ def cmd_sync(
     material_id: str = typer.Argument(None, help="素材 ID（不指定则同步全部）"),
     provider: str = typer.Option(None, "--provider", "-p", help="服务商名称（用于修复时）"),
     use_window: bool = typer.Option(False, "--window", "-w", help="使用滑动窗口模式修复"),
+    repair: bool = typer.Option(False, "--repair", help="允许修改 YAML 并调用 LLM 修复"),
+    force: bool = typer.Option(False, "--force", "-f", help="跳过修复确认"),
 ):
     """同步素材到数据库。
 
-    如果检测到质量问题（如 summary 长度不足），会自动尝试修复后重试。
+    默认只校验并同步；检测到质量问题时不会自动修改素材。
     """
-    if material_id:
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            console=console,
-        ) as progress:
-            task = progress.add_task(f"同步素材: {material_id}", total=None)
-            success = sync_novel(material_id, provider=provider, use_window=use_window)
-            progress.update(task, completed=True)
+    if repair and not force:
+        console.print("[yellow]警告：修复会修改 YAML、调用 LLM 并产生费用。[/yellow]")
+        if not typer.confirm("确认授权修复并继续同步?"):
+            console.print("[yellow]未执行同步[/yellow]")
+            return
 
-        if success:
+    if material_id:
+        with run_context(command="storage sync", material_id=material_id):
+            result = sync_novel(
+                material_id,
+                provider=provider,
+                use_window=use_window,
+                repair_allowed=repair,
+            )
+
+        if result.status is RunStatus.SUCCESS:
             console.print(f"[green]素材 {material_id} 已同步[/green]")
         else:
-            console.print(f"[red]素材 {material_id} 同步失败[/red]")
-            console.print("[yellow]提示：检查日志排查问题，或手动修复后重试[/yellow]")
+            typer.echo(f"素材 {material_id} 同步失败", err=True)
+            for diagnostic in result.diagnostics:
+                typer.echo(f"{diagnostic.code}: {diagnostic.message}", err=True)
             raise typer.Exit(1)
     else:
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            console=console,
-        ) as progress:
-            task = progress.add_task("同步全部素材...", total=None)
-            count = sync_all(provider=provider, use_window=use_window)
-            progress.update(task, completed=True)
-
-        console.print(f"[green]已同步 {count} 个素材[/green]")
+        summary = sync_all(
+            provider=provider,
+            use_window=use_window,
+            repair_allowed=repair,
+        )
+        if summary.total == 0:
+            console.print("[yellow]没有可同步素材[/yellow]")
+            return
+        message = (
+            f"同步完成：总计 {summary.total}，成功 {summary.succeeded}，"
+            f"失败 {summary.failed}，跳过 {summary.skipped}"
+        )
+        if summary.status is RunStatus.SUCCESS:
+            console.print(f"[green]{message}[/green]")
+            return
+        typer.echo(message, err=True)
+        raise typer.Exit(3 if summary.status is RunStatus.DEGRADED else 1)

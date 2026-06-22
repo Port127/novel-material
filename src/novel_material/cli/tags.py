@@ -5,6 +5,8 @@ import psycopg2
 import psycopg2.extras
 from rich.console import Console
 from rich.table import Table
+from novel_material.runtime.context import run_context
+from novel_material.tags.service import TagService
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -17,6 +19,10 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 def get_connection():
     """获取数据库连接。"""
     return psycopg2.connect(DATABASE_URL)
+
+
+def get_tag_service() -> TagService:
+    return TagService(connection_factory=get_connection)
 
 
 @app.command("stats")
@@ -103,21 +109,14 @@ def cmd_add(
     synonym_of: str = typer.Option(None, "--synonym-of", help="同义词指向"),
 ):
     """添加新标签。"""
-    conn = get_connection()
-    conn.autocommit = True
-
-    with conn.cursor() as cur:
-        cur.execute("""
-            INSERT INTO tags (dimension, tag, domain, group_name, is_common, synonym_of)
-            VALUES (%s, %s, %s, %s, %s, %s)
-            ON CONFLICT (dimension, tag) DO UPDATE SET
-                domain = EXCLUDED.domain,
-                group_name = EXCLUDED.group_name,
-                is_common = EXCLUDED.is_common,
-                synonym_of = EXCLUDED.synonym_of
-        """, [dimension, tag, domain, group, domain == "common", synonym_of])
-
-    conn.close()
+    with run_context(command="tags add"):
+        get_tag_service().add(
+            dimension,
+            tag,
+            domain,
+            group=group,
+            synonym_of=synonym_of,
+        )
     console.print(f"[green]标签添加成功[/green]: {dimension}/{domain}/{tag}")
 
 
@@ -127,14 +126,8 @@ def cmd_remove(
     tag: str = typer.Argument(..., help="标签"),
 ):
     """删除标签。"""
-    conn = get_connection()
-    conn.autocommit = True
-
-    with conn.cursor() as cur:
-        cur.execute("DELETE FROM tags WHERE dimension = %s AND tag = %s", [dimension, tag])
-        affected = cur.rowcount
-
-    conn.close()
+    with run_context(command="tags remove"):
+        affected = get_tag_service().remove(dimension, tag)
     console.print(f"[green]已删除[/green]: {dimension}/{tag} (影响 {affected} 行)")
 
 
@@ -190,17 +183,8 @@ def cmd_move(
     new_domain: str = typer.Argument(..., help="新领域"),
 ):
     """移动标签到其他领域。"""
-    conn = get_connection()
-    conn.autocommit = True
-
-    with conn.cursor() as cur:
-        cur.execute("""
-            UPDATE tags SET domain = %s, is_common = %s
-            WHERE dimension = %s AND tag = %s
-        """, [new_domain, new_domain == "common", dimension, tag])
-        affected = cur.rowcount
-
-    conn.close()
+    with run_context(command="tags move"):
+        affected = get_tag_service().move(dimension, tag, new_domain)
     console.print(f"[green]已移动[/green]: {dimension}/{tag} → {new_domain} (影响 {affected} 行)")
 
 
@@ -211,17 +195,8 @@ def cmd_set_synonym(
     standard_tag: str = typer.Argument(..., help="标准标签"),
 ):
     """设置同义词关系。"""
-    conn = get_connection()
-    conn.autocommit = True
-
-    with conn.cursor() as cur:
-        cur.execute("""
-            UPDATE tags SET synonym_of = %s
-            WHERE dimension = %s AND tag = %s
-        """, [standard_tag, dimension, tag])
-        affected = cur.rowcount
-
-    conn.close()
+    with run_context(command="tags set-synonym"):
+        affected = get_tag_service().set_synonym(dimension, tag, standard_tag)
     console.print(f"[green]已设置[/green]: {tag} → {standard_tag} (影响 {affected} 行)")
 
 

@@ -35,6 +35,8 @@ def validate(
             table.add_row(r["material_id"], status)
 
         console.print(table)
+        if any(not result["passed"] for result in results):
+            raise typer.Exit(1)
 
     elif material_id:
         result = validate_material(material_id)
@@ -42,7 +44,8 @@ def validate(
         if result:
             console.print(f"[green]素材 {material_id} 校验通过[/green]")
         else:
-            console.print(f"[red]素材 {material_id} 校验失败[/red]")
+            typer.echo(f"素材 {material_id} 校验失败", err=True)
+            raise typer.Exit(1)
 
     else:
         console.print("[yellow]请指定素材 ID 或使用 --all[/yellow]")

@@ -3,6 +3,9 @@ import json
 import pytest
 from pathlib import Path
 import tempfile
+from typer.testing import CliRunner
+
+from novel_material.cli.main import app
 
 from novel_material.material.classify import (
     extract_sample_chapters,
@@ -390,3 +393,24 @@ class TestGetStatus:
 
         classify_module.CLASSIFY_PROGRESS_FILE = original_progress_path
         classify_module.NOVEL_INDEX_FILE = original_novel_index_file
+
+
+def test_classify_status_does_not_use_fixed_per_book_eta(monkeypatch):
+    monkeypatch.setattr(
+        "novel_material.cli.material.get_status",
+        lambda: {
+            "total": 10,
+            "processed": 1,
+            "progress_percent": 10,
+            "remaining": 9,
+            "failed": 0,
+            "last_processed_file": "demo.txt",
+            "last_processed_time": "2026-06-22T10:00:00",
+        },
+    )
+
+    result = CliRunner().invoke(app, ["material", "classify", "status"])
+
+    assert result.exit_code == 0
+    assert "估算中" in result.stdout
+    assert "~0.1小时" not in result.stdout

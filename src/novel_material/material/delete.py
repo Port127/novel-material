@@ -10,16 +10,39 @@ load_dotenv()
 
 from novel_material.infra.config import NOVELS_DIR, INDEX_FILE
 from novel_material.infra.yaml_io import load_yaml, save_yaml
+from novel_material.material.audit import emit_material_audit
+from novel_material.runtime.contracts import RunStatus
+from novel_material.runtime.dispatcher import NullDispatcher, RuntimeDispatcher
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 
-def delete_material(material_id, confirm=True):
+def delete_material(
+    material_id,
+    confirm=True,
+    *,
+    novels_dir=NOVELS_DIR,
+    dispatcher: RuntimeDispatcher | None = None,
+):
     """删除指定素材。"""
-    novel_dir = NOVELS_DIR / material_id
+    event_dispatcher = dispatcher or NullDispatcher()
+    emit_material_audit(
+        event_dispatcher,
+        operation="material.delete",
+        object_id=material_id,
+        phase="started",
+    )
+    novel_dir = novels_dir / material_id
 
     if not novel_dir.exists():
         print(f"错误: 小说目录不存在: {novel_dir}")
+        emit_material_audit(
+            event_dispatcher,
+            operation="material.delete",
+            object_id=material_id,
+            phase="failed",
+            status=RunStatus.FAILED,
+        )
         return False
 
     meta_file = novel_dir / "meta.yaml"
@@ -41,6 +64,13 @@ def delete_material(material_id, confirm=True):
         response = input("\n确认删除? (输入 YES 认): ")
         if response != "YES":
             print("操作已取消")
+            emit_material_audit(
+                event_dispatcher,
+                operation="material.delete",
+                object_id=material_id,
+                phase="failed",
+                status=RunStatus.FAILED,
+            )
             return False
 
     # 1. 删除目录
@@ -79,6 +109,13 @@ def delete_material(material_id, confirm=True):
             print("全局索引已更新")
 
     print(f"\n删除完成: {material_id}")
+    emit_material_audit(
+        event_dispatcher,
+        operation="material.delete",
+        object_id=material_id,
+        phase="completed",
+        status=RunStatus.SUCCESS,
+    )
     return True
 
 
