@@ -1,8 +1,30 @@
 """pytest fixtures for testing."""
-import pytest
+
+import os
 from pathlib import Path
+import shutil
 import tempfile
+
+import pytest
 import yaml
+
+
+_TEST_RUNTIME_ROOT = Path(tempfile.mkdtemp(prefix="novel-material-tests-"))
+_TEST_LOG_DIR = _TEST_RUNTIME_ROOT / "logs"
+os.environ["LOG_DIR"] = str(_TEST_LOG_DIR)
+os.environ["NOVEL_MATERIAL_TESTING"] = "1"
+
+
+@pytest.fixture(scope="session")
+def isolated_log_dir() -> Path:
+    """返回与正式工作区隔离的测试日志目录。"""
+    _TEST_LOG_DIR.mkdir(parents=True, exist_ok=True)
+    return _TEST_LOG_DIR
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """测试会话结束后清理临时运行目录。"""
+    shutil.rmtree(_TEST_RUNTIME_ROOT, ignore_errors=True)
 
 
 @pytest.fixture
