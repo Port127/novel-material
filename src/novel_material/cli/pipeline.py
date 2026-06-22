@@ -21,6 +21,8 @@ from novel_material.pipeline.progress import (
     get_pipeline_progress,
     print_pipeline_status,
     get_next_pending_stage,
+    inspect_pipeline_state,
+    next_pending_stage,
     calculate_total_stages,
     calculate_current_stage,
     get_pipeline_stages,
@@ -30,6 +32,11 @@ from novel_material.pipeline.progress import (
 )
 from novel_material.pipeline.insights import generate_chapter_insights
 from novel_material.pipeline.runtime_modes import get_runtime_mode
+from novel_material.pipeline.state import (
+    ConcurrentRunError,
+    PipelineStateCorruptError,
+    PipelineStateError,
+)
 from novel_material.pipeline.stages import (
     run_characters_stage,
     run_ingest_stage,
@@ -39,6 +46,7 @@ from novel_material.pipeline.stages import (
     run_worldbuilding_stage,
 )
 from novel_material.storage.sync import sync_novel
+from novel_material.cli.pipeline_common import run_continue_pipeline, run_full_pipeline
 
 app = typer.Typer(help="数据处理流水线")
 console = Console()
@@ -393,8 +401,7 @@ def cmd_refine(
     console.print("[green]精调完成[/green]")
 
 
-@app.command("full")
-def cmd_full(
+def _legacy_cmd_full(
     file_path: str = typer.Argument(..., help="小说文件路径"),
     start: int = typer.Option(None, "--start", "-s", help="起始章节号"),
     end: int = typer.Option(None, "--end", "-e", help="结束章节号（不指定则到结尾）"),
@@ -630,21 +637,37 @@ def cmd_status(
     material_id: str = typer.Argument(..., help="素材 ID"),
 ):
     """查看流水线进度。"""
-    progress = get_pipeline_progress(material_id)
-    if not progress.get("exists"):
+    try:
+        inspection = inspect_pipeline_state(material_id)
+    except PipelineStateError as exc:
+        _raise_pipeline_state_cli_error(exc)
+    if not inspection.exists:
         typer.echo("素材目录不存在", err=True)
         raise typer.Exit(1)
-    print_pipeline_status(progress)
 
-    next_stage = get_next_pending_stage(progress)
+    table = Table(title="流水线状态")
+    table.add_column("阶段", style="cyan")
+    table.add_column("状态")
+    labels = {
+        "success": "✓ 成功",
+        "degraded": "△ 降级",
+        "failed": "✗ 失败",
+        "interrupted": "! 已中断",
+        "running": "… 运行中",
+        "pending": "○ 待处理",
+    }
+    for name, stage in inspection.stages.items():
+        table.add_row(name, labels.get(stage.status.value, stage.status.value))
+    console.print(table)
+
+    next_stage = next_pending_stage(inspection)
     if next_stage:
         console.print(f"\n[yellow]下一步: nm pipeline continue {material_id}[/yellow]")
     else:
         console.print("\n[green]流水线已完成[/green]")
 
 
-@app.command("continue")
-def cmd_continue(
+def _legacy_cmd_continue(
     material_id: str = typer.Argument(..., help="素材 ID"),
     skip_sync: bool = typer.Option(False, "--skip-sync", help="跳过数据库同步"),
     start: int = typer.Option(None, "--start", "-s", help="起始章节号"),
@@ -910,3 +933,92 @@ def cmd_continue(
 
     console.print(table)
     console.print(f"[green]material_id:[/green] [cyan]{material_id}[/cyan]")
+
+
+def _finish_pipeline_command(result):
+    if result.status.value == "success":
+        console.print("[green]流水线完成[/green]")
+        return
+    if result.status.value == "interrupted":
+        typer.echo("运行已中断", err=True)
+    elif result.status.value == "degraded":
+        typer.echo("流水线降级完成", err=True)
+    else:
+        typer.echo("流水线失败", err=True)
+    raise typer.Exit(int(result.exit_code))
+
+
+def _raise_pipeline_state_cli_error(exc: PipelineStateError) -> None:
+    if isinstance(exc, PipelineStateCorruptError):
+        typer.echo(f"state_corrupt: {exc}", err=True)
+    elif isinstance(exc, ConcurrentRunError):
+        typer.echo(str(exc), err=True)
+    else:
+        typer.echo(f"pipeline_state_error: {exc}", err=True)
+    raise typer.Exit(1)
+
+
+@app.command("full")
+def cmd_full(
+    file_path: str = typer.Argument(..., help="小说文件路径"),
+    start: int = typer.Option(None, "--start", "-s", min=1, help="起始章节号"),
+    end: int = typer.Option(None, "--end", "-e", min=1, help="结束章节号"),
+    provider: str = typer.Option(None, "--provider", "-p", help="服务商名称"),
+    use_window: bool = typer.Option(False, "--window", "-w", help="启用滑动窗口模式"),
+    mode: str = typer.Option("standard", "--mode", help="fast / standard / deep"),
+    skip_sync: bool = typer.Option(False, "--skip-sync", help="跳过数据库同步"),
+    skip_embedding: bool = typer.Option(False, "--skip-embedding", help="跳过章节向量化"),
+):
+    """使用统一阶段计划执行完整流水线。"""
+    if start is not None and end is not None and end < start:
+        raise typer.BadParameter("--end 必须大于等于 --start")
+    try:
+        result = run_full_pipeline(
+            file_path=file_path,
+            start=start,
+            end=end,
+            provider=provider,
+            use_window=use_window,
+            mode=mode,
+            skip_sync=skip_sync,
+            skip_embedding=skip_embedding,
+        )
+    except PipelineStateError as exc:
+        _raise_pipeline_state_cli_error(exc)
+    except KeyboardInterrupt:
+        typer.echo("运行已中断", err=True)
+        raise typer.Exit(130) from None
+    _finish_pipeline_command(result)
+
+
+@app.command("continue")
+def cmd_continue(
+    material_id: str = typer.Argument(..., help="素材 ID"),
+    skip_sync: bool = typer.Option(False, "--skip-sync", help="跳过数据库同步"),
+    start: int = typer.Option(None, "--start", "-s", min=1, help="起始章节号"),
+    end: int = typer.Option(None, "--end", "-e", min=1, help="结束章节号"),
+    provider: str = typer.Option(None, "--provider", "-p", help="服务商名称"),
+    use_window: bool = typer.Option(False, "--window", "-w", help="启用滑动窗口模式"),
+    mode: str = typer.Option("standard", "--mode", help="fast / standard / deep"),
+    skip_embedding: bool = typer.Option(False, "--skip-embedding", help="跳过章节向量化"),
+):
+    """使用持久化/legacy 检查生成统一续传计划。"""
+    if start is not None and end is not None and end < start:
+        raise typer.BadParameter("--end 必须大于等于 --start")
+    try:
+        result = run_continue_pipeline(
+            material_id=material_id,
+            start=start,
+            end=end,
+            provider=provider,
+            use_window=use_window,
+            mode=mode,
+            skip_sync=skip_sync,
+            skip_embedding=skip_embedding,
+        )
+    except PipelineStateError as exc:
+        _raise_pipeline_state_cli_error(exc)
+    except KeyboardInterrupt:
+        typer.echo("运行已中断", err=True)
+        raise typer.Exit(130) from None
+    _finish_pipeline_command(result)
