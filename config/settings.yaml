@@ -45,6 +45,11 @@ RUN_LOG_MAX_FILES: 200
 RUN_LOG_DIAGNOSTIC_DETAIL_LIMIT: 3
 RUN_HEARTBEAT_SECONDS: 60
 
+# 终端进度与 ETA
+TERMINAL_ETA_MIN_BATCHES: 2
+TERMINAL_ETA_WINDOW: 5
+TERMINAL_PROGRESS_REFRESH_PER_SECOND: 4
+
 # ──────────────────────────────────────────────
 # LLM 超时配置（各阶段，单位：秒）
 # ──────────────────────────────────────────────
