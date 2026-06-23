@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
-from novel_material.infra.yaml_io import load_yaml_list
+from novel_material.infra.common import is_special_chapter_type
+from novel_material.infra.yaml_io import load_yaml, load_yaml_list
 
 from .models import ArtifactIssue, AuditSeverity, ReviewState
 
@@ -102,9 +104,221 @@ def check_chapter_coverage(context: AuditContext) -> Iterable[ArtifactIssue]:
     )
 
 
+_STATISTICAL_PROFILE_RE = re.compile(r"^出场\s+\d+\s+章，为主要角色之一。?$")
+_FULL_PROFILE_FIELDS = ("arc_summary", "psychology", "relationships")
+
+
+def check_character_profiles(context: AuditContext) -> Iterable[ArtifactIssue]:
+    """识别主要人物和配角的统计兜底或空壳档案。"""
+    profiles_dir = context.novel_dir / "characters" / "profiles"
+    if not profiles_dir.is_dir():
+        return
+
+    for profile_path in sorted(profiles_dir.glob("*.yaml")):
+        profile = load_yaml(profile_path)
+        role = profile.get("role")
+        if role not in {"protagonist", "antagonist", "supporting"}:
+            continue
+
+        missing_fields = [
+            field for field in _FULL_PROFILE_FIELDS if not profile.get(field)
+        ]
+        description = profile.get("description")
+        statistical_description = (
+            isinstance(description, str)
+            and _STATISTICAL_PROFILE_RE.fullmatch(description.strip()) is not None
+        )
+        if not missing_fields and not statistical_description:
+            continue
+
+        evidence: dict[str, object] = {"missing_fields": missing_fields}
+        if statistical_description:
+            evidence["statistical_description"] = True
+        yield _issue(
+            "character_profile_fallback",
+            (
+                AuditSeverity.ERROR
+                if role in {"protagonist", "antagonist"}
+                else AuditSeverity.WARNING
+            ),
+            profile_path.relative_to(context.novel_dir).as_posix(),
+            "人物档案仍是统计兜底或缺少完整小传字段",
+            evidence=evidence,
+            next_actions=(f"nm pipeline characters {context.material_id}",),
+        )
+
+
+def check_worldbuilding(context: AuditContext) -> Iterable[ArtifactIssue]:
+    """检查旧世界观索引中的空结构和证据能力缺口。"""
+    index_path = context.novel_dir / "worldbuilding" / "_index.yaml"
+    if not index_path.is_file():
+        return
+
+    index = load_yaml(index_path)
+    count_fields = (
+        "power_system_levels",
+        "region_count",
+        "faction_count",
+        "lore_items",
+    )
+    if not index.get("llm_success") and all(not index.get(field) for field in count_fields):
+        yield _issue(
+            "worldbuilding_empty",
+            AuditSeverity.ERROR,
+            "worldbuilding/_index.yaml",
+            "世界观提取失败且四类结构均为空",
+            evidence={field: index.get(field, 0) for field in count_fields},
+            next_actions=(f"nm pipeline worldbuilding {context.material_id}",),
+        )
+
+    evidence_fields = {
+        "dimension_count",
+        "entity_count",
+        "relationship_count",
+        "evidence_count",
+    }
+    if any(field in index for field in count_fields) and not any(
+        field in index for field in evidence_fields
+    ):
+        yield _issue(
+            "worldbuilding_legacy_without_evidence",
+            AuditSeverity.WARNING,
+            "worldbuilding/_index.yaml",
+            "旧版世界观结构不包含实体关系与章节证据统计",
+            evidence={"legacy_fields": list(count_fields)},
+            reviewable=True,
+        )
+
+
+def check_finalized_artifacts(context: AuditContext) -> Iterable[ArtifactIssue]:
+    """finalized 素材必须保留四个专题阶段的入口文件。"""
+    meta_path = context.novel_dir / "meta.yaml"
+    if not meta_path.is_file() or load_yaml(meta_path).get("status") != "finalized":
+        return
+
+    entry_files = (
+        "outline/_index.yaml",
+        "characters/_index.yaml",
+        "worldbuilding/_index.yaml",
+        "tags.yaml",
+    )
+    for artifact in entry_files:
+        if not (context.novel_dir / artifact).is_file():
+            yield _issue(
+                "finalized_artifact_missing",
+                AuditSeverity.ERROR,
+                artifact,
+                "finalized 素材缺少专题分析入口文件",
+                evidence={"status": "finalized"},
+                next_actions=(f"nm pipeline continue {context.material_id}",),
+            )
+
+
+def _expected_insight_chapters(index: list) -> set[int]:
+    """返回应生成 insight 的正文与番外章节号。"""
+    return {
+        chapter
+        for item in index
+        if isinstance(item, dict)
+        and not is_special_chapter_type(str(item.get("type", "normal")))
+        and isinstance((chapter := item.get("chapter")), int)
+        and not isinstance(chapter, bool)
+    }
+
+
+_VALIDATION_ERRORS_RE = re.compile(r"(?m)^\s*validation_errors:")
+_EMPTY_VALIDATION_ERRORS_RE = re.compile(
+    r"(?m)^\s*validation_errors:\s*\[\s*\]\s*(?:#.*)?$"
+)
+
+
+def _insight_file_state(path: Path) -> tuple[int | None, bool]:
+    """用稳定文件名和轻量标记读取章节号及失败占位状态。"""
+    if path.stem.isdigit():
+        content = path.read_text(encoding="utf-8")
+        has_validation_errors = _VALIDATION_ERRORS_RE.search(content) is not None
+        validation_errors_empty = (
+            _EMPTY_VALIDATION_ERRORS_RE.search(content) is not None
+        )
+        return int(path.stem), has_validation_errors and not validation_errors_empty
+
+    insight = load_yaml(path)
+    chapter = insight.get("chapter")
+    if not isinstance(chapter, int) or isinstance(chapter, bool):
+        chapter = None
+    quality = insight.get("quality")
+    failed = isinstance(quality, dict) and bool(quality.get("validation_errors"))
+    return chapter, failed
+
+
+def check_insight_coverage(context: AuditContext) -> Iterable[ArtifactIssue]:
+    """检查 insight 文件覆盖率，并单列已落盘的失败占位。"""
+    index_path = context.novel_dir / "chapter_index.yaml"
+    if not index_path.is_file():
+        return
+
+    insights_dir = context.novel_dir / "chapter_insights"
+    if not insights_dir.is_dir():
+        yield _issue(
+            "insights_missing",
+            AuditSeverity.INFO,
+            "chapter_insights",
+            "尚未生成章节深度分析目录",
+            next_actions=(f"nm pipeline insights {context.material_id}",),
+        )
+        return
+
+    expected = _expected_insight_chapters(
+        load_yaml_list(index_path)
+    )
+    present: set[int] = set()
+    failed: set[int] = set()
+    for path in sorted(insights_dir.glob("*.yaml")):
+        chapter, is_failed = _insight_file_state(path)
+        if chapter is None or chapter not in expected:
+            continue
+        present.add(chapter)
+        if is_failed:
+            failed.add(chapter)
+
+    missing = sorted(expected - present)
+    if missing:
+        yield _issue(
+            "insight_coverage_incomplete",
+            AuditSeverity.WARNING,
+            "chapter_insights",
+            "章节深度分析覆盖不完整",
+            evidence={
+                "expected": len(expected),
+                "processed": len(present),
+                "missing_chapters": missing[:50],
+                "missing_count": len(missing),
+            },
+            next_actions=(f"nm pipeline insights {context.material_id}",),
+        )
+
+    if failed:
+        failed_chapters = sorted(failed)
+        yield _issue(
+            "insight_failed_placeholder",
+            AuditSeverity.WARNING,
+            "chapter_insights",
+            "部分 insight 文件记录了生成或校验失败",
+            evidence={
+                "failed_chapters": failed_chapters[:50],
+                "failed_count": len(failed_chapters),
+            },
+            next_actions=(f"nm pipeline insights {context.material_id}",),
+        )
+
+
 RULES: tuple[tuple[str, AuditRule], ...] = (
     ("required_files", check_required_files),
     ("chapter_coverage", check_chapter_coverage),
+    ("characters", check_character_profiles),
+    ("worldbuilding", check_worldbuilding),
+    ("finalized_artifacts", check_finalized_artifacts),
+    ("insight_coverage", check_insight_coverage),
 )
 
 
@@ -124,6 +338,10 @@ __all__ = [
     "AuditRule",
     "RULES",
     "check_chapter_coverage",
+    "check_character_profiles",
+    "check_finalized_artifacts",
+    "check_insight_coverage",
     "check_required_files",
+    "check_worldbuilding",
     "run_deterministic_rules",
 ]
