@@ -4,20 +4,20 @@
 feature: artifact-audit-and-run-report
 phase: 1
 status: ready
-current_packet: task-08-report-builder.md
-last_completed_packet: task-07-orchestrator-events.md
-last_good_commit: bb1ea6a
+current_packet: task-09-report-writer.md
+last_completed_packet: task-08-report-builder.md
+last_good_commit: 0f47ce6
 worktree: current_main_user_approved
 blocking_issue: null
 ```
 
 ## 最近验证
 
-- 指定 orchestrator、runtime 回归：45 passed。
-- `python -m pytest -q`：338 passed，1 skipped。
-- `python -m compileall -q src/novel_material`：通过。
-- 阶段事件、异常脱敏转换、运行边界和审计事件测试通过。
-- Packet 07 提交：`bb1ea6a`。
+- 报告构建器与 runtime 汇总回归：12 passed。
+- `python -m pytest -q`：346 passed，1 skipped。
+- `python -m compileall -q src/novel_material/reporting`：通过。
+- 运行边界、阶段合并、审计校验、诊断汇总和同素材基线测试通过。
+- Packet 08 提交：`0f47ce6`。
 
 ## 已确认且不得遗失
 
@@ -29,7 +29,7 @@ blocking_issue: null
 
 ## 本次开始动作
 
-1. 打开 `task-08-report-builder.md`。
+1. 打开 `task-09-report-writer.md`。
 2. 确认工作区除用户 `docs/feedback.md` 外没有未知修改。
 3. 按 packet 内测试驱动步骤执行。
 
