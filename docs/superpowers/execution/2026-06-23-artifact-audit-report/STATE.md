@@ -4,18 +4,19 @@
 feature: artifact-audit-and-run-report
 phase: 1
 status: ready
-current_packet: task-02-core-rules.md
-last_completed_packet: task-01-audit-contracts.md
-last_good_commit: e77e872
+current_packet: task-03-domain-rules.md
+last_completed_packet: task-02-core-rules.md
+last_good_commit: 131b3c3
 worktree: current_main_user_approved
 blocking_issue: null
 ```
 
 ## 最近验证
 
-- `python -m pytest tests/audit/test_models.py -v`：2 passed。
-- `python -m pytest -q`：293 passed，1 skipped。
-- Packet 01 提交：`e77e872`。
+- `python -m pytest tests/audit/test_rules.py -v`：2 passed。
+- `python -m pytest tests/audit -v`：4 passed。
+- `python -m pytest -q`：295 passed，1 skipped。
+- Packet 02 提交：`131b3c3`。
 
 ## 已确认且不得遗失
 
@@ -27,7 +28,7 @@ blocking_issue: null
 
 ## 本次开始动作
 
-1. 打开 `task-02-core-rules.md`。
+1. 打开 `task-03-domain-rules.md`。
 2. 确认工作区除用户 `docs/feedback.md` 外没有未知修改。
 3. 按 packet 内测试驱动步骤执行。
 
