@@ -155,7 +155,9 @@ nm validate insights nm_xxx
 nm search insight "主角被压制后反杀" --mode quality --json
 ```
 
-运行模式中，`fast` 跳过 insights，`standard` 执行 core insights。`deep` 当前只保留更深分析的运行模式配置，主流水线尚未实现独立 deep insight 生成器。
+运行模式中，`fast` 跳过 insights；`standard` 默认只分析开头 100 章，可通过 `INSIGHTS_STANDARD_CHAPTER_LIMIT` 调整；`deep` 全量执行 core insights，但主流水线尚未实现独立 deep insight 生成器。
+
+上述 `standard` 上限只作用于未显式提供范围的 `full` 和 `continue` 自动编排；传入 `--start/--end` 时用户范围覆盖默认上限。独立执行 `nm pipeline insights` 时，不指定范围仍表示全量；指定 `--start/--end` 时严格使用用户范围。`refine` 继续基于全部 L1 章级分析数据运行。
 
 ### 4.4 骨架分析与精调
 
@@ -180,8 +182,8 @@ nm pipeline full ./novel.txt --mode standard
 | 模式 | 目标 | insights 行为 |
 |---|---|---|
 | `fast` | 优先完成基础素材 | 跳过 core insights |
-| `standard` | 默认无人值守 | 执行批量 core insights |
-| `deep` | 质量优先 | 执行 core insights，并保留关键章节深度分析扩展点 |
+| `standard` | 默认无人值守 | 默认分析开头 100 章，可通过 `INSIGHTS_STANDARD_CHAPTER_LIMIT` 调整 |
+| `deep` | 质量优先 | 全量执行 core insights，并保留关键章节深度分析扩展点 |
 
 ### 4.6 状态与断点续传
 

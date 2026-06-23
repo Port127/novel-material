@@ -386,7 +386,7 @@ save_yaml(paths.meta_path, meta)
 
 首批 profile 包括 `common`、`xuanhuan`、`xianxia`、`suspense`。`profile_resolver.py` 根据 `meta.yaml` 题材选择，也接受 CLI `--profile` 显式覆盖；`analysis_profiles/` 负责加载和合并 YAML 契约。单章 insight 包含 `profiles`、`common`、`genre`、`evidence`、`confidence` 和 `quality`，题材字段必须能关联章级摘要或已有字段证据。
 
-`fast` 模式跳过 insights，`standard` 模式执行 core insights。`deep` 的运行模式元数据已保留关键章节比例与阻断语义，但当前主流水线仍调用同一个 core insight 生成器，没有独立的 deep 分析实现，文档和 Agent 不得声称已经完成更深层分析。
+`fast` 模式跳过 insights；`standard` 模式默认只为开头 100 章生成 core insights，上限由 `INSIGHTS_STANDARD_CHAPTER_LIMIT` 配置；`deep` 当前仍对全部已分析章节调用同一个 core insight 生成器。`full/continue --start/--end` 的显式用户范围覆盖模式默认范围。`deep` 的关键章节比例与阻断语义只是扩展元数据，尚无独立 deep 分析实现，文档和 Agent 不得声称已经完成更深层分析。该自动上限不影响独立 `nm pipeline insights --start/--end`，也不缩小 `refine` 的全书 L1 输入范围。
 
 `insights.py` 按批调用 LLM，批次失败会为对应章节写入失败状态并继续；schema 校验失败最多修复一次，仍失败则保留结果并写入 `quality.validation_errors`，同时下调 confidence。新增 profile 时必须提供 YAML 字段契约，并覆盖 loader、resolver、prompt 和 validator 测试。
 
