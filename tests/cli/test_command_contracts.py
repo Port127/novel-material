@@ -81,6 +81,43 @@ def test_root_help_exposes_terminal_control_options():
     assert "--no-color" in result.stdout
 
 
+def test_standalone_insights_keeps_explicit_chapter_range(tmp_path, monkeypatch):
+    material_id = "nm_demo"
+    novel_dir = tmp_path / material_id
+    novel_dir.mkdir()
+    (novel_dir / "chapter_index.yaml").write_text(
+        "- chapter: 1\n  title: 第一章\n"
+        "- chapter: 2\n  title: 第二章\n"
+        "- chapter: 3\n  title: 第三章\n",
+        encoding="utf-8",
+    )
+    recorded = {}
+
+    def fake_generate(material_id_arg, **kwargs):
+        recorded.update(material_id=material_id_arg, **kwargs)
+        return StageResult(
+            stage_id="stage-insights",
+            name="insights",
+            status=RunStatus.SUCCESS,
+        )
+
+    monkeypatch.setattr("novel_material.cli.pipeline.NOVELS_DIR", tmp_path)
+    monkeypatch.setattr(
+        "novel_material.cli.pipeline.generate_chapter_insights",
+        fake_generate,
+    )
+
+    result = runner.invoke(
+        app,
+        ["pipeline", "insights", material_id, "--start", "2", "--end", "3"],
+    )
+
+    assert result.exit_code == 0
+    assert recorded["material_id"] == material_id
+    assert recorded["start_ch"] == 2
+    assert recorded["end_ch"] == 3
+
+
 def test_validate_all_exits_one_when_any_material_fails(tmp_path, monkeypatch):
     for material_id in ("nm_ok", "nm_bad"):
         (tmp_path / material_id).mkdir()
