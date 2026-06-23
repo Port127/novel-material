@@ -4,20 +4,21 @@
 feature: artifact-audit-and-run-report
 phase: 1
 status: ready
-current_packet: task-04-audit-service-cli.md
-last_completed_packet: task-03-domain-rules.md
-last_good_commit: 1c172de
+current_packet: task-05-review-budget.md
+last_completed_packet: task-04-audit-service-cli.md
+last_good_commit: 8e95384
 worktree: current_main_user_approved
 blocking_issue: null
 ```
 
 ## 最近验证
 
-- `python -m pytest tests/audit/test_rules.py -v`：11 passed。
-- `python -m pytest -q`：304 passed，1 skipped。
+- 指定 audit、CLI、validation 回归：27 passed。
+- `python -m pytest -q`：310 passed，1 skipped。
 - `python -m compileall -q src/novel_material`：通过。
-- 1084 章、134 人真实素材只读规则：1.395 秒，86 个问题。
-- Packet 03 提交：`1c172de`。
+- `python -m novel_material.cli.main validate artifacts --help`：通过。
+- 裸导入 `novel_material.audit` 不加载 `infra.config`。
+- Packet 04 提交：`8e95384`。
 
 ## 已确认且不得遗失
 
@@ -29,7 +30,7 @@ blocking_issue: null
 
 ## 本次开始动作
 
-1. 打开 `task-04-audit-service-cli.md`。
+1. 打开 `task-05-review-budget.md`。
 2. 确认工作区除用户 `docs/feedback.md` 外没有未知修改。
 3. 按 packet 内测试驱动步骤执行。
 
