@@ -14,6 +14,7 @@
 - `deep` 模式保持当前全量 core insights 行为，不在本次实现关键章节采样。
 - 独立命令 `nm pipeline insights <id> --start N --end M` 的显式范围行为保持不变。
 - `full` 与 `continue` 使用同一编排规则，避免恢复运行重新尝试全书 insights。
+- `full` 或 `continue` 显式提供 `--start/--end` 时，以用户范围覆盖模式默认上限。
 
 ## 非目标
 
@@ -73,6 +74,8 @@ full / continue
 
 `continue --mode standard` 即使面对已经包含全书 `chapters.yaml` 的素材，也只检查和补齐开头配置范围内的 insight 文件。范围外已有文件保留，但不参与本次阶段的 expected/succeeded/failed 计数。
 
+如果 `full` 或 `continue` 显式提供 `--start/--end`，insights 使用该显式范围，不再应用 `standard` 的前 100 章默认值。例如 `--start 300 --end 350` 会处理第 300 至 350 章，避免章级分析范围与 insights 默认范围没有交集。只提供 `--end 80` 时从第 1 章开始，只提供 `--start 300` 时从第 300 章处理至现有章级分析末尾。
+
 ### 独立 Insights 命令
 
 `nm pipeline insights` 不经完整流水线的运行模式默认上限。以下命令仍明确表示用户要求的范围：
@@ -99,8 +102,9 @@ nm pipeline insights nm_xxx --start 300 --end 350
 2. 配置校验测试：验证非正整数会抛出明确错误。
 3. 编排器契约测试：替换 `run_insights_stage` 为记录参数的测试替身，验证 `standard` 传入 `start_ch=1, end_ch=100`。
 4. 编排器契约测试：验证 `deep` 传入 `start_ch=None, end_ch=None`。
-5. 回归测试：验证独立 `pipeline insights --start/--end` 仍传递显式范围。
-6. 文档检查：更新用户手册与架构说明，明确 automatic standard、manual insights 和 refine 三者边界。
+5. 编排器契约测试：验证 `full/continue --start/--end` 覆盖 `standard` 默认范围。
+6. 回归测试：验证独立 `pipeline insights --start/--end` 仍传递显式范围。
+7. 文档检查：更新用户手册与架构说明，明确 automatic standard、explicit pipeline range、manual insights 和 refine 四者边界。
 
 ## 成功标准
 
@@ -108,4 +112,5 @@ nm pipeline insights nm_xxx --start 300 --end 350
 - 已有全书 L1 素材执行 `nm pipeline continue <id> --mode standard` 时，不再尝试补齐第 101 章及以后 insights。
 - `nm pipeline full ./novel.txt --mode fast` 仍不执行 insights。
 - `nm pipeline full ./novel.txt --mode deep` 保持当前全量 core insights 行为。
+- `nm pipeline continue <id> --mode standard --start 300 --end 350` 只处理第 300 至 350 章 insights。
 - `nm pipeline insights <id> --start 1 --end 80` 仍只处理前 80 章。
