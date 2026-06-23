@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+
+from novel_material.infra.config import get_settings
+
+
+STANDARD_INSIGHT_CHAPTER_LIMIT_DEFAULT = 100
 
 
 @dataclass(frozen=True)
@@ -16,6 +21,7 @@ class RuntimeMode:
     insight_depth: str
     insight_batch_size: int
     key_chapter_rate: float
+    core_insight_chapter_limit: int | None
 
 
 _MODES = {
@@ -27,6 +33,7 @@ _MODES = {
         insight_depth="none",
         insight_batch_size=0,
         key_chapter_rate=0.0,
+        core_insight_chapter_limit=0,
     ),
     "standard": RuntimeMode(
         name="standard",
@@ -36,6 +43,7 @@ _MODES = {
         insight_depth="core",
         insight_batch_size=20,
         key_chapter_rate=0.0,
+        core_insight_chapter_limit=STANDARD_INSIGHT_CHAPTER_LIMIT_DEFAULT,
     ),
     "deep": RuntimeMode(
         name="deep",
@@ -45,6 +53,7 @@ _MODES = {
         insight_depth="deep",
         insight_batch_size=10,
         key_chapter_rate=0.2,
+        core_insight_chapter_limit=None,
     ),
 }
 
@@ -55,4 +64,17 @@ def get_runtime_mode(name: str | None) -> RuntimeMode:
     if mode_name not in _MODES:
         allowed = ", ".join(sorted(_MODES))
         raise ValueError(f"未知运行模式: {mode_name}，可选: {allowed}")
-    return _MODES[mode_name]
+    mode = _MODES[mode_name]
+    if mode_name != "standard":
+        return mode
+
+    value = get_settings().get(
+        "INSIGHTS_STANDARD_CHAPTER_LIMIT",
+        STANDARD_INSIGHT_CHAPTER_LIMIT_DEFAULT,
+    )
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise ValueError(
+            "INSIGHTS_STANDARD_CHAPTER_LIMIT 必须是正整数，"
+            f"实际为: {value!r}"
+        )
+    return replace(mode, core_insight_chapter_limit=value)
