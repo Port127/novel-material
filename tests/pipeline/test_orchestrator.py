@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
-import pytest
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
+import pytest
+
+from novel_material.audit.models import ArtifactAudit
+from novel_material.pipeline import stages as stage_entries
 from novel_material.pipeline.orchestrator import (
     PipelineOrchestrator,
     RunRequest,
@@ -12,7 +16,8 @@ from novel_material.pipeline.orchestrator import (
     StageSpec,
     render_next_actions,
 )
-from novel_material.runtime.contracts import RunStatus, StageResult
+from novel_material.runtime.contracts import ProgressCounts, RunStatus, StageResult
+from novel_material.runtime.context import run_context, stage_context
 from novel_material.runtime.dispatcher import RuntimeDispatcher, SinkCriticality
 from novel_material.runtime.testing import MemoryEventSink
 from novel_material.pipeline.state import PipelineStateStore
@@ -172,3 +177,103 @@ def test_continue_persists_prior_successful_stages_without_counting_them(tmp_pat
 
     assert [item.name for item in result.stages] == ["insights"]
     assert [item.name for item in persisted.stages] == ["analyze", "insights"]
+
+
+def test_stage_completed_event_contains_name_duration_counts_and_diagnostics():
+    sink = MemoryEventSink()
+    ticks = iter((10.0, 10.25))
+    source = StageResult(
+        stage_id="stage-analyze",
+        name="analyze",
+        status=RunStatus.DEGRADED,
+        counts=ProgressCounts(
+            expected=2,
+            processed=2,
+            succeeded=1,
+            degraded=1,
+            remaining=0,
+        ),
+    )
+    orchestrator = PipelineOrchestrator(
+        [StageSpec("analyze", lambda _request: source, blocking=False)],
+        dispatcher=RuntimeDispatcher([sink]),
+        clock=lambda: next(ticks),
+    )
+
+    result = orchestrator.run(request())
+
+    completed = sink.events_named("StageCompleted")[0]
+    assert completed.attributes["stage_name"] == "analyze"
+    assert completed.attributes["counts"] == result.stages[0].counts.model_dump(
+        mode="json"
+    )
+    assert completed.attributes["diagnostics"] == []
+    assert completed.duration_ms == pytest.approx(250)
+    assert result.stages[0].duration_ms == pytest.approx(250)
+
+
+def test_unhandled_stage_exception_becomes_failed_result_and_run_completed_event():
+    sink = MemoryEventSink()
+    broken = StageSpec(
+        "analyze",
+        lambda _request: (_ for _ in ()).throw(ValueError("bad payload")),
+        blocking=True,
+    )
+
+    result = PipelineOrchestrator(
+        [broken],
+        dispatcher=RuntimeDispatcher([sink]),
+    ).run(request())
+
+    assert result.status is RunStatus.FAILED
+    assert result.diagnostics[0].code == "stage_unhandled_exception"
+    assert result.diagnostics[0].message.endswith("ValueError")
+    assert "bad payload" not in result.diagnostics[0].message
+    assert sink.events_named("RunCompleted")
+
+
+def test_run_boundary_events_include_started_at_prior_stages_and_final_result():
+    sink = MemoryEventSink()
+    started_at = datetime(2026, 6, 23, 1, tzinfo=timezone.utc)
+    ingest = stage("ingest", RunStatus.SUCCESS)
+    run_request = RunRequest(
+        run_id="run-1",
+        command="pipeline full",
+        material_id="nm_demo",
+        started_at=started_at,
+        options={"report_prior_stages": (ingest,)},
+    )
+
+    result = PipelineOrchestrator(
+        [spec("analyze", RunStatus.SUCCESS)],
+        dispatcher=RuntimeDispatcher([sink]),
+    ).run(run_request)
+
+    started = sink.events_named("RunStarted")[0]
+    completed = sink.events_named("RunCompleted")[0]
+    assert started.occurred_at == started_at
+    assert started.attributes["report_prior_stages"][0]["name"] == "ingest"
+    assert "outputs" not in started.attributes["report_prior_stages"][0]
+    assert completed.attributes["counts"] == result.counts.model_dump(mode="json")
+    assert completed.attributes["diagnostics"] == []
+
+
+def test_artifact_audit_stage_publishes_domain_event(monkeypatch):
+    sink = MemoryEventSink()
+    dispatcher = RuntimeDispatcher([sink])
+    audit = ArtifactAudit(material_id="nm_demo", checks=("characters",))
+    monkeypatch.setattr(stage_entries, "audit_material", lambda *_args, **_kwargs: audit)
+
+    with run_context(
+        "pipeline full",
+        "nm_demo",
+        run_id="run-1",
+        dispatcher=dispatcher,
+    ):
+        with stage_context("audit"):
+            result = stage_entries.run_artifact_audit_stage("nm_demo")
+
+    completed = sink.events_named("ArtifactAuditCompleted")
+    assert result.status is RunStatus.SUCCESS
+    assert len(completed) == 1
+    assert completed[0].attributes == {"audit": audit.model_dump(mode="json")}

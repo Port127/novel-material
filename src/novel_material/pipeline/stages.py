@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
+from novel_material.audit.models import audit_run_status
 from novel_material.audit.service import audit_material, audit_to_stage_result
+from novel_material.runtime.context import current_context, current_dispatcher, new_id
+from novel_material.runtime.contracts import RunEvent
 
 from .analyze import chapter_analyze
 from .characters import generate_characters
@@ -58,6 +63,26 @@ def run_refine_stage(*args, **kwargs):
 
 def run_artifact_audit_stage(material_id: str, **kwargs):
     audit = audit_material(material_id, **kwargs)
+    dispatcher = current_dispatcher()
+    context = current_context()
+    if dispatcher is not None and context is not None:
+        now = datetime.now(timezone.utc)
+        dispatcher.emit(
+            RunEvent(
+                event_name="ArtifactAuditCompleted",
+                event_id=new_id("event"),
+                occurred_at=now,
+                observed_at=now,
+                run_id=context.run_id,
+                stage_id=context.stage_id,
+                command=context.command,
+                component="audit",
+                operation="validate_artifacts",
+                material_id=context.material_id,
+                status=audit_run_status(audit),
+                attributes={"audit": audit.model_dump(mode="json")},
+            )
+        )
     return audit_to_stage_result(audit)
 
 

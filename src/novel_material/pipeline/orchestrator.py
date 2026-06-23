@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable, Iterable
@@ -28,6 +29,7 @@ class RunRequest:
     run_id: str
     command: str
     material_id: str | None = None
+    started_at: datetime | None = None
     options: dict[str, Any] = field(default_factory=dict)
 
 
@@ -56,11 +58,13 @@ class PipelineOrchestrator:
         dispatcher: RuntimeDispatcher | None = None,
         state_store: PipelineStateStore | None = None,
         prior_stages: Iterable[StageResult] = (),
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._stages = tuple(stages)
         self._dispatcher = dispatcher or NullDispatcher()
         self._state_store = state_store
         self._prior_stages = tuple(prior_stages)
+        self._clock = clock
 
     @staticmethod
     def plan_continue(inspection) -> PipelinePlan:
@@ -81,7 +85,7 @@ class PipelineOrchestrator:
         enabled = tuple(spec for spec in self._stages if spec.enabled(request))
         required_failures: set[str] = set()
         results: list[StageResult] = []
-        created_at = datetime.now(timezone.utc)
+        created_at = request.started_at or datetime.now(timezone.utc)
         generation = 1
 
         self._persist(
@@ -96,11 +100,26 @@ class PipelineOrchestrator:
             command=request.command,
             material_id=request.material_id,
             run_id=request.run_id,
+            dispatcher=self._dispatcher,
         ):
-            required_failures.update(self._emit("RunStarted"))
+            required_failures.update(
+                self._emit(
+                    "RunStarted",
+                    occurred_at=request.started_at,
+                    attributes={
+                        "report_prior_stages": _report_prior_stages(request),
+                    },
+                )
+            )
             for spec in enabled:
                 with stage_context(spec.name):
-                    required_failures.update(self._emit("StageStarted"))
+                    required_failures.update(
+                        self._emit(
+                            "StageStarted",
+                            attributes={"stage_name": spec.name},
+                        )
+                    )
+                    stage_started = self._clock()
                     try:
                         result = spec.execute(request)
                     except KeyboardInterrupt:
@@ -117,10 +136,29 @@ class PipelineOrchestrator:
                                 ),
                             ),
                         )
+                    except Exception as exc:
+                        result = StageResult(
+                            stage_id=current_context().stage_id or new_id("stage"),
+                            name=spec.name,
+                            status=RunStatus.FAILED,
+                            diagnostics=(
+                                Diagnostic(
+                                    code="stage_unhandled_exception",
+                                    message=(
+                                        f"阶段 {spec.name} 未处理异常: "
+                                        f"{type(exc).__name__}"
+                                    ),
+                                    severity="error",
+                                    retryable=True,
+                                ),
+                            ),
+                        )
+                    duration_ms = max(0.0, (self._clock() - stage_started) * 1000)
                     if not isinstance(result, StageResult):
                         raise StageContractError(
                             f"阶段 {spec.name} 必须返回 StageResult，实际为 {type(result).__name__}"
                         )
+                    result = result.model_copy(update={"duration_ms": duration_ms})
                     results.append(result)
                     generation += 1
                     self._persist(
@@ -131,7 +169,19 @@ class PipelineOrchestrator:
                         created_at=created_at,
                     )
                     required_failures.update(
-                        self._emit("StageCompleted", status=result.status)
+                        self._emit(
+                            "StageCompleted",
+                            status=result.status,
+                            duration_ms=result.duration_ms,
+                            attributes={
+                                "stage_name": spec.name,
+                                "counts": result.counts.model_dump(mode="json"),
+                                "diagnostics": [
+                                    item.model_dump(mode="json")
+                                    for item in result.diagnostics
+                                ],
+                            },
+                        )
                     )
                 if result.status is RunStatus.INTERRUPTED or (
                     spec.blocking and result.status is RunStatus.FAILED
@@ -149,7 +199,17 @@ class PipelineOrchestrator:
                     run_result,
                     required_failures,
                 )
-            final_failures = self._emit("RunCompleted", status=run_result.status)
+            final_failures = self._emit(
+                "RunCompleted",
+                status=run_result.status,
+                attributes={
+                    "counts": run_result.counts.model_dump(mode="json"),
+                    "diagnostics": [
+                        item.model_dump(mode="json")
+                        for item in run_result.diagnostics
+                    ],
+                },
+            )
             if final_failures and run_result.status is RunStatus.SUCCESS:
                 run_result = _with_observability_degradation(
                     run_result,
@@ -201,6 +261,9 @@ class PipelineOrchestrator:
         event_name: str,
         *,
         status: RunStatus | None = None,
+        duration_ms: float | None = None,
+        attributes: dict[str, Any] | None = None,
+        occurred_at: datetime | None = None,
     ) -> tuple[str, ...]:
         context = current_context()
         if context is None:
@@ -210,7 +273,7 @@ class PipelineOrchestrator:
             RunEvent(
                 event_name=event_name,
                 event_id=new_id("event"),
-                occurred_at=now,
+                occurred_at=occurred_at or now,
                 observed_at=now,
                 run_id=context.run_id,
                 stage_id=context.stage_id,
@@ -219,9 +282,30 @@ class PipelineOrchestrator:
                 operation="orchestrate",
                 material_id=context.material_id,
                 status=status,
+                duration_ms=duration_ms,
+                attributes=attributes or {},
             )
         )
         return report.required_failed_sinks
+
+
+def _report_prior_stages(request: RunRequest) -> list[dict[str, Any]]:
+    value = request.options.get("report_prior_stages", ())
+    if not isinstance(value, (list, tuple)):
+        return []
+    return [
+        {
+            "name": stage.name,
+            "status": stage.status.value,
+            "duration_ms": stage.duration_ms,
+            "counts": stage.counts.model_dump(mode="json"),
+            "diagnostics": [
+                item.model_dump(mode="json") for item in stage.diagnostics
+            ],
+        }
+        for stage in value
+        if isinstance(stage, StageResult)
+    ]
 
 
 def _with_observability_degradation(
