@@ -25,6 +25,7 @@ def config() -> dict:
             "max_tokens": 100,
             "other_timeout": 1,
             "temperature": 0.3,
+            "pricing": {"input_per_1k": 0.5, "output_per_1k": 1.0},
         }
     }
 
@@ -119,3 +120,33 @@ def test_explicit_telemetry_collector_receives_request_result(monkeypatch):
     assert telemetry.tokens_total == 15
     assert telemetry.details[-1]["finish_reason"] == "stop"
     assert telemetry.details[-1]["request_id"] == "provider-explicit"
+
+
+def test_call_inherits_run_dispatcher_and_emits_estimated_cost(monkeypatch):
+    install_fake_openai(monkeypatch, [response("provider-inherited")])
+    sink = MemoryEventSink()
+    dispatcher = RuntimeDispatcher([sink])
+
+    with run_context(command="pipeline analyze", dispatcher=dispatcher):
+        call_llm("system", "prompt", config())
+
+    completed = sink.events_named("OperationCompleted")[-1]
+    assert completed.attributes["estimated_cost"] == pytest.approx(0.01)
+
+
+def test_missing_usage_emits_unavailable_cost(monkeypatch):
+    no_usage = response("provider-no-usage")
+    no_usage.usage = None
+    install_fake_openai(monkeypatch, [no_usage])
+    sink = MemoryEventSink()
+
+    with run_context(command="pipeline analyze"):
+        call_llm(
+            "system",
+            "prompt",
+            config(),
+            dispatcher=RuntimeDispatcher([sink]),
+        )
+
+    completed = sink.events_named("OperationCompleted")[-1]
+    assert completed.attributes["estimated_cost"] is None

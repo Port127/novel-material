@@ -8,6 +8,8 @@ from dataclasses import dataclass, replace
 import secrets
 from typing import Iterator
 
+from .dispatcher import RuntimeDispatcher
+
 
 @dataclass(frozen=True)
 class RuntimeContext:
@@ -25,6 +27,10 @@ _CURRENT: ContextVar[RuntimeContext | None] = ContextVar(
     "novel_material_runtime_context",
     default=None,
 )
+_CURRENT_DISPATCHER: ContextVar[RuntimeDispatcher | None] = ContextVar(
+    "novel_material_runtime_dispatcher",
+    default=None,
+)
 
 
 def new_id(prefix: str) -> str:
@@ -34,6 +40,11 @@ def new_id(prefix: str) -> str:
 
 def current_context() -> RuntimeContext | None:
     return _CURRENT.get()
+
+
+def current_dispatcher() -> RuntimeDispatcher | None:
+    """返回当前运行的默认事件分发器。"""
+    return _CURRENT_DISPATCHER.get()
 
 
 def require_context() -> RuntimeContext:
@@ -57,6 +68,7 @@ def run_context(
     material_id: str | None = None,
     *,
     run_id: str | None = None,
+    dispatcher: RuntimeDispatcher | None = None,
 ) -> Iterator[RuntimeContext]:
     context = RuntimeContext(
         run_id=run_id or new_id("run"),
@@ -64,9 +76,11 @@ def run_context(
         material_id=material_id,
     )
     token = set_context(context)
+    dispatcher_token = _CURRENT_DISPATCHER.set(dispatcher)
     try:
         yield context
     finally:
+        _CURRENT_DISPATCHER.reset(dispatcher_token)
         reset_context(token)
 
 
@@ -104,6 +118,7 @@ def request_context() -> Iterator[RuntimeContext]:
 __all__ = [
     "RuntimeContext",
     "current_context",
+    "current_dispatcher",
     "new_id",
     "request_context",
     "require_context",

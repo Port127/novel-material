@@ -6,10 +6,13 @@ import pytest
 
 from novel_material.runtime.context import (
     current_context,
+    current_dispatcher,
     request_context,
     run_context,
     stage_context,
 )
+from novel_material.runtime.dispatcher import RuntimeDispatcher
+from novel_material.runtime.testing import MemoryEventSink
 
 
 def test_nested_context_restores_parent_stage():
@@ -39,3 +42,20 @@ def test_context_is_restored_after_exception():
             raise RuntimeError("boom")
     assert current_context() is None
 
+
+def test_stage_and_request_contexts_inherit_run_dispatcher():
+    dispatcher = RuntimeDispatcher([MemoryEventSink()])
+
+    with run_context(
+        "pipeline full",
+        "nm_demo",
+        run_id="run-1",
+        dispatcher=dispatcher,
+    ):
+        assert current_dispatcher() is dispatcher
+        with stage_context("analyze"):
+            assert current_dispatcher() is dispatcher
+            with request_context():
+                assert current_dispatcher() is dispatcher
+
+    assert current_dispatcher() is None

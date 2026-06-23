@@ -21,6 +21,7 @@ from .config import get_settings
 from .yaml_io import load_yaml
 from novel_material.runtime.context import (
     current_context,
+    current_dispatcher,
     new_id,
     request_context,
     run_context,
@@ -360,6 +361,29 @@ def _emit_llm_event(
     )
 
 
+def _estimate_cost(config: dict, usage: object) -> float | None:
+    """按实际 usage 与当前 provider 定价估算单次调用成本。"""
+    if usage is None:
+        return None
+    pricing = config.get("llm", {}).get("pricing")
+    if not isinstance(pricing, dict):
+        return None
+    input_price = pricing.get("input_per_1k")
+    output_price = pricing.get("output_per_1k")
+    input_tokens = getattr(usage, "prompt_tokens", None)
+    output_tokens = getattr(usage, "completion_tokens", None)
+    values = (input_price, output_price, input_tokens, output_tokens)
+    if any(
+        isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0
+        for value in values
+    ):
+        return None
+    return (
+        float(input_tokens) * float(input_price)
+        + float(output_tokens) * float(output_price)
+    ) / 1000
+
+
 def call_llm_with_args(args) -> dict:
     """调用 LLM API（参数对象版本），返回 JSON 结果。
 
@@ -415,7 +439,7 @@ def call_llm(
 
     effective_max_tokens = max_tokens_override or config["llm"].get("max_tokens", 2048)
     total_timeout = timeout_override or config["llm"].get("other_timeout", 120)
-    event_dispatcher = dispatcher or NullDispatcher()
+    event_dispatcher = dispatcher or current_dispatcher() or NullDispatcher()
 
     # 外部计时起点（用于错误日志）
     _outer_start = time.monotonic()
@@ -601,6 +625,7 @@ def call_llm(
                 "reasoning_tokens_observed": detail["thinking_tokens"],
                 "thinking_requested": thinking_budget is not None,
                 "thinking_budget_requested": thinking_budget,
+                "estimated_cost": _estimate_cost(config, usage),
             },
         )
         return json.loads(raw_content)
