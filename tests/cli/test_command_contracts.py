@@ -174,6 +174,68 @@ def test_validate_artifacts_uses_audit_status(monkeypatch):
     assert "规则审计" in result.stderr
 
 
+def test_validate_artifacts_default_does_not_enable_review(monkeypatch):
+    from novel_material.audit.models import ArtifactAudit
+
+    calls = []
+
+    def fake_audit(material_id, **kwargs):
+        calls.append((material_id, kwargs))
+        return ArtifactAudit(material_id=material_id)
+
+    monkeypatch.setattr("novel_material.cli.validate.audit_material", fake_audit)
+
+    result = runner.invoke(app, ["validate", "artifacts", "nm_demo"])
+
+    assert result.exit_code == 0
+    assert calls == [("nm_demo", {})]
+
+
+def test_validate_artifacts_review_builds_reviewer_and_budget(monkeypatch):
+    from novel_material.audit.models import ArtifactAudit
+
+    reviewer = object()
+    budget = object()
+    calls = []
+    monkeypatch.setattr(
+        "novel_material.cli.validate.get_settings",
+        lambda: {
+            "ARTIFACT_REVIEW_MAX_CALLS_STANDARD": 3,
+            "ARTIFACT_REVIEW_ESTIMATED_CALL_SECONDS": 120,
+        },
+    )
+    monkeypatch.setattr(
+        "novel_material.cli.validate.LLMArtifactReviewer",
+        lambda: reviewer,
+    )
+    monkeypatch.setattr(
+        "novel_material.cli.validate.ReviewBudget",
+        lambda **kwargs: calls.append(("budget", kwargs)) or budget,
+    )
+    monkeypatch.setattr(
+        "novel_material.cli.validate.audit_material",
+        lambda material_id, **kwargs: (
+            calls.append((material_id, kwargs))
+            or ArtifactAudit(material_id=material_id)
+        ),
+    )
+
+    result = runner.invoke(app, ["validate", "artifacts", "nm_demo", "--review"])
+
+    assert result.exit_code == 0
+    assert calls == [
+        ("budget", {"max_seconds": 360, "max_calls": 3}),
+        (
+            "nm_demo",
+            {
+                "reviewer": reviewer,
+                "budget": budget,
+                "estimated_call_seconds": 120,
+            },
+        ),
+    ]
+
+
 def test_material_delete_requires_id_as_usage_error():
     result = runner.invoke(app, ["material", "delete"])
 

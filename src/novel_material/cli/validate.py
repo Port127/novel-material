@@ -4,6 +4,9 @@ from rich.console import Console
 from rich.table import Table
 
 from novel_material.audit import audit_material, audit_run_status
+from novel_material.audit.budget import ReviewBudget
+from novel_material.audit.reviewer import LLMArtifactReviewer
+from novel_material.infra.config import get_settings
 from novel_material.runtime.contracts import RunStatus, exit_code_for
 from novel_material.validation.schema import validate_material
 from novel_material.validation.quality import run_quality_check
@@ -93,9 +96,28 @@ def cmd_validate_insights(
 @app.command("artifacts")
 def cmd_validate_artifacts(
     material_id: str = typer.Argument(..., help="素材 ID"),
+    review: bool = typer.Option(False, "--review", help="在预算内使用 LLM 复审可疑项"),
 ):
-    """只读检查分析产物，不调用 LLM。"""
-    audit = audit_material(material_id)
+    """只读检查分析产物；默认不调用 LLM。"""
+    if review:
+        settings = get_settings()
+        max_calls = int(settings["ARTIFACT_REVIEW_MAX_CALLS_STANDARD"])
+        estimated_seconds = float(
+            settings["ARTIFACT_REVIEW_ESTIMATED_CALL_SECONDS"]
+        )
+        reviewer = LLMArtifactReviewer()
+        budget = ReviewBudget(
+            max_seconds=estimated_seconds * max_calls,
+            max_calls=max_calls,
+        )
+        audit = audit_material(
+            material_id,
+            reviewer=reviewer,
+            budget=budget,
+            estimated_call_seconds=estimated_seconds,
+        )
+    else:
+        audit = audit_material(material_id)
     for item in audit.issues:
         typer.echo(
             f"{item.severity.value}: {item.code}: {item.message}",
