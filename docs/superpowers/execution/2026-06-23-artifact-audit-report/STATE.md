@@ -4,21 +4,20 @@
 feature: artifact-audit-and-run-report
 phase: 1
 status: ready
-current_packet: task-06-runtime-dispatcher.md
-last_completed_packet: task-05-review-budget.md
-last_good_commit: 10f8741
+current_packet: task-07-orchestrator-events.md
+last_completed_packet: task-06-runtime-dispatcher.md
+last_good_commit: c9cb767
 worktree: current_main_user_approved
 blocking_issue: null
 ```
 
 ## 最近验证
 
-- 指定 audit、CLI 回归：44 passed。
-- `python -m pytest -q`：329 passed，1 skipped。
+- 指定 runtime、LLM telemetry 回归：38 passed。
+- `python -m pytest -q`：334 passed，1 skipped。
 - `python -m compileall -q src/novel_material`：通过。
-- 默认规则模式不构造 reviewer；复审测试使用 fake LLM，无网络请求。
-- 事实 YAML 只读与受限证据测试通过。
-- Packet 05 提交：`10f8741`。
+- dispatcher 继承、成本缺失语义与阶段名称聚合测试通过。
+- Packet 06 提交：`c9cb767`。
 
 ## 已确认且不得遗失
 
@@ -30,7 +29,7 @@ blocking_issue: null
 
 ## 本次开始动作
 
-1. 打开 `task-06-runtime-dispatcher.md`。
+1. 打开 `task-07-orchestrator-events.md`。
 2. 确认工作区除用户 `docs/feedback.md` 外没有未知修改。
 3. 按 packet 内测试驱动步骤执行。
 
