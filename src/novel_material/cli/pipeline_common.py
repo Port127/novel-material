@@ -26,6 +26,15 @@ from novel_material.storage.sync import sync_novel
 
 def _stage_specs(material_id: str, options: dict) -> tuple[StageSpec, ...]:
     provider = options.get("provider")
+    runtime_mode = get_runtime_mode(options.get("mode", "standard"))
+    insight_limit = runtime_mode.core_insight_chapter_limit
+    has_explicit_range = options.get("start") is not None or options.get("end") is not None
+    if has_explicit_range:
+        insight_start = options.get("start")
+        insight_end = options.get("end")
+    else:
+        insight_start = 1 if insight_limit is not None and insight_limit > 0 else None
+        insight_end = insight_limit
     return (
         StageSpec(
             "evaluation",
@@ -51,9 +60,14 @@ def _stage_specs(material_id: str, options: dict) -> tuple[StageSpec, ...]:
         StageSpec("tags", lambda _request: run_tags_stage(material_id, provider=provider), blocking=False),
         StageSpec(
             "insights",
-            lambda _request: run_insights_stage(material_id, provider=provider),
+            lambda _request: run_insights_stage(
+                material_id,
+                start_ch=insight_start,
+                end_ch=insight_end,
+                provider=provider,
+            ),
             blocking=False,
-            enabled=lambda _request: get_runtime_mode(options.get("mode", "standard")).include_core_insights,
+            enabled=lambda _request: runtime_mode.include_core_insights,
         ),
         StageSpec("refine", lambda _request: run_refine_stage(material_id), blocking=True),
         StageSpec(
