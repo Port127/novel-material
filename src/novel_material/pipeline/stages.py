@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from novel_material.audit.service import audit_material, audit_to_stage_result
+
 from .analyze import chapter_analyze
 from .characters import generate_characters
 from .evaluate import run_evaluation
@@ -54,8 +56,14 @@ def run_refine_stage(*args, **kwargs):
     return adapt_stage_result("refine", refine(*args, **kwargs))
 
 
+def run_artifact_audit_stage(material_id: str, **kwargs):
+    audit = audit_material(material_id, **kwargs)
+    return audit_to_stage_result(audit)
+
+
 __all__ = [
     "run_analyze_stage",
+    "run_artifact_audit_stage",
     "run_characters_stage",
     "run_evaluation_stage",
     "run_ingest_stage",

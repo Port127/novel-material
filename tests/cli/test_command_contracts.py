@@ -108,6 +108,35 @@ def test_validate_single_failure_exits_one(monkeypatch):
     assert "校验失败" in result.stderr
 
 
+def test_validate_artifacts_uses_audit_status(monkeypatch):
+    from novel_material.audit.models import (
+        ArtifactAudit,
+        ArtifactIssue,
+        AuditSeverity,
+    )
+
+    monkeypatch.setattr(
+        "novel_material.cli.validate.audit_material",
+        lambda *_args, **_kwargs: ArtifactAudit(
+            material_id="nm_demo",
+            issues=(
+                ArtifactIssue(
+                    code="fallback",
+                    severity=AuditSeverity.ERROR,
+                    artifact="characters/profiles/主角.yaml",
+                    message="主要人物为空壳",
+                ),
+            ),
+        ),
+    )
+
+    result = runner.invoke(app, ["validate", "artifacts", "nm_demo"])
+
+    assert result.exit_code == 3
+    assert "fallback" in result.stderr
+    assert "规则审计" in result.stderr
+
+
 def test_material_delete_requires_id_as_usage_error():
     result = runner.invoke(app, ["material", "delete"])
 

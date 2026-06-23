@@ -3,6 +3,8 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from novel_material.audit import audit_material, audit_run_status
+from novel_material.runtime.contracts import RunStatus, exit_code_for
 from novel_material.validation.schema import validate_material
 from novel_material.validation.quality import run_quality_check
 from novel_material.validation.insights import validate_material_insights
@@ -86,3 +88,24 @@ def cmd_validate_insights(
             console.print(f"[red]✗[/red] {error}")
         raise typer.Exit(1)
     console.print(f"[green]素材 {material_id} 深度分析校验通过[/green]")
+
+
+@app.command("artifacts")
+def cmd_validate_artifacts(
+    material_id: str = typer.Argument(..., help="素材 ID"),
+):
+    """只读检查分析产物，不调用 LLM。"""
+    audit = audit_material(material_id)
+    for item in audit.issues:
+        typer.echo(
+            f"{item.severity.value}: {item.code}: {item.message}",
+            err=True,
+        )
+
+    status = audit_run_status(audit)
+    typer.echo(
+        f"规则审计完成：{audit.summary}",
+        err=status is not RunStatus.SUCCESS,
+    )
+    if status is not RunStatus.SUCCESS:
+        raise typer.Exit(int(exit_code_for(status)))
