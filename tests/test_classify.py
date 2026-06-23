@@ -226,7 +226,7 @@ class TestParseClassificationResult:
 
         result = ["玄幻", "修仙"]
 
-        with pytest.raises(ValueError, match="不是字典"):
+        with pytest.raises(ValueError, match="classification 应为对象"):
             parse_classification_result(result, genre_mapping)
 
 

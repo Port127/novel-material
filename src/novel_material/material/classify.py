@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Optional
 
 from novel_material.infra.llm import call_llm, load_config
+from novel_material.infra.llm_contracts import require_mapping, require_number
 from novel_material.infra.yaml_io import load_yaml, save_yaml
 from novel_material.infra.config import PROJECT_ROOT, DATA_DIR, get_settings
 from novel_material.material.classify_prompt import (
@@ -155,7 +156,7 @@ def load_genre_mapping() -> tuple[list[str], dict[str, str]]:
     return primary_genres, secondary_mapping
 
 
-def parse_classification_result(result: dict, genre_mapping: tuple) -> dict:
+def parse_classification_result(result: object, genre_mapping: tuple) -> dict:
     """解析并校验 LLM 分类结果（新格式）。
 
     Args:
@@ -168,8 +169,7 @@ def parse_classification_result(result: dict, genre_mapping: tuple) -> dict:
     Raises:
         ValueError: 结果格式无效
     """
-    if not isinstance(result, dict):
-        raise ValueError("LLM 返回结果不是字典")
+    result = require_mapping(result, "classification")
 
     primary_genres, secondary_mapping = genre_mapping
 
@@ -206,10 +206,10 @@ def parse_classification_result(result: dict, genre_mapping: tuple) -> dict:
     style = result.get("style", {})
 
     # 解析 quality（批次3扩展）
-    quality = result.get("quality", {})
-    writing = quality.get("writing", 3)
-    plot = quality.get("plot", 3)
-    character = quality.get("character", 3)
+    quality = require_mapping(result.get("quality", {}), "classification.quality")
+    writing = require_number(quality.get("writing", 3), "classification.quality.writing")
+    plot = require_number(quality.get("plot", 3), "classification.quality.plot")
+    character = require_number(quality.get("character", 3), "classification.quality.character")
     quality_score = round((writing + plot + character) / 3, 1)
 
     genre_description = result.get("genre_description", "")

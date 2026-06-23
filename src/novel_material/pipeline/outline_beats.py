@@ -6,8 +6,25 @@
 from novel_material.infra.llm import call_llm, start_llm_telemetry
 from novel_material.infra.progress import get_pipeline_logger
 from novel_material.pipeline.loader import build_summary_pool
+from novel_material.infra.llm_contracts import LLMResponseContractError, require_integer, require_mapping, require_mapping_list, require_string
 
 logger = get_pipeline_logger()
+
+
+def normalize_beats_response(payload: object, seq_start: int, seq_end: int) -> list[dict]:
+    raw = payload if isinstance(payload, list) else require_mapping(payload, "outline.beats").get("beats")
+    beats = require_mapping_list(raw, "outline.beats")
+    for index, beat in enumerate(beats):
+        path = f"outline.beats[{index}]"
+        for field in ("beat_number", "chapter", "tension"):
+            beat[field] = require_integer(beat.get(field), f"{path}.{field}")
+        for field in ("title", "description"):
+            beat[field] = require_string(beat.get(field), f"{path}.{field}")
+        if not seq_start <= beat["chapter"] <= seq_end:
+            raise LLMResponseContractError(f"{path}.chapter", "序列范围内整数", beat["chapter"])
+        if not 1 <= beat["tension"] <= 5:
+            raise LLMResponseContractError(f"{path}.tension", "1-5 的整数", beat["tension"])
+    return beats
 
 
 def _generate_beats_for_sequence(
@@ -91,11 +108,7 @@ def _generate_beats_for_sequence(
     telemetry = start_llm_telemetry()
     result = call_llm(system_prompt, user_prompt, config, max_tokens_override=2000, timeout_override=config["llm"]["outline_timeout"], context=f"{material_id} beats#{seq.get('sequence_number', '?')}")
     logger.debug(f"{prefix}beats#{seq.get('sequence_number', '?')}: finish={telemetry.last.get('finish_reason', '')}")
-    # 兼容 LLM 直接返回数组的情况
-    if isinstance(result, list):
-        logger.warning(f"{prefix}beats#{seq.get('sequence_number', '?')} 返回裸数组，自动适配")
-        return result
-    return result.get("beats", [])
+    return normalize_beats_response(result, seq_start, seq_end)
 
 
 __all__ = ["_generate_beats_for_sequence"]

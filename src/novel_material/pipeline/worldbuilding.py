@@ -21,8 +21,25 @@ from novel_material.infra.llm import load_config, call_llm, start_llm_telemetry
 from novel_material.infra.common import is_special_chapter_type
 from novel_material.pipeline.loader import load_chapters_data, build_analysis_context
 from novel_material.infra.progress import get_pipeline_logger, save_run_history
+from novel_material.infra.llm_contracts import LLMResponseContractError, require_mapping, require_mapping_list
 
 logger = get_pipeline_logger()
+
+
+def normalize_worldbuilding_response(payload: object) -> dict:
+    """校验并归一化世界观 LLM 响应。"""
+    result = dict(require_mapping(payload, "worldbuilding"))
+    for field in ("power_system", "geography", "lore"):
+        value = result.get(field)
+        if value is None or value == []:
+            result[field] = {}
+        else:
+            result[field] = require_mapping(value, f"worldbuilding.{field}")
+    factions = result.get("factions")
+    result["factions"] = [] if factions is None else require_mapping_list(
+        factions, "worldbuilding.factions"
+    )
+    return result
 
 
 # 组织名匹配模式（用于从 characters_appear 中提取组织）
@@ -182,7 +199,7 @@ def generate_worldbuilding(material_id, provider: str | None = None) -> bool:
 
 注意：
 1. 所有名称和描述用中文
-2. 如果某个维度不存在，留空数组
+2. 不存在力量体系、地理或背景知识时，对应字段返回空对象；不存在势力时 factions 返回空数组，字段类型不得改变
 3. importance 标注重要性（高频出现的组织/地点应为 primary）
 4. 只提取原文中明确提到的内容，不要编造
 5. 组织出现频率列表中的组织应优先提取，补充详细信息"""
@@ -203,11 +220,12 @@ def generate_worldbuilding(material_id, provider: str | None = None) -> bool:
     # ── 容错调用 ──
     result = {}
     try:
-        result = call_llm(system_prompt, user_prompt, config, timeout_override=config["llm"]["worldbuilding_timeout"], context=f"{material_id} 世界观提取")
+        result = normalize_worldbuilding_response(call_llm(system_prompt, user_prompt, config, timeout_override=config["llm"]["worldbuilding_timeout"], context=f"{material_id} 世界观提取"))
         logger.info(f"[{material_id}] 世界观提取完成: finish={telemetry.last.get('finish_reason', '')}")
         time.sleep(rate_limit)
     except Exception as e:
-        logger.error(f"[{material_id}] 世界观提取失败: {e}")
+        error_kind = "schema_invalid" if isinstance(e, LLMResponseContractError) else "调用失败"
+        logger.error(f"[{material_id}] 世界观提取 {error_kind}: {e}")
         logger.warning(f"[{material_id}] 使用空结构继续，不中断流程")
         result = {
             "power_system": {},

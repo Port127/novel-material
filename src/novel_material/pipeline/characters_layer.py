@@ -9,8 +9,23 @@ from novel_material.infra.llm import call_llm
 from novel_material.infra.progress import get_pipeline_logger
 from novel_material.pipeline.characters_stats import CHARACTER_BATCH_SIZE
 from novel_material.pipeline.characters_profile import _build_basic_profile_from_stats
+from novel_material.infra.llm_contracts import LLMResponseContractError, require_mapping, require_mapping_list, require_string
 
 logger = get_pipeline_logger()
+
+
+def normalize_characters_response(payload: object, candidate_names: set[str]) -> list[dict]:
+    raw = payload if isinstance(payload, list) else require_mapping(payload, "characters").get("characters")
+    characters = require_mapping_list(raw, "characters")
+    for index, character in enumerate(characters):
+        path = f"characters[{index}]"
+        name = require_string(character.get("name"), f"{path}.name")
+        if name not in candidate_names:
+            raise LLMResponseContractError(f"{path}.name", "候选名单中的字符串", name)
+        for field in ("relationships", "key_events"):
+            if character.get(field) is not None:
+                character[field] = require_mapping_list(character[field], f"{path}.{field}")
+    return characters
 
 
 def _extract_character_batch(
@@ -159,13 +174,9 @@ def _extract_character_batch(
                 context=f"{material_id} 人物#{role_tier}批次{batch_idx + 1}"
             )
 
-            if isinstance(result, list):
-                characters = result
-            else:
-                characters = result.get("characters", [])
-
             # 验证返回的人物是否在候选名单中
             candidate_names = {name for name, _ in batch_candidates}
+            characters = normalize_characters_response(result, candidate_names)
             for ch in characters:
                 ch_name = ch.get("name")
                 if ch_name in candidate_names:
@@ -179,7 +190,8 @@ def _extract_character_batch(
             )
 
         except Exception as e:
-            logger.error(f"{prefix}批次{batch_idx + 1} LLM调用失败: {e}")
+            error_kind = "schema_invalid" if isinstance(e, LLMResponseContractError) else "LLM调用失败"
+            logger.error(f"{prefix}批次{batch_idx + 1} {error_kind}: {e}")
             logger.warning(f"{prefix}使用出场统计生成基础档案兜底")
             # 兜底：生成基础档案
             for name, count in batch_candidates:

@@ -14,6 +14,13 @@ from novel_material.infra.config import NOVELS_DIR
 from novel_material.infra.llm import load_config, call_llm, start_llm_telemetry
 from novel_material.infra.common import is_special_chapter_type
 from novel_material.infra.progress import get_pipeline_logger, PipelineRunner
+from novel_material.infra.llm_contracts import (
+    LLMResponseContractError,
+    require_integer,
+    require_mapping,
+    require_string,
+    require_string_list,
+)
 from novel_material.pipeline.progress import OUTLINE_STAGES
 from novel_material.pipeline.loader import load_chapters_data, build_summary_pool
 from novel_material.pipeline.outline_io import (
@@ -38,6 +45,22 @@ from novel_material.pipeline.outline_acts import _generate_acts_sequences, gener
 from novel_material.pipeline.outline_beats import _generate_beats_for_sequence
 
 logger = get_pipeline_logger()
+
+
+def default_premise_response() -> dict:
+    return {"premise": "未知", "structure_type": "三幕式", "total_acts": 3, "theme": [], "tone": []}
+
+
+def normalize_premise_response(payload: object) -> dict:
+    result = dict(require_mapping(payload, "outline.premise"))
+    result["premise"] = require_string(result.get("premise"), "outline.premise.premise")
+    result["structure_type"] = require_string(result.get("structure_type"), "outline.premise.structure_type")
+    result["total_acts"] = require_integer(result.get("total_acts"), "outline.premise.total_acts")
+    if result["total_acts"] < 1:
+        raise LLMResponseContractError("outline.premise.total_acts", "正整数", result["total_acts"])
+    result["theme"] = require_string_list(result.get("theme"), "outline.premise.theme")
+    result["tone"] = require_string_list(result.get("tone"), "outline.premise.tone")
+    return result
 
 
 def extract_premise(
@@ -76,24 +99,19 @@ def extract_premise(
     result = {}
     telemetry = start_llm_telemetry()
     try:
-        result = call_llm(
+        result = normalize_premise_response(call_llm(
             system_prompt,
             user_prompt,
             config,
             timeout_override=config["llm"]["outline_timeout"],
             context=f"{material_id} 前提提炼",
-        )
+        ))
         logger.info(f"[{material_id}] 前提提炼完成: finish={telemetry.last.get('finish_reason', '')}")
     except Exception as e:
-        logger.error(f"[{material_id}] 前提提炼失败: {e}")
+        error_kind = "schema_invalid" if isinstance(e, LLMResponseContractError) else "调用失败"
+        logger.error(f"[{material_id}] 前提提炼 {error_kind}: {e}")
         logger.warning(f"[{material_id}] 使用默认值继续，不中断流程")
-        result = {
-            "premise": "未知",
-            "structure_type": "三幕式",
-            "total_acts": 3,
-            "theme": [],
-            "tone": [],
-        }
+        result = default_premise_response()
 
     return result
 
@@ -141,7 +159,8 @@ def generate_acts_with_fallback(
             logger.warning(f"[{material_id}] LLM 返回空结构，使用简单划分")
             acts = generate_simple_acts(chapter_count, structure_type)
     except Exception as e:
-        logger.error(f"[{material_id}] 幕/序列生成失败: {e}")
+        error_kind = "schema_invalid" if isinstance(e, LLMResponseContractError) else "调用失败"
+        logger.error(f"[{material_id}] 幕/序列生成 {error_kind}: {e}")
         logger.warning(f"[{material_id}] 使用简单划分继续，不中断流程")
         acts = generate_simple_acts(chapter_count, structure_type)
 
@@ -244,7 +263,8 @@ def generate_all_beats(
                     material_id=material_id,
                 )
             except Exception as e:
-                logger.error(f"[{material_id}] 序列 {seq_global} beats 生成失败: {e}")
+                error_kind = "schema_invalid" if isinstance(e, LLMResponseContractError) else "调用失败"
+                logger.error(f"[{material_id}] 序列 {seq_global} beats {error_kind}: {e}")
                 logger.warning(f"[{material_id}] 跳过该序列，继续下一个")
                 failed_sequences += 1
 

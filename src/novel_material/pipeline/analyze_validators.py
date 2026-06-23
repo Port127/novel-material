@@ -4,6 +4,33 @@
 用于验证 LLM 返回的章节分析结果是否符合预期格式和约束。
 """
 from novel_material.infra.common import TENSION_CHANGE_VALUES
+from novel_material.infra.llm_contracts import (
+    LLMResponseContractError,
+    require_integer,
+    require_mapping,
+    require_string,
+    require_string_list,
+)
+
+
+def normalize_chapter_analysis_response(payload: object) -> dict:
+    """校验单章分析响应的基础字段类型。"""
+    result = dict(require_mapping(payload, "chapter_analysis"))
+    for field in ("summary", "pacing", "key_event", "hook_type"):
+        result[field] = require_string(result.get(field), f"chapter_analysis.{field}")
+    for field in (
+        "characters_appear", "chapter_functions", "setting",
+        "emotional_tone", "scene_type", "technique",
+    ):
+        result[field] = require_string_list(result.get(field), f"chapter_analysis.{field}")
+    tension = require_integer(result.get("tension_level"), "chapter_analysis.tension_level")
+    if not 1 <= tension <= 5:
+        raise LLMResponseContractError("chapter_analysis.tension_level", "1-5 的整数", tension)
+    result["tension_level"] = tension
+    for field in ("tension_change", "emotion_transition", "plot_progress"):
+        if result.get(field) is not None:
+            result[field] = require_string(result[field], f"chapter_analysis.{field}")
+    return result
 
 
 def validate_window_fields(result: dict, prev_tension: int | None) -> list[str]:
@@ -94,5 +121,6 @@ def _validate_chapter_analysis(result: dict, chapter_info: dict) -> list[str]:
 
 
 __all__ = [
+    "normalize_chapter_analysis_response",
     "validate_window_fields",
 ]

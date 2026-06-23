@@ -18,8 +18,30 @@ from novel_material.tags.load import load_tags_for_genre, format_tags_for_prompt
 from novel_material.tags.validate import validate_tag, validate_tags_batch
 from novel_material.tags.scheduled import auto_approve_by_frequency
 from novel_material.infra.progress import get_pipeline_logger, save_run_history
+from novel_material.infra.llm_contracts import LLMResponseContractError, require_mapping, require_string, require_string_list
 
 logger = get_pipeline_logger()
+
+
+def default_tags_response(genre_primary: str) -> dict:
+    return {
+        "genre_primary": [genre_primary], "genre_secondary": [], "elements": [],
+        "setting": None, "style": [], "structure": None, "hooks": [], "tropes": [],
+        "themes": [], "genre_description": "",
+    }
+
+
+def normalize_tags_response(payload: object) -> dict:
+    result = dict(require_mapping(payload, "tags"))
+    for field in ("genre_primary", "genre_secondary", "elements", "style", "hooks", "tropes", "themes"):
+        result[field] = require_string_list(result.get(field), f"tags.{field}")
+    for field in ("setting", "structure"):
+        if result.get(field) is not None:
+            result[field] = require_string(result[field], f"tags.{field}")
+    result["genre_description"] = require_string(result.get("genre_description"), "tags.genre_description")
+    return result
+
+
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 
@@ -111,24 +133,14 @@ def generate_tags(material_id, provider: str | None = None) -> bool:
     # ── 容错调用 ──
     result = {}
     try:
-        result = call_llm(system_prompt, user_prompt, config, context=f"{material_id} 标签生成")
+        result = normalize_tags_response(call_llm(system_prompt, user_prompt, config, context=f"{material_id} 标签生成"))
         logger.info(f"[{material_id}] 标签生成完成: finish={telemetry.last.get('finish_reason', '')}")
         time.sleep(rate_limit)
     except Exception as e:
-        logger.error(f"[{material_id}] 标签生成失败: {e}")
+        error_kind = "schema_invalid" if isinstance(e, LLMResponseContractError) else "调用失败"
+        logger.error(f"[{material_id}] 标签生成 {error_kind}: {e}")
         logger.warning(f"[{material_id}] 使用默认标签继续，不中断流程")
-        result = {
-            "genre_primary": [genre_primary],
-            "genre_secondary": [],
-            "elements": [],
-            "setting": None,
-            "style": [],
-            "structure": None,
-            "hooks": [],
-            "tropes": [],
-            "themes": [],
-            "genre_description": ""
-        }
+        result = default_tags_response(genre_primary)
 
     # 校验并保存标签（分级处理新标签）
     tags, new_candidates = validate_and_save_tags(material_id, result, genre_primary)

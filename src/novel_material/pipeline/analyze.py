@@ -34,6 +34,7 @@ from novel_material.validation.quality import run_quality_check, get_short_summa
 from novel_material.validation.schema import get_schema_error_chapters
 from novel_material.validation.pacing_normalize import normalize_pacing
 from novel_material.infra.progress import get_pipeline_logger, PipelineRunner
+from novel_material.infra.llm_contracts import LLMResponseContractError
 from novel_material.validation.schema import validate_chapter_tags_fields
 from novel_material.pipeline.evaluate import load_evaluation
 
@@ -44,8 +45,9 @@ from novel_material.pipeline.analyze_utils import (
     build_sliding_window_context,
 )
 from novel_material.pipeline.analyze_validators import (
-    validate_window_fields,
     _validate_chapter_analysis,
+    normalize_chapter_analysis_response,
+    validate_window_fields,
 )
 from novel_material.pipeline.analyze_files import (
     _load_existing_chapters,
@@ -131,6 +133,7 @@ def _reanalyze_chapters(
                 material_id=material_id,
                 window_context=window_context,
             )
+            result = normalize_chapter_analysis_response(result)
 
             result["chapter"] = ch_num
             result["title"] = ch_info["title"]
@@ -412,6 +415,13 @@ def chapter_analyze(
                     )
                     batch_errors += 1
                     continue
+
+            try:
+                result = normalize_chapter_analysis_response(result)
+            except LLMResponseContractError as e:
+                logger.error(f"[{material_id}] 第 {ch_num} 章 [schema_invalid]: {e}")
+                batch_errors += 1
+                continue
 
             # 检查结果质量
             errors = _validate_chapter_analysis(result, ch_info)

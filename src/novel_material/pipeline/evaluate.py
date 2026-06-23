@@ -19,11 +19,21 @@ from novel_material.infra.config import NOVELS_DIR
 from novel_material.infra.yaml_io import load_yaml, save_yaml, load_yaml_list
 from novel_material.infra.llm import load_config, call_llm, truncate_to_tokens, start_llm_telemetry
 from novel_material.infra.progress import StageTracker, save_run_history, get_pipeline_logger
+from novel_material.infra.llm_contracts import LLMResponseContractError, require_mapping, require_string, require_string_list
 from novel_material.pipeline.progress import EVALUATION_STAGES
 from novel_material.infra.common import NOVEL_TYPE_VALUES
 from novel_material.schema import get_threshold
 
 logger = get_pipeline_logger()
+
+
+def normalize_evaluation_response(payload: object) -> dict:
+    result = dict(require_mapping(payload, "evaluation"))
+    result["novel_type"] = require_string_list(result.get("novel_type"), "evaluation.novel_type")
+    result["main_thread_summary"] = require_string(result.get("main_thread_summary"), "evaluation.main_thread_summary")
+    result["core_characters_hint"] = require_string_list(result.get("core_characters_hint"), "evaluation.core_characters_hint")
+    result["stage_summary"] = require_string(result.get("stage_summary"), "evaluation.stage_summary")
+    return result
 
 # 章节数阈值：超过此数量启用大样本策略（从契约加载）
 _SAMPLE_THRESHOLD = get_threshold("sample_threshold")
@@ -251,14 +261,14 @@ def evaluate_batch(
     telemetry = start_llm_telemetry()
 
     try:
-        result = call_llm(
+        result = normalize_evaluation_response(call_llm(
             _SYSTEM_PROMPT,
             user_prompt,
             config,
             max_tokens_override=1500,
             timeout_override=config["llm"].get("other_timeout", 120),
             context=f"{material_id} 批次#{batch_num}",
-        )
+        ))
         tracker.record_api_call(success=True)
 
         # 记录 tokens
@@ -412,7 +422,8 @@ def run_evaluation(
                 tracker,
             )
         except Exception as e:
-            logger.error(f"[{material_id}] 批次#{batch_num} 评估失败: {e}")
+            error_kind = "schema_invalid" if isinstance(e, LLMResponseContractError) else "调用失败"
+            logger.error(f"[{material_id}] 批次#{batch_num} 评估 {error_kind}: {e}")
             tracker.stop_spinner()
             return False
 

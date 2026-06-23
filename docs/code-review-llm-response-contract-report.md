@@ -5,6 +5,21 @@
 **语言**：Python 3.10+  
 **问题总数**：7（🔴 5，🟡 2，🟢 0）
 
+## 解决状态（2026-06-24）
+
+本报告中的 5 个 Critical 与 2 个 Suggestion 已完成代码修复：
+
+- 新增统一 `LLMResponseContractError` 及对象、数组、字符串、整数、数值契约原语。
+- 世界观、单章分析、大纲前提、标签和素材分类均在首次消费响应前校验结构。
+- 总体评估、大纲分幕、beats 和人物提取保留既有降级策略，并将结构错误标记为 `schema_invalid`。
+- insights、搜索重排和审计复核继续使用原有成熟验证器。
+
+验证结果：
+
+- `pytest -q tests/infra/test_llm_contracts.py`：`5 passed`。
+- LLM 响应契约与分类定向测试：`22 passed`。
+- `pytest -q`：`363 passed, 1 skipped`。
+
 ## 摘要
 
 | 维度 | Critical | Suggestion | Nice to have | 合计 |

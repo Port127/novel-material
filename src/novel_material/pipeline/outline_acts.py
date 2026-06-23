@@ -5,8 +5,32 @@
 """
 from novel_material.infra.llm import call_llm, start_llm_telemetry
 from novel_material.infra.progress import get_pipeline_logger
+from novel_material.infra.llm_contracts import LLMResponseContractError, require_integer, require_mapping, require_mapping_list, require_string
 
 logger = get_pipeline_logger()
+
+
+def normalize_acts_response(payload: object, chapter_count: int) -> list[dict]:
+    raw = payload if isinstance(payload, list) else require_mapping(payload, "outline.acts").get("acts")
+    acts = require_mapping_list(raw, "outline.acts")
+    for ai, act in enumerate(acts):
+        base = f"outline.acts[{ai}]"
+        for field in ("act_number", "chapter_start", "chapter_end"):
+            act[field] = require_integer(act.get(field), f"{base}.{field}")
+        act["name"] = require_string(act.get("name"), f"{base}.name")
+        if not 1 <= act["chapter_start"] <= act["chapter_end"] <= chapter_count:
+            raise LLMResponseContractError(base, "有效章节范围", act)
+        sequences = require_mapping_list(act.get("sequences"), f"{base}.sequences")
+        for si, seq in enumerate(sequences):
+            path = f"{base}.sequences[{si}]"
+            for field in ("sequence_number", "chapter_start", "chapter_end"):
+                seq[field] = require_integer(seq.get(field), f"{path}.{field}")
+            for field in ("title", "description"):
+                seq[field] = require_string(seq.get(field), f"{path}.{field}")
+            if not 1 <= seq["chapter_start"] <= seq["chapter_end"] <= chapter_count:
+                raise LLMResponseContractError(path, "有效章节范围", seq)
+        act["sequences"] = sequences
+    return acts
 
 
 def _generate_acts_sequences(
@@ -98,11 +122,7 @@ def _generate_acts_sequences(
     telemetry = start_llm_telemetry()
     result = call_llm(system_prompt, user_prompt, config, max_tokens_override=4000, timeout_override=config["llm"]["outline_timeout"], context=f"{material_id} 幕序列划分")
     logger.info(f"{prefix}幕序列划分完成: finish={telemetry.last.get('finish_reason', '')}")
-    # 兼容 LLM 直接返回数组的情况
-    if isinstance(result, list):
-        logger.warning(f"{prefix}幕序列划分返回裸数组，自动适配")
-        return result
-    return result.get("acts", [])
+    return normalize_acts_response(result, chapter_count)
 
 
 def generate_simple_acts(chapter_count: int, structure_type: str = "三幕式") -> list:
