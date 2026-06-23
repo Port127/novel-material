@@ -4,21 +4,21 @@
 feature: artifact-audit-and-run-report
 phase: 1
 status: ready
-current_packet: task-05-review-budget.md
-last_completed_packet: task-04-audit-service-cli.md
-last_good_commit: 8e95384
+current_packet: task-06-runtime-dispatcher.md
+last_completed_packet: task-05-review-budget.md
+last_good_commit: 10f8741
 worktree: current_main_user_approved
 blocking_issue: null
 ```
 
 ## 最近验证
 
-- 指定 audit、CLI、validation 回归：27 passed。
-- `python -m pytest -q`：310 passed，1 skipped。
+- 指定 audit、CLI 回归：44 passed。
+- `python -m pytest -q`：329 passed，1 skipped。
 - `python -m compileall -q src/novel_material`：通过。
-- `python -m novel_material.cli.main validate artifacts --help`：通过。
-- 裸导入 `novel_material.audit` 不加载 `infra.config`。
-- Packet 04 提交：`8e95384`。
+- 默认规则模式不构造 reviewer；复审测试使用 fake LLM，无网络请求。
+- 事实 YAML 只读与受限证据测试通过。
+- Packet 05 提交：`10f8741`。
 
 ## 已确认且不得遗失
 
@@ -30,7 +30,7 @@ blocking_issue: null
 
 ## 本次开始动作
 
-1. 打开 `task-05-review-budget.md`。
+1. 打开 `task-06-runtime-dispatcher.md`。
 2. 确认工作区除用户 `docs/feedback.md` 外没有未知修改。
 3. 按 packet 内测试驱动步骤执行。
 
