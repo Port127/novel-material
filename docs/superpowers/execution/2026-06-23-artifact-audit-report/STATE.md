@@ -4,21 +4,20 @@
 feature: artifact-audit-and-run-report
 phase: 1
 status: ready
-current_packet: task-11-pipeline-gating.md
-last_completed_packet: task-10-report-sink-reader.md
-last_good_commit: d00d56c
+current_packet: task-12-report-cli-terminal.md
+last_completed_packet: task-11-pipeline-gating.md
+last_good_commit: 1d444fc
 worktree: current_main_user_approved
 blocking_issue: null
 ```
 
 ## 最近验证
 
-- ReportSink、run_logging 与依赖边界指定回归：19 passed。
-- reporting、run_logging 与依赖边界完整回归：37 passed。
-- `python -m pytest -q`：379 passed，1 skipped。
-- `python -m compileall -q src/novel_material/reporting src/novel_material/run_logging`：通过。
-- 完成前零副作用、事件去重、历史基线、轮转合并和损坏行定位测试通过。
-- Packet 10 提交：`d00d56c`。
+- pipeline、pipeline_common 与 CLI 契约回归：109 passed。
+- `python -m pytest -q`：388 passed，1 skipped。
+- `python -m compileall -q src/novel_material/cli/pipeline_common.py src/novel_material/pipeline/orchestrator.py`：通过。
+- blocker 阻断 sync、旧 sidecar 从 audit 恢复、runtime 双 sink 和 full 顶层降级诊断测试通过。
+- Packet 11 提交：`1d444fc`。
 
 ## 已确认且不得遗失
 
@@ -30,7 +29,7 @@ blocking_issue: null
 
 ## 本次开始动作
 
-1. 打开 `task-11-pipeline-gating.md`。
+1. 打开 `task-12-report-cli-terminal.md`。
 2. 确认工作区除用户 `docs/feedback.md` 外没有未知修改。
 3. 按 packet 内测试驱动步骤执行。
 
