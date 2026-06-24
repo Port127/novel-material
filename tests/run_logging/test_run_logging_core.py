@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import json
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
+import pytest
+
 from novel_material.run_logging.aggregation import DiagnosticAggregator
+from novel_material.run_logging.reader import RunLogReadError, read_run_events
 from novel_material.run_logging.retention import RetentionPolicy
 from novel_material.run_logging.serializer import serialize_event
 from novel_material.run_logging.sink import JsonlSink
@@ -116,3 +119,70 @@ def test_retention_only_removes_expired_jsonl(tmp_path: Path):
     assert current.exists()
     assert active.exists()
     assert legacy.exists()
+
+
+def test_reader_merges_rotated_files_and_filters_run_id(tmp_path: Path):
+    started_at = datetime(2026, 6, 23, 1, tzinfo=timezone.utc)
+    started = event("RunStarted", run_id="run-1", occurred_at=started_at)
+    completed = event(
+        "RunCompleted",
+        run_id="run-1",
+        occurred_at=started_at + timedelta(seconds=1),
+        status="success",
+    )
+    first = tmp_path / "2026-06-23/pipeline_run-1.jsonl"
+    second = tmp_path / "2026-06-23/pipeline_run-1.1.jsonl"
+    other = tmp_path / "2026-06-23/pipeline_run-2.jsonl"
+    for path, events in (
+        (first, [started]),
+        (second, [completed, completed]),
+        (other, [event("RunStarted", run_id="run-2")]),
+    ):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            "".join(serialize_event(item) + "\n" for item in events),
+            encoding="utf-8",
+        )
+    (tmp_path / "2026-06-23/pipeline_run-1.log").write_text(
+        "legacy-bad-data", encoding="utf-8"
+    )
+    (tmp_path / "pipeline_run-1.jsonl").write_text(
+        "root-bad-data", encoding="utf-8"
+    )
+
+    loaded = read_run_events(tmp_path, "run-1")
+
+    assert [item.event_name for item in loaded] == [
+        "RunStarted",
+        "RunCompleted",
+    ]
+
+
+def test_reader_uses_sanitized_run_id_in_filename(tmp_path: Path):
+    sink = JsonlSink(
+        tmp_path,
+        command="pipeline",
+        run_id="run/unsafe",
+        max_bytes=10000,
+    )
+    source = event("RunStarted", run_id="run/unsafe")
+    sink.emit(source)
+
+    loaded = read_run_events(tmp_path, "run/unsafe")
+
+    assert loaded == (source,)
+
+
+def test_reader_reports_corrupt_line_location(tmp_path: Path):
+    path = tmp_path / "2026-06-23/pipeline_run-1.jsonl"
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        serialize_event(event("RunStarted", run_id="run-1")) + "\n{bad\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(RunLogReadError) as raised:
+        read_run_events(tmp_path, "run-1")
+
+    assert raised.value.path == path
+    assert raised.value.line_number == 2

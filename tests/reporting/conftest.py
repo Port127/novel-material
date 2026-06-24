@@ -1,8 +1,9 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
 from novel_material.audit.models import (
+    ArtifactAudit,
     ArtifactIssue,
     AuditSeverity,
     ReviewBudgetUsage,
@@ -17,6 +18,7 @@ from novel_material.reporting.models import (
     StageReport,
 )
 from novel_material.runtime.contracts import RunStatus
+from novel_material.runtime.testing import event
 
 
 @pytest.fixture
@@ -94,3 +96,56 @@ def sample_report() -> PipelineRunReport:
             "nm pipeline characters nm_demo --repair-character 主角",
         ),
     )
+
+
+@pytest.fixture
+def sample_events(sample_report: PipelineRunReport):
+    started_at = sample_report.started_at
+    audit = ArtifactAudit(
+        material_id=sample_report.material_id,
+        checks=sample_report.artifact_quality.checks,
+        issues=sample_report.artifact_quality.issues,
+        review_budget=sample_report.artifact_quality.review_budget,
+    )
+    return [
+        event(
+            "RunStarted",
+            occurred_at=started_at,
+            command=sample_report.command,
+            material_id=sample_report.material_id,
+        ),
+        event(
+            "OperationStarted",
+            occurred_at=started_at + timedelta(seconds=1),
+            command=sample_report.command,
+            material_id=sample_report.material_id,
+        ),
+        event(
+            "OperationCompleted",
+            occurred_at=started_at + timedelta(seconds=2),
+            command=sample_report.command,
+            material_id=sample_report.material_id,
+            attributes={
+                "input_tokens": 100,
+                "output_tokens": 50,
+                "total_tokens": 150,
+                "estimated_cost": 0.02,
+            },
+        ),
+        event(
+            "ArtifactAuditCompleted",
+            occurred_at=started_at + timedelta(seconds=3),
+            command=sample_report.command,
+            material_id=sample_report.material_id,
+            status=RunStatus.DEGRADED,
+            attributes={"audit": audit.model_dump(mode="json")},
+        ),
+        event(
+            "RunCompleted",
+            occurred_at=sample_report.completed_at,
+            command=sample_report.command,
+            material_id=sample_report.material_id,
+            status=sample_report.status,
+            attributes={"counts": {}, "diagnostics": []},
+        ),
+    ]

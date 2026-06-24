@@ -10,6 +10,7 @@ from .models import (
     SeverityCounts,
     StageReport,
 )
+from .sink import ReportSink
 from .writer import (
     ReportConflictError,
     ReportHistoryError,
@@ -26,6 +27,7 @@ __all__ = [
     "ReportConflictError",
     "ReportHistoryError",
     "ReportPaths",
+    "ReportSink",
     "ReportWriteError",
     "ReportWriter",
     "RuntimeMetrics",
