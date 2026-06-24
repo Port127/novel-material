@@ -147,5 +147,21 @@ class PathService:
         """
         return self.novel_dir(material_id) / "tags.yaml"
 
+    def reports_dir(self, material_id: str) -> Path:
+        """运行与产物质量报告目录。"""
+        return self.novel_dir(material_id) / "reports"
+
+    def report_run_path(self, material_id: str, run_id: str) -> Path:
+        """指定运行的不可变 YAML 报告路径。"""
+        return self.reports_dir(material_id) / "runs" / f"{run_id}.yaml"
+
+    def report_latest_yaml_path(self, material_id: str) -> Path:
+        """最近一次运行的机器可读报告路径。"""
+        return self.reports_dir(material_id) / "latest.yaml"
+
+    def report_latest_markdown_path(self, material_id: str) -> Path:
+        """最近一次运行的 Markdown 报告路径。"""
+        return self.reports_dir(material_id) / "latest.md"
+
 
 __all__ = ["PathService"]
