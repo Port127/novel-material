@@ -53,6 +53,28 @@ def test_orchestrator_keeps_processing_allowed_failures_until_blocking_failure()
     assert result.counts.remaining == 1
 
 
+def test_blocker_audit_stops_before_sync():
+    calls: list[str] = []
+    sync = StageSpec(
+        "sync",
+        lambda _request: calls.append("sync")
+        or stage("sync", RunStatus.SUCCESS),
+        blocking=True,
+    )
+
+    result = PipelineOrchestrator(
+        [
+            spec("analyze", RunStatus.SUCCESS),
+            spec("audit", RunStatus.FAILED, blocking=True),
+            sync,
+        ]
+    ).run(request())
+
+    assert [item.name for item in result.stages] == ["analyze", "audit"]
+    assert result.status is RunStatus.FAILED
+    assert calls == []
+
+
 class FailingSink:
     def __init__(self, criticality: SinkCriticality):
         self.name = criticality.value
@@ -101,7 +123,7 @@ def test_orchestrator_rejects_non_stage_result():
 def test_continue_plan_starts_from_invalid_insights_and_includes_downstream():
     names = (
         "analyze", "outline", "worldbuilding", "characters", "tags",
-        "insights", "refine", "sync",
+        "insights", "refine", "audit", "sync",
     )
     stages = {
         name: stage(
@@ -115,7 +137,28 @@ def test_continue_plan_starts_from_invalid_insights_and_includes_downstream():
     plan = PipelineOrchestrator.plan_continue(inspection)
 
     assert plan.first_stage == "insights"
-    assert plan.stage_names == ("insights", "refine", "sync")
+    assert plan.stage_names == ("insights", "refine", "audit", "sync")
+
+
+def test_continue_plan_starts_at_audit_for_old_sidecar_without_audit():
+    stages = {
+        name: stage(name, RunStatus.SUCCESS)
+        for name in (
+            "analyze",
+            "outline",
+            "worldbuilding",
+            "characters",
+            "tags",
+            "insights",
+            "refine",
+            "sync",
+        )
+    }
+    inspection = SimpleNamespace(exists=True, stages=stages)
+
+    plan = PipelineOrchestrator.plan_continue(inspection)
+
+    assert plan.stage_names == ("audit", "sync")
 
 
 def test_orchestrator_persists_latest_stage_result(tmp_path):

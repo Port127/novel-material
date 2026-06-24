@@ -73,7 +73,7 @@ class PipelineOrchestrator:
             return PipelinePlan(())
         order = (
             "analyze", "outline", "worldbuilding", "characters", "tags",
-            "insights", "refine", "sync",
+            "insights", "refine", "audit", "sync",
         )
         for index, name in enumerate(order):
             stage = inspection.stages.get(name)
