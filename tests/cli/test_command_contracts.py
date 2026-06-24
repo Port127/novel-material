@@ -2,18 +2,35 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+import hashlib
 from pathlib import Path
 import tomllib
 
 from typer.testing import CliRunner
 
 from novel_material.cli.main import app
+from novel_material.audit.budget import ReviewBudget
+from novel_material.audit.models import ArtifactIssue, AuditSeverity, ReviewState
+from novel_material.audit.reviewer import ReviewDecision
+from novel_material.audit.service import audit_material
+from novel_material.reporting.builder import build_run_report
+from novel_material.reporting.writer import ReportWriter
 from novel_material.search.models import SearchResponse, SearchTrace
 from novel_material.runtime.contracts import RunStatus, StageResult
+from novel_material.runtime.testing import event
 from novel_material.storage.sync_core import SyncSummary
 
 
 runner = CliRunner()
+
+
+def _file_hashes(root: Path) -> dict[Path, str]:
+    return {
+        path.relative_to(root): hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in root.rglob("*")
+        if path.is_file()
+    }
 
 
 class RecordingSearchService:
@@ -234,6 +251,96 @@ def test_validate_artifacts_review_builds_reviewer_and_budget(monkeypatch):
             },
         ),
     ]
+
+
+def test_audit_review_and_report_only_add_files_under_reports(tmp_path, monkeypatch):
+    material_id = "nm_demo"
+    novels_dir = tmp_path / "novels"
+    novel_dir = novels_dir / material_id
+    (novel_dir / "chapters").mkdir(parents=True)
+    (novel_dir / "meta.yaml").write_text(
+        "material_id: nm_demo\ntitle: 示例小说\nstatus: analyzed\n",
+        encoding="utf-8",
+    )
+    (novel_dir / "chapter_index.yaml").write_text(
+        "- chapter: 1\n  title: 第一章\n",
+        encoding="utf-8",
+    )
+    (novel_dir / "chapters" / "chapter_0001.yaml").write_text(
+        "chapter: 1\nkey_event: 主角作出选择\n",
+        encoding="utf-8",
+    )
+
+    def reviewable_rule(_context):
+        return (
+            ArtifactIssue(
+                code="reviewable_warning",
+                severity=AuditSeverity.WARNING,
+                artifact="meta.yaml",
+                message="需要受限复审的示例问题",
+                reviewable=True,
+                review_state=ReviewState.PENDING,
+            ),
+        )
+
+    class FakeReviewer:
+        evidence_chars = 200
+
+        def review(self, issue, evidence_excerpt):
+            assert "material_id: nm_demo" in evidence_excerpt
+            return ReviewDecision(
+                code=issue.code,
+                confirmed=True,
+                rationale="证据确认该问题",
+            )
+
+    monkeypatch.setattr(
+        "novel_material.audit.service.RULES",
+        (("reviewable", reviewable_rule),),
+    )
+    before = _file_hashes(novel_dir)
+    audit = audit_material(
+        material_id,
+        novels_dir=novels_dir,
+        reviewer=FakeReviewer(),
+        budget=ReviewBudget(max_seconds=10, max_calls=1, clock=lambda: 0),
+        estimated_call_seconds=1,
+    )
+    assert audit.review_budget.calls_used == 1
+    assert audit.issues[0].review_state is ReviewState.CONFIRMED
+
+    started_at = datetime(2026, 6, 24, 1, 0, tzinfo=timezone.utc)
+    events = [
+        event(
+            "RunStarted",
+            occurred_at=started_at,
+            command="pipeline full",
+            material_id=material_id,
+        ),
+        event(
+            "ArtifactAuditCompleted",
+            occurred_at=started_at + timedelta(seconds=1),
+            command="pipeline full",
+            material_id=material_id,
+            status=RunStatus.SUCCESS,
+            attributes={"audit": audit.model_dump(mode="json")},
+        ),
+        event(
+            "RunCompleted",
+            occurred_at=started_at + timedelta(seconds=2),
+            command="pipeline full",
+            material_id=material_id,
+            status=RunStatus.SUCCESS,
+            attributes={"counts": {}, "diagnostics": []},
+        ),
+    ]
+    ReportWriter(novel_dir).write(build_run_report(events))
+
+    after = _file_hashes(novel_dir)
+    assert {path: after[path] for path in before} == before
+    new_files = set(after) - set(before)
+    assert new_files
+    assert all(path.parts[0] == "reports" for path in new_files)
 
 
 def test_material_delete_requires_id_as_usage_error():

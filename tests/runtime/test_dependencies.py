@@ -20,6 +20,23 @@ def imported_modules(path: Path) -> set[str]:
     return modules
 
 
+def assert_package_avoids(package: str, forbidden: tuple[str, ...]) -> None:
+    """断言 package 内所有 Python 模块都不跨越指定依赖边界。"""
+    package_root = ROOT / "src" / "novel_material" / package
+    assert package_root.is_dir(), f"缺少 package：{package_root}"
+    violations: list[str] = []
+    for path in package_root.rglob("*.py"):
+        for module in imported_modules(path):
+            if any(
+                module == target or module.startswith(f"{target}.")
+                for target in forbidden
+            ):
+                violations.append(
+                    f"{path.relative_to(ROOT)} -> {module}"
+                )
+    assert violations == [], "发现越界依赖：\n" + "\n".join(sorted(violations))
+
+
 def test_logging_and_terminal_do_not_import_each_other():
     forbidden = {
         "run_logging": "novel_material.terminal",
@@ -34,6 +51,35 @@ def test_logging_and_terminal_do_not_import_each_other():
                 module == target or module.startswith(f"{target}.")
                 for module in imports
             ), f"{path} 不得依赖 {target}"
+
+
+def test_audit_package_keeps_read_only_dependency_boundary():
+    assert_package_avoids(
+        "audit",
+        (
+            "novel_material.storage",
+            "novel_material.terminal",
+            "novel_material.reporting.writer",
+        ),
+    )
+
+
+def test_reporting_package_does_not_depend_on_business_writers():
+    assert_package_avoids(
+        "reporting",
+        (
+            "novel_material.storage",
+            "novel_material.pipeline",
+            "novel_material.terminal",
+        ),
+    )
+
+
+def test_terminal_may_use_report_models_but_not_report_writer():
+    assert_package_avoids(
+        "terminal",
+        ("novel_material.reporting.writer",),
+    )
 
 
 def test_runtime_package_exists_as_shared_dependency():

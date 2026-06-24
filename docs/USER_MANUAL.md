@@ -113,7 +113,7 @@ nm <模块> <命令> --help
 
 ```text
 ingest analyze insights evaluate outline worldbuilding characters
-tags refine full status continue
+tags refine full status continue report
 ```
 
 ### 4.1 入库与总体评估
@@ -185,6 +185,17 @@ nm pipeline full ./novel.txt --mode standard
 | `standard` | 默认无人值守 | 默认分析开头 100 章，可通过 `INSIGHTS_STANDARD_CHAPTER_LIMIT` 调整 |
 | `deep` | 质量优先 | 全量执行 core insights，并保留关键章节深度分析扩展点 |
 
+`full` 在 refine 后执行只读产物审计，再根据严重度决定终态：`blocker` 使运行失败并阻止数据库同步，`error` 使运行降级但允许同步，`warning/info` 不单独使运行失败。每次运行会写出：
+
+```text
+data/novels/{material_id}/reports/
+├── runs/{run_id}.yaml   # 不可变机器可读报告
+├── latest.yaml          # 最新机器可读报告
+└── latest.md            # 最新人类可读报告
+```
+
+报告包含阶段耗时与计数、API/Token/预估成本（可用时）、诊断、产物质量问题、复审预算及建议动作。
+
 ### 4.6 状态与断点续传
 
 ```bash
@@ -193,6 +204,25 @@ nm pipeline continue nm_xxx --mode standard
 ```
 
 `continue` 自动检查未完成阶段。滑动窗口模式需要已有 `evaluation.yaml`。
+
+结构化日志完整但报告缺失时，可只读重建：
+
+```bash
+nm pipeline report nm_xxx
+nm pipeline report nm_xxx --run-id run_xxx
+```
+
+不指定 `--run-id` 时使用当前素材状态中的最新运行 ID。命令成功后输出 `latest.md` 路径，不会重跑分析或修改事实产物。
+
+### 4.7 稳定退出码
+
+| 退出码 | 含义 |
+|---:|---|
+| `0` | `success`，命令成功 |
+| `1` | `failed`，业务失败或 blocker |
+| `2` | 参数/用法错误 |
+| `3` | `degraded`，有 error 级问题或部分失败 |
+| `130` | 用户中断 |
 
 ## 5. Search 检索
 
@@ -266,11 +296,15 @@ nm validate validate [material_id]
 nm validate validate --all
 nm validate quality <material_id> [--start N] [--end N]
 nm validate insights <material_id>
+nm validate artifacts <material_id> [--review]
 ```
 
 - `validate`：检查 YAML 结构和完整性。
 - `quality`：检查摘要长度、覆盖率等内容质量。
 - `insights`：检查题材感知字段、证据和置信度。
+- `artifacts`：只读检查核心文件、章节覆盖、人物兜底档案、世界观和 insights 等产物质量；默认不调用 LLM。
+
+`--review` 只复审规则标记为可疑的项目，并受配置中的调用次数和预计耗时预算约束。预算耗尽的项目保留为“因预算未复审”，不会偷偷扩大调用。该命令不会修复或改写 YAML。
 
 ## 10. 常用流程
 
@@ -325,6 +359,20 @@ nm pipeline continue nm_xxx
 
 不要手工修改进度文件或跳过依赖阶段。
 
+### 报告缺失或无法重建
+
+先确认 `logs/{YYYY-MM-DD}/` 下存在对应 `run_id` 的结构化 JSONL，再执行：
+
+```bash
+nm pipeline report nm_xxx --run-id run_xxx
+```
+
+`run_events_missing` 表示没有找到该 run 的事件；`report_rebuild_failed` 表示事件不完整、历史报告损坏或不可变 run 报告发生内容冲突。不要删除已有 `reports/runs/*.yaml` 来绕过冲突，应先核对 run ID 和日志完整性。
+
+### 审计阻止同步或运行降级
+
+查看 `reports/latest.md` 的“问题与风险”和“下一步”。`blocker` 会阻止 sync；`error` 返回退出码 `3`，但流水线可以完成同步。可独立运行 `nm validate artifacts nm_xxx` 复查，只有需要判断模糊项时才加 `--review`。
+
 ### 数据库或同步失败
 
 ```bash
@@ -349,7 +397,7 @@ nm storage sync nm_xxx
 | 提示词 | `src/novel_material/prompts/` |
 | 题材 profiles | `src/novel_material/analysis_profiles/profiles/` |
 
-日志位于 `logs/`，按 pipeline、search、embedding 等模块分开记录。字段阈值以契约文件为准，不要在业务代码或文档中复制维护。
+结构化运行日志位于 `logs/{YYYY-MM-DD}/{command}_{run_id}.jsonl`，用于逐事件诊断和报告重建；素材目录中的兼容文本日志保留模块细节。运行报告位于 `data/novels/{material_id}/reports/`。所有结构化输出都会做敏感信息脱敏。字段阈值以契约文件为准，不要在业务代码或文档中复制维护。
 
 ## 附录：命令速查
 
@@ -367,6 +415,7 @@ nm pipeline refine <id>
 nm pipeline full <file> --mode standard
 nm pipeline status <id>
 nm pipeline continue <id>
+nm pipeline report <id> [--run-id RUN_ID]
 
 # Search
 nm search outline --query <text>
@@ -406,4 +455,5 @@ nm validate validate [id]
 nm validate validate --all
 nm validate quality <id>
 nm validate insights <id>
+nm validate artifacts <id> [--review]
 ```

@@ -21,6 +21,7 @@
 1. **单一数据源**：所有校验阈值、提示词参数集中在 YAML 契约文件，一处修改多处生效
 2. **服务层抽象**：IO 操作封装为服务类，业务逻辑与基础设施解耦
 3. **模块边界清晰**：每个模块有明确的职责和导出接口
+4. **运行可验证**：结构化事件统一驱动日志、终端摘要和运行报告，审计只读检查事实产物
 
 ### 层次结构
 
@@ -117,6 +118,12 @@ novel-material/
 │   ├── analysis_profiles/        # [契约层] 题材感知深度分析 profile
 │   │   ├── loader.py             # profile 加载与合并
 │   │   └── profiles/*.yaml       # common/xuanhuan/xianxia/suspense
+│   │
+│   ├── runtime/                  # 中立运行契约、事件分发、状态与 workspace guard
+│   ├── run_logging/              # 结构化 JSONL 日志、脱敏与运行事件读取
+│   ├── terminal/                 # Rich 进度展示和终态摘要（不负责报告写入）
+│   ├── audit/                    # 只读产物规则、严重度映射与受限可选复审
+│   ├── reporting/                # 报告聚合、Markdown 渲染、原子持久化与 ReportSink
 │   │
 │   ├── infra/                    # 基础设施 + 服务层
 │   │   ├── __init__.py           # 统一导出
@@ -390,6 +397,27 @@ save_yaml(paths.meta_path, meta)
 
 `insights.py` 按批调用 LLM，批次失败会为对应章节写入失败状态并继续；schema 校验失败最多修复一次，仍失败则保留结果并写入 `quality.validation_errors`，同时下调 confidence。新增 profile 时必须提供 YAML 字段契约，并覆盖 loader、resolver、prompt 和 validator 测试。
 
+### 运行审计与报告
+
+`full` 和 `continue` 通过中立 `RunEvent` 串联运行观察能力，业务阶段不直接依赖终端或报告写入器：
+
+```text
+Pipeline / LLM ──→ RunEvent ──→ RuntimeDispatcher
+                                  ├─ JsonlSink（required）→ logs/YYYY-MM-DD/*.jsonl
+                                  ├─ ReportSink（required）→ reports/runs/{run_id}.yaml
+                                  │                         ├→ reports/latest.yaml
+                                  │                         └→ reports/latest.md
+                                  └─ TerminalSink（best effort）→ 进度与终态摘要
+
+refine → artifact audit ─┬─ blocker → failed，不执行 sync
+                         ├─ error   → degraded，可继续 sync
+                         └─ warning/info → success，可继续 sync
+```
+
+`audit/` 只读取素材目录内的事实文件，检查核心产物存在性、章节覆盖、人物兜底档案、世界观与 insights 等质量信号。默认执行确定性规则；只有显式 `--review` 才启用带时间和调用次数上限的 LLM 复审。审计与报告不得修改事实文件，允许新增内容仅位于 `reports/`。
+
+`reporting/` 从事件构建统一报告，包含运行状态、阶段耗时与计数、API/Token/成本（可用时）、诊断、产物问题、复审预算和下一步动作。每个 run YAML 是不可变记录；`latest.yaml` 与 `latest.md` 使用原子替换。`ReportSink` 是流水线 required sink，写入失败会使运行失败；终端展示仍是 best effort。
+
 ### 断点续传机制
 
 ```
@@ -419,12 +447,26 @@ save_yaml(paths.meta_path, meta)
 | `nm pipeline tags` | 标签生成 | `pipeline/tags.py` |
 | `nm pipeline insights` | 题材感知深度分析 | `pipeline/insights.py` |
 | `nm pipeline refine` | 调同步 | `pipeline/refine.py` + `pipeline/infer.py` |
+| `nm pipeline report` | 从结构化日志只读重建报告 | `reporting/` + `run_logging/reader.py` |
 | `nm search chapter` | 章节检索 | `search/chapter.py` |
 | `nm search insight` | 深度分析 YAML 检索 | `search/insight.py` |
 | `nm storage sync` | 数据库同步（自动修复） | `storage/sync.py` → `storage/repair.py` |
 | `nm material classify` | 素材分类 | `material/classify.py` |
 | `nm validate validate` | Schema 完整性校验 | `validation/schema.py` |
 | `nm validate insights` | 深度分析校验 | `validation/insights.py` |
+| `nm validate artifacts` | 只读产物质量审计，可选受限复审 | `audit/` |
+
+### Runtime、Audit 与 Reporting
+
+| 模块 | 职责 | 依赖边界 |
+|---|---|---|
+| `runtime/` | 统一状态、退出码、事件、dispatcher、汇总和工作区保护 | 中立共享依赖，不依赖 UI |
+| `run_logging/` | JSONL 持久化、敏感信息脱敏、按 run 读取事件 | 不依赖 `terminal/` |
+| `terminal/` | 消费事件并展示进度、问题摘要和报告路径 | 可读 `reporting.models`，不得依赖 `reporting.writer` |
+| `audit/` | 只读规则、问题模型、预算化复审 | 不依赖 storage、terminal、report writer |
+| `reporting/` | 事件聚合、报告模型、Markdown 与持久化 | 不依赖 storage、业务 pipeline、terminal |
+
+这些边界由 AST 测试锁定；端到端只读测试还会对审计前后的事实文件逐一计算 SHA-256，确保审计、复审和报告生成只在 `reports/` 下新增文件。
 
 ### Pipeline 层 (`pipeline/`)
 
@@ -708,13 +750,16 @@ summary:
 
 ### 日志文件
 
-`data/novels/{material_id}/pipeline_{date}_{time}_{PID}.log`
+结构化运行日志位于 `logs/{YYYY-MM-DD}/{command}_{run_id}.jsonl`；达到配置的大小上限后以数字后缀轮转。每行是一个已脱敏的 `RunEvent`，可供 `nm pipeline report` 重建报告。
 
-**PID 隔离**：并发运行多个 pipeline 时日志写入不同文件。
+素材目录仍可保留阶段级兼容日志，例如 `data/novels/{material_id}/pipeline_{date}_{time}_{PID}.log`，用于查看旧模块的详细文本信息。
+
+**运行隔离**：结构化日志以 `run_id` 隔离，兼容文本日志以 PID 隔离。
 
 ### 日志格式
 
 ```
+[RunStarted / StageCompleted / ArtifactAuditCompleted / RunCompleted JSONL]
 [material_id] 批次完成: 返回 10/10章...
 [material_id 章节分析] API: 12.3s | in=4521 out=823 | finish=stop
 [RATE] 重试 3/8，等待 60s: RateLimitError
