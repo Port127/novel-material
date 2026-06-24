@@ -4,22 +4,21 @@
 feature: artifact-audit-and-run-report
 phase: 1
 status: ready
-current_packet: task-13-docs-guards.md
-last_completed_packet: task-12-report-cli-terminal.md
-last_good_commit: f53b01e
+current_packet: task-14-final-verification.md
+last_completed_packet: task-13-docs-guards.md
+last_good_commit: db4377f
 worktree: current_main_user_approved
 blocking_issue: null
 ```
 
 ## 最近验证
 
-- CLI、terminal 与 reporting 指定回归：49 passed。
-- pipeline、CLI、terminal 与 reporting 完整相关回归：143 passed。
-- `python -m pytest -q`：394 passed，1 skipped。
-- `python -m novel_material.cli.main pipeline report --help`：通过。
-- `python -m compileall -q src/novel_material/cli/pipeline.py src/novel_material/cli/pipeline_common.py src/novel_material/terminal/reporter.py`：通过。
-- 只读重建、事实文件不变、runtime handoff、终端模式和 RunResult 退出码测试通过。
-- Packet 12 提交：`f53b01e`。
+- 依赖边界与 CLI 契约定向回归：25 passed。
+- `python -m pytest`：398 passed，1 skipped。
+- `validate artifacts --help` 与 `pipeline report --help`：通过。
+- `python -m compileall -q src/novel_material`、现行文档检查与计划内差异检查：通过。
+- audit/reviewer/report 只读集成测试确认原事实文件 SHA-256 不变，新增文件仅位于 `reports/`。
+- Packet 13 提交：`db4377f`。
 
 ## 已确认且不得遗失
 
@@ -31,7 +30,7 @@ blocking_issue: null
 
 ## 本次开始动作
 
-1. 打开 `task-13-docs-guards.md`。
+1. 打开 `task-14-final-verification.md`。
 2. 确认工作区除用户 `docs/feedback.md` 外没有未知修改。
 3. 按 packet 内测试驱动步骤执行。
 
