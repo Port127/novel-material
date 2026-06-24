@@ -1,10 +1,14 @@
 """Pipeline 子命令：数据处理流水线。"""
+import sys
+from types import SimpleNamespace
+
 import typer
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn, TimeRemainingColumn
 from rich.table import Table
 
 from novel_material.infra.config import NOVELS_DIR
+from novel_material.infra.logging_config import ensure_log_dir
 from novel_material.infra.yaml_io import load_yaml_list
 from novel_material.infra.progress import silent_console, get_pipeline_logger
 from novel_material.pipeline import (
@@ -36,6 +40,7 @@ from novel_material.pipeline.state import (
     ConcurrentRunError,
     PipelineStateCorruptError,
     PipelineStateError,
+    PipelineStateStore,
 )
 from novel_material.pipeline.stages import (
     run_characters_stage,
@@ -46,7 +51,20 @@ from novel_material.pipeline.stages import (
     run_worldbuilding_stage,
 )
 from novel_material.storage.sync import sync_novel
-from novel_material.cli.pipeline_common import run_continue_pipeline, run_full_pipeline
+from novel_material.cli.pipeline_common import (
+    PipelineRuntime,
+    run_continue_pipeline,
+    run_full_pipeline,
+)
+from novel_material.reporting.builder import ReportBuildError, build_run_report
+from novel_material.reporting.writer import (
+    ReportConflictError,
+    ReportHistoryError,
+    ReportWriter,
+)
+from novel_material.run_logging.reader import RunLogReadError, read_run_events
+from novel_material.terminal.modes import resolve_mode
+from novel_material.terminal.reporter import TerminalReporter
 
 app = typer.Typer(help="数据处理流水线")
 console = Console()
@@ -935,7 +953,24 @@ def _legacy_cmd_continue(
     console.print(f"[green]material_id:[/green] [cyan]{material_id}[/cyan]")
 
 
-def _finish_pipeline_command(result):
+def _finish_pipeline_command(
+    result,
+    *,
+    ctx: typer.Context | None = None,
+    report_sink=None,
+):
+    if (
+        report_sink is not None
+        and report_sink.latest_report is not None
+        and report_sink.latest_paths is not None
+    ):
+        _terminal_reporter(ctx).complete_report(
+            report_sink.latest_report,
+            report_sink.latest_paths.latest_markdown,
+        )
+        if result.status.value == "success":
+            return
+        raise typer.Exit(int(result.exit_code))
     if result.status.value == "success":
         console.print("[green]流水线完成[/green]")
         return
@@ -946,6 +981,27 @@ def _finish_pipeline_command(result):
     else:
         typer.echo("流水线失败", err=True)
     raise typer.Exit(int(result.exit_code))
+
+
+def _terminal_reporter(ctx: typer.Context | None) -> TerminalReporter:
+    options = None
+    if ctx is not None:
+        root_object = ctx.find_root().obj or {}
+        options = root_object.get("terminal_options")
+    quiet = bool(getattr(options, "quiet", False))
+    no_progress = bool(getattr(options, "no_progress", False))
+    no_color = bool(getattr(options, "no_color", False))
+    mode = resolve_mode(
+        json_output=False,
+        quiet=quiet,
+        no_progress=no_progress,
+        is_tty=bool(getattr(sys.stderr, "isatty", lambda: False)()),
+    )
+    return TerminalReporter(
+        SimpleNamespace(stdout=sys.stdout, stderr=sys.stderr),
+        mode=mode,
+        no_color=no_color,
+    )
 
 
 def _raise_pipeline_state_cli_error(exc: PipelineStateError) -> None:
@@ -960,6 +1016,7 @@ def _raise_pipeline_state_cli_error(exc: PipelineStateError) -> None:
 
 @app.command("full")
 def cmd_full(
+    ctx: typer.Context,
     file_path: str = typer.Argument(..., help="小说文件路径"),
     start: int = typer.Option(None, "--start", "-s", min=1, help="起始章节号"),
     end: int = typer.Option(None, "--end", "-e", min=1, help="结束章节号"),
@@ -973,6 +1030,7 @@ def cmd_full(
     if start is not None and end is not None and end < start:
         raise typer.BadParameter("--end 必须大于等于 --start")
     try:
+        runtimes: list[PipelineRuntime] = []
         result = run_full_pipeline(
             file_path=file_path,
             start=start,
@@ -982,17 +1040,20 @@ def cmd_full(
             mode=mode,
             skip_sync=skip_sync,
             skip_embedding=skip_embedding,
+            runtime_observer=runtimes.append,
         )
     except PipelineStateError as exc:
         _raise_pipeline_state_cli_error(exc)
     except KeyboardInterrupt:
         typer.echo("运行已中断", err=True)
         raise typer.Exit(130) from None
-    _finish_pipeline_command(result)
+    report_sink = runtimes[-1].report_sink if runtimes else None
+    _finish_pipeline_command(result, ctx=ctx, report_sink=report_sink)
 
 
 @app.command("continue")
 def cmd_continue(
+    ctx: typer.Context,
     material_id: str = typer.Argument(..., help="素材 ID"),
     skip_sync: bool = typer.Option(False, "--skip-sync", help="跳过数据库同步"),
     start: int = typer.Option(None, "--start", "-s", min=1, help="起始章节号"),
@@ -1006,6 +1067,7 @@ def cmd_continue(
     if start is not None and end is not None and end < start:
         raise typer.BadParameter("--end 必须大于等于 --start")
     try:
+        runtimes: list[PipelineRuntime] = []
         result = run_continue_pipeline(
             material_id=material_id,
             start=start,
@@ -1015,10 +1077,63 @@ def cmd_continue(
             mode=mode,
             skip_sync=skip_sync,
             skip_embedding=skip_embedding,
+            runtime_observer=runtimes.append,
         )
     except PipelineStateError as exc:
         _raise_pipeline_state_cli_error(exc)
     except KeyboardInterrupt:
         typer.echo("运行已中断", err=True)
         raise typer.Exit(130) from None
-    _finish_pipeline_command(result)
+    report_sink = runtimes[-1].report_sink if runtimes else None
+    _finish_pipeline_command(result, ctx=ctx, report_sink=report_sink)
+
+
+@app.command("report")
+def cmd_report(
+    material_id: str = typer.Argument(..., help="素材 ID"),
+    run_id: str | None = typer.Option(None, "--run-id", help="指定运行 ID"),
+):
+    """从结构化运行日志只读重建运行与产物质量报告。"""
+    novel_dir = NOVELS_DIR / material_id
+    try:
+        target_run_id = run_id
+        if target_run_id is None:
+            target_run_id = PipelineStateStore(novel_dir).read_latest().run_id
+        events = read_run_events(ensure_log_dir(), target_run_id)
+        if not events:
+            typer.echo("run_events_missing", err=True)
+            raise typer.Exit(1)
+
+        writer = ReportWriter(novel_dir)
+        history = writer.load_history()
+        completed_at = max(
+            item.occurred_at
+            for item in events
+            if item.event_name == "RunCompleted"
+        )
+        comparable_history = tuple(
+            item
+            for item in history
+            if item.run_id != target_run_id
+            and item.completed_at <= completed_at
+        )
+        report = build_run_report(
+            events,
+            baseline_reports=comparable_history,
+        )
+        paths = writer.write(report)
+    except typer.Exit:
+        raise
+    except PipelineStateError as exc:
+        _raise_pipeline_state_cli_error(exc)
+    except (
+        ReportBuildError,
+        ReportConflictError,
+        ReportHistoryError,
+        RunLogReadError,
+        ValueError,
+    ) as exc:
+        typer.echo(f"report_rebuild_failed: {exc}", err=True)
+        raise typer.Exit(1) from None
+
+    typer.echo(str(paths.latest_markdown))

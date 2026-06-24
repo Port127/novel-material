@@ -346,9 +346,14 @@ def test_full_preserves_report_sink_failure_and_ingest_timing(
         ),
     )
 
-    result = pipeline_common.run_full_pipeline(file_path="novel.txt")
+    observed_runtimes = []
+    result = pipeline_common.run_full_pipeline(
+        file_path="novel.txt",
+        runtime_observer=observed_runtimes.append,
+    )
 
     assert result.status is RunStatus.DEGRADED
+    assert observed_runtimes == [runtime]
     assert result.diagnostics[-1].code == "event_sink_failed"
     assert result.stages[0].duration_ms == 250
     started = memory.events_named("RunStarted")[0]
@@ -402,7 +407,12 @@ def test_continue_runtime_does_not_report_historical_stages(
         lambda _inspection: SimpleNamespace(stage_names=("audit",)),
     )
 
-    pipeline_common.run_continue_pipeline(material_id="nm_demo")
+    observed_runtimes = []
+    pipeline_common.run_continue_pipeline(
+        material_id="nm_demo",
+        runtime_observer=observed_runtimes.append,
+    )
 
+    assert observed_runtimes == [runtime]
     started = memory.events_named("RunStarted")[0]
     assert started.attributes["report_prior_stages"] == []

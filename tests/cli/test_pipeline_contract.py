@@ -2,20 +2,30 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from types import SimpleNamespace
 
 from typer.testing import CliRunner
 import pytest
 
 from novel_material.cli.main import app
-from novel_material.runtime.contracts import RunStatus, StageResult
-from novel_material.runtime.contracts import RunResult
+from novel_material.audit.models import ArtifactIssue, AuditSeverity
+from novel_material.reporting.models import (
+    ArtifactQualityReport,
+    PipelineRunReport,
+    SeverityCounts,
+)
+from novel_material.run_logging.serializer import serialize_event
+from novel_material.runtime.contracts import RunResult, RunStatus, StageResult
 from novel_material.pipeline.orchestrator import StageSpec
 from novel_material.pipeline.state import (
     ConcurrentRunError,
+    PersistedRunState,
     PipelineStateCorruptError,
     PipelineStateStore,
 )
+from novel_material.runtime.testing import event
 
 
 runner = CliRunner()
@@ -23,6 +33,32 @@ runner = CliRunner()
 
 def failed_stage(name: str) -> StageResult:
     return StageResult(stage_id=f"stage-{name}", name=name, status=RunStatus.FAILED)
+
+
+def report_with_risk() -> PipelineRunReport:
+    started_at = datetime(2026, 6, 23, 1, tzinfo=timezone.utc)
+    return PipelineRunReport(
+        run_id="run-test",
+        material_id="nm_demo",
+        command="pipeline full",
+        status=RunStatus.DEGRADED,
+        started_at=started_at,
+        completed_at=started_at + timedelta(seconds=20),
+        duration_ms=20000,
+        artifact_quality=ArtifactQualityReport(
+            summary=SeverityCounts(error=1),
+            issues=(
+                ArtifactIssue(
+                    code="character_profile_fallback",
+                    severity=AuditSeverity.ERROR,
+                    artifact="characters/profiles/主角.yaml",
+                    message="主要人物为空壳",
+                    next_actions=("nm pipeline characters nm_demo",),
+                ),
+            ),
+        ),
+        next_actions=("nm pipeline characters nm_demo",),
+    )
 
 
 def test_ingest_failure_exits_one(monkeypatch):
@@ -153,6 +189,132 @@ def test_continue_uses_run_result_degraded_exit_code(monkeypatch):
 
     assert result.exit_code == 3
     assert "降级完成" in result.stderr
+
+
+def test_full_uses_report_sink_summary_but_keeps_run_result_exit_code(
+    monkeypatch,
+):
+    report = report_with_risk()
+    sink = SimpleNamespace(
+        latest_report=report,
+        latest_paths=SimpleNamespace(
+            latest_markdown=Path("/tmp/reports/latest.md")
+        ),
+    )
+
+    def fake_full(**kwargs):
+        kwargs["runtime_observer"](
+            SimpleNamespace(report_sink=sink)
+        )
+        return RunResult.from_stages(
+            run_id="run-test",
+            command="pipeline full",
+            stages=[
+                StageResult(
+                    stage_id="stage-audit",
+                    name="audit",
+                    status=RunStatus.DEGRADED,
+                )
+            ],
+        )
+
+    monkeypatch.setattr(
+        "novel_material.cli.pipeline.run_full_pipeline",
+        fake_full,
+    )
+
+    result = runner.invoke(app, ["pipeline", "full", "novel.txt"])
+
+    assert result.exit_code == 3
+    assert "character_profile_fallback" in result.stderr
+    assert "/tmp/reports/latest.md" in result.stderr
+
+
+def test_pipeline_report_rebuilds_latest_run_without_changing_facts(
+    tmp_path, monkeypatch
+):
+    material_id = "nm_demo"
+    run_id = "run-test"
+    novel_dir = tmp_path / "novels" / material_id
+    novel_dir.mkdir(parents=True)
+    fact = novel_dir / "meta.yaml"
+    fact.write_text("status: finalized\n", encoding="utf-8")
+    before = fact.read_bytes()
+    started_at = datetime(2026, 6, 23, 1, tzinfo=timezone.utc)
+    PipelineStateStore(novel_dir).write(
+        PersistedRunState(
+            run_id=run_id,
+            command="pipeline full",
+            status=RunStatus.SUCCESS,
+            generation=1,
+            created_at=started_at,
+            updated_at=started_at + timedelta(seconds=20),
+        )
+    )
+    log_dir = tmp_path / "logs"
+    log_path = log_dir / "2026-06-23/pipeline_run-test.jsonl"
+    log_path.parent.mkdir(parents=True)
+    events = (
+        event(
+            "RunStarted",
+            run_id=run_id,
+            command="pipeline full",
+            material_id=material_id,
+            occurred_at=started_at,
+        ),
+        event(
+            "RunCompleted",
+            run_id=run_id,
+            command="pipeline full",
+            material_id=material_id,
+            occurred_at=started_at + timedelta(seconds=20),
+            status=RunStatus.SUCCESS,
+            attributes={"counts": {}, "diagnostics": []},
+        ),
+    )
+    log_path.write_text(
+        "".join(serialize_event(item) + "\n" for item in events),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "novel_material.cli.pipeline.NOVELS_DIR",
+        tmp_path / "novels",
+    )
+    monkeypatch.setattr(
+        "novel_material.cli.pipeline.ensure_log_dir",
+        lambda: log_dir,
+        raising=False,
+    )
+
+    result = runner.invoke(app, ["pipeline", "report", material_id])
+
+    assert result.exit_code == 0
+    assert (novel_dir / "reports/latest.yaml").exists()
+    assert str(novel_dir / "reports/latest.md") in result.stdout
+    assert fact.read_bytes() == before
+
+
+def test_pipeline_report_missing_events_has_stable_error(tmp_path, monkeypatch):
+    novels_dir = tmp_path / "novels"
+    log_dir = tmp_path / "logs"
+    monkeypatch.setattr(
+        "novel_material.cli.pipeline.NOVELS_DIR",
+        novels_dir,
+    )
+    monkeypatch.setattr(
+        "novel_material.cli.pipeline.ensure_log_dir",
+        lambda: log_dir,
+        raising=False,
+    )
+
+    result = runner.invoke(
+        app,
+        ["pipeline", "report", "nm_demo", "--run-id", "run-missing"],
+    )
+
+    assert result.exit_code == 1
+    assert "run_events_missing" in result.stderr
+    assert not (novels_dir / "nm_demo/reports").exists()
 
 
 def test_continue_rejects_second_writer_for_same_material(tmp_path, monkeypatch):

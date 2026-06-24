@@ -208,7 +208,11 @@ def _audit_stage(
     )
 
 
-def run_full_pipeline(**options) -> RunResult:
+def run_full_pipeline(
+    *,
+    runtime_observer: Callable[[PipelineRuntime], None] | None = None,
+    **options,
+) -> RunResult:
     run_id = new_id("run")
     started_at = datetime.now(timezone.utc)
     run_start = time.monotonic()
@@ -222,6 +226,8 @@ def run_full_pipeline(**options) -> RunResult:
         return RunResult.from_stages(run_id, "pipeline full", [ingest])
     material_id = str(ingest.outputs["material_id"])
     runtime = _create_pipeline_runtime(material_id, "pipeline full", run_id)
+    if runtime_observer is not None:
+        runtime_observer(runtime)
     request = RunRequest(
         run_id=run_id,
         command="pipeline full",
@@ -248,7 +254,12 @@ def run_full_pipeline(**options) -> RunResult:
     )
 
 
-def run_continue_pipeline(*, material_id: str, **options) -> RunResult:
+def run_continue_pipeline(
+    *,
+    material_id: str,
+    runtime_observer: Callable[[PipelineRuntime], None] | None = None,
+    **options,
+) -> RunResult:
     run_start = time.monotonic()
     run_id = new_id("run")
     inspection = inspect_pipeline_state(material_id, novels_dir=NOVELS_DIR)
@@ -257,6 +268,8 @@ def run_continue_pipeline(*, material_id: str, **options) -> RunResult:
         missing = adapt_stage_result("status", None)
         return RunResult.from_stages(run_id, "pipeline continue", [missing])
     runtime = _create_pipeline_runtime(material_id, "pipeline continue", run_id)
+    if runtime_observer is not None:
+        runtime_observer(runtime)
     specs = tuple(
         spec
         for spec in _stage_specs(

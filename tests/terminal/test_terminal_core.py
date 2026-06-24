@@ -3,14 +3,51 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
-from novel_material.runtime.contracts import Diagnostic, RunResult
+from novel_material.audit.models import ArtifactIssue, AuditSeverity
+from novel_material.reporting.models import (
+    ArtifactQualityReport,
+    PipelineRunReport,
+    SeverityCounts,
+)
+from novel_material.runtime.contracts import Diagnostic, RunResult, RunStatus
 from novel_material.runtime.testing import FakeClock
 from novel_material.terminal.eta import BatchEtaEstimator
 from novel_material.terminal.modes import TerminalMode, resolve_mode
 from novel_material.terminal.reporter import TerminalReporter
 from novel_material.terminal.testing import RecordingTerminal
 from novel_material.terminal.progress import create_progress, finish_task
+
+
+def sample_pipeline_report(
+    status: RunStatus = RunStatus.DEGRADED,
+) -> PipelineRunReport:
+    started_at = datetime(2026, 6, 23, 1, tzinfo=timezone.utc)
+    issues = (
+        ArtifactIssue(
+            code="character_profile_fallback",
+            severity=AuditSeverity.ERROR,
+            artifact="characters/profiles/主角.yaml",
+            message="主要人物为空壳",
+            next_actions=("nm pipeline characters nm_demo",),
+        ),
+    )
+    return PipelineRunReport(
+        run_id="run-test",
+        material_id="nm_demo",
+        command="pipeline full",
+        status=status,
+        started_at=started_at,
+        completed_at=started_at + timedelta(seconds=20),
+        duration_ms=20000,
+        artifact_quality=ArtifactQualityReport(
+            summary=SeverityCounts(error=1),
+            issues=issues,
+        ),
+        next_actions=("nm pipeline characters nm_demo",),
+    )
 
 
 def test_eta_uses_batch_duration_not_burst_updates():
@@ -73,6 +110,51 @@ def test_dynamic_text_is_not_interpreted_as_rich_markup():
     reporter.result_row(title="[red]危险[/red]", summary="正文")
 
     assert "[red]危险[/red]" in terminal.stderr_text
+
+
+def test_terminal_completion_shows_report_path_and_top_risk():
+    terminal = RecordingTerminal()
+    reporter = TerminalReporter(terminal, mode=TerminalMode.PLAIN)
+
+    reporter.complete_report(
+        sample_pipeline_report(),
+        Path("/tmp/reports/latest.md"),
+    )
+
+    output = terminal.stdout_text + terminal.stderr_text
+    assert "degraded" in output
+    assert "character_profile_fallback" in output
+    assert "/tmp/reports/latest.md" in output
+    assert "nm pipeline characters nm_demo" in output
+
+
+def test_terminal_report_json_mode_keeps_stdout_parseable():
+    terminal = RecordingTerminal()
+    reporter = TerminalReporter(terminal, mode=TerminalMode.JSON)
+
+    reporter.complete_report(
+        sample_pipeline_report(),
+        Path("/tmp/reports/latest.md"),
+    )
+
+    assert json.loads(terminal.stdout_text)["run_id"] == "run-test"
+    assert terminal.stderr_text == ""
+
+
+def test_terminal_report_quiet_success_has_no_output():
+    terminal = RecordingTerminal()
+    reporter = TerminalReporter(terminal, mode=TerminalMode.QUIET)
+    report = sample_pipeline_report(RunStatus.SUCCESS).model_copy(
+        update={
+            "artifact_quality": ArtifactQualityReport(),
+            "next_actions": (),
+        }
+    )
+
+    reporter.complete_report(report, Path("/tmp/reports/latest.md"))
+
+    assert terminal.stdout_text == ""
+    assert terminal.stderr_text == ""
 
 
 def test_indeterminate_progress_has_explicit_terminal_status():
