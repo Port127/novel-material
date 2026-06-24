@@ -4,21 +4,21 @@
 feature: artifact-audit-and-run-report
 phase: 1
 status: ready
-current_packet: task-10-report-sink-reader.md
-last_completed_packet: task-09-report-writer.md
-last_good_commit: cbda2a2
+current_packet: task-11-pipeline-gating.md
+last_completed_packet: task-10-report-sink-reader.md
+last_good_commit: d00d56c
 worktree: current_main_user_approved
 blocking_issue: null
 ```
 
 ## 最近验证
 
-- Markdown 与 writer 指定回归：10 passed。
-- reporting、run_logging 与依赖边界回归：31 passed。
-- `python -m pytest -q`：373 passed，1 skipped。
-- `python -m compileall -q src/novel_material/reporting src/novel_material/infra/path_service.py`：通过。
-- Markdown 脱敏、不可变 run YAML、原子 latest、冲突保护和损坏历史测试通过。
-- Packet 09 提交：`cbda2a2`。
+- ReportSink、run_logging 与依赖边界指定回归：19 passed。
+- reporting、run_logging 与依赖边界完整回归：37 passed。
+- `python -m pytest -q`：379 passed，1 skipped。
+- `python -m compileall -q src/novel_material/reporting src/novel_material/run_logging`：通过。
+- 完成前零副作用、事件去重、历史基线、轮转合并和损坏行定位测试通过。
+- Packet 10 提交：`d00d56c`。
 
 ## 已确认且不得遗失
 
@@ -30,7 +30,7 @@ blocking_issue: null
 
 ## 本次开始动作
 
-1. 打开 `task-10-report-sink-reader.md`。
+1. 打开 `task-11-pipeline-gating.md`。
 2. 确认工作区除用户 `docs/feedback.md` 外没有未知修改。
 3. 按 packet 内测试驱动步骤执行。
 
