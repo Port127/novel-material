@@ -3,16 +3,25 @@
 ```yaml
 feature: global-navigation-and-character-biographies
 phase: 2
-status: ready
-current_packet: task-11-docs-final-verification.md
-last_completed_packet: task-10-performance-smoke.md
-last_good_commit: 871583d
+status: complete
+current_packet: null
+last_completed_packet: task-11-docs-final-verification.md
+last_good_commit: 0713371
 worktree: current_main_user_approved
 blocking_issue: null
 ```
 
 ## 最近验证
 
+- `python -m pytest tests/audit tests/reporting tests/runtime tests/run_logging tests/pipeline tests/terminal tests/cli/test_pipeline_contract.py tests/cli/test_command_contracts.py tests/validation -v`：260 passed。
+- `python -m novel_material.cli.main pipeline full --help`：显示 `--navigation` 与 `--skip-navigation`。
+- `python -m novel_material.cli.main pipeline analyze --help`：显示 `--window`。
+- `python -m novel_material.cli.main pipeline characters --help`：显示 `--repair-character`。
+- `python -m novel_material.cli.main validate artifacts --help`：显示 `--review`。
+- `python -m compileall -q src/novel_material`：通过。
+- `python scripts/check_v3_docs.py`：通过。
+- `git diff --check -- . ':(exclude)docs/feedback.md'`：通过。
+- Packet 11 文档提交：`0713371`。
 - `python -m pytest tests/pipeline/test_character_performance_budget.py -v`：1 passed；新增预算测试首跑通过，说明前序实现已满足只对目标人物生成完整小传。
 - `python -m pytest tests/pipeline/test_character_performance_budget.py tests/reporting/test_performance_baseline.py -v`：2 passed。
 - `python -m pytest tests/audit tests/reporting tests/runtime tests/run_logging tests/pipeline tests/terminal tests/cli/test_pipeline_contract.py tests/cli/test_command_contracts.py tests/validation -v`：260 passed。
@@ -31,11 +40,11 @@ blocking_issue: null
 - 真实素材默认只读验收；真实 LLM 修复必须单独问用户。
 - 未完成人工检索基线前，不声称检索质量提升。
 
-## 本次开始动作
+## 本次完成结果
 
-1. 打开 `task-11-docs-final-verification.md`。
-2. 确认工作区除用户 `docs/feedback.md` 外没有未知修改。
-3. 按 packet 内 TDD 步骤执行。
+1. 已完成第 11 包文档、CLI help 与完成门禁。
+2. 第二期 `global-navigation-and-character-biographies` 已完成。
+3. 当前工作区仅剩用户原有修改 `docs/feedback.md`，未纳入第二期提交。
 
 ## 每次结束必须更新
 
