@@ -4,20 +4,20 @@
 feature: global-navigation-and-character-biographies
 phase: 2
 status: ready
-current_packet: task-06-character-pipeline.md
-last_completed_packet: task-05-character-biography-contract.md
-last_good_commit: 0c7fb4f
+current_packet: task-07-character-repair-cli.md
+last_completed_packet: task-06-character-pipeline.md
+last_good_commit: 2779a3c
 worktree: current_main_user_approved
 blocking_issue: null
 ```
 
 ## 最近验证
 
-- `python -m pytest tests/pipeline/test_character_biography.py -v`：先因 `characters_biography` 模块不存在失败，符合红测预期。
-- `python -m pytest tests/pipeline/test_character_biography.py tests/pipeline/test_llm_response_contracts.py -v`：16 passed。
+- `python -m pytest tests/pipeline/test_characters_pipeline_biographies.py -v`：先因旧流程未调用 core 小传且缺少索引元数据失败，符合红测预期。
+- `python -m pytest tests/pipeline/test_characters_pipeline_biographies.py tests/pipeline/test_character_selection.py tests/pipeline/test_character_biography.py tests/pipeline/test_llm_response_contracts.py -v`：21 passed。
 - `python -m compileall -q src/novel_material`：通过。
 - `git diff --check -- . ':(exclude)docs/feedback.md'`：通过。
-- Packet 05 提交：`0c7fb4f`。
+- Packet 06 提交：`2779a3c`。
 - 当前工作区已知用户修改：`docs/feedback.md`，不得纳入第二期提交。
 
 ## 已确认且不得遗失
@@ -30,7 +30,7 @@ blocking_issue: null
 
 ## 本次开始动作
 
-1. 打开 `task-06-character-pipeline.md`。
+1. 打开 `task-07-character-repair-cli.md`。
 2. 确认工作区除用户 `docs/feedback.md` 外没有未知修改。
 3. 按 packet 内 TDD 步骤执行。
 
