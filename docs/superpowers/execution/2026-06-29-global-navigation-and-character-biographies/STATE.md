@@ -4,20 +4,22 @@
 feature: global-navigation-and-character-biographies
 phase: 2
 status: ready
-current_packet: task-08-audit-report-character-quality.md
-last_completed_packet: task-07-character-repair-cli.md
-last_good_commit: 9cba136
+current_packet: task-09-state-continue-contract.md
+last_completed_packet: task-08-audit-report-character-quality.md
+last_good_commit: a29df3c
 worktree: current_main_user_approved
 blocking_issue: null
 ```
 
 ## 最近验证
 
-- `python -m pytest tests/cli/test_character_repair_contract.py tests/pipeline/test_characters_pipeline_biographies.py -v`：先因 CLI 暂不支持 `--repair-character` 且 `generate_characters` 不接收 `repair_characters` 失败，符合红测预期；实现后 4 passed。
-- `python -m novel_material.cli.main pipeline characters --help`：通过，显示 `--repair-character`。
+- `python -m pytest tests/audit/test_rules.py tests/reporting/test_builder.py tests/reporting/test_markdown.py -v`：先因缺少 `CharacterQualityReport` 失败，符合红测预期；补报告层实现后 25 passed。
+- `python -m pytest tests/audit/test_models.py tests/audit/test_service.py -v`：先因审计 payload 缺少 `character_quality` 失败，符合红测预期；补审计事件汇总后 8 passed。
+- `python -m pytest tests/audit/test_models.py tests/audit/test_service.py tests/audit/test_rules.py tests/reporting/test_builder.py tests/reporting/test_markdown.py tests/terminal/test_terminal_core.py -v`：43 passed。
+- `python -m pytest tests/runtime/test_dependencies.py -v`：6 passed。
 - `python -m compileall -q src/novel_material`：通过。
 - `git diff --check -- . ':(exclude)docs/feedback.md'`：通过。
-- Packet 07 提交：`9cba136`。
+- Packet 08 提交：`a29df3c`。
 - 当前工作区已知用户修改：`docs/feedback.md`，不得纳入第二期提交。
 
 ## 已确认且不得遗失
@@ -30,7 +32,7 @@ blocking_issue: null
 
 ## 本次开始动作
 
-1. 打开 `task-08-audit-report-character-quality.md`。
+1. 打开 `task-09-state-continue-contract.md`。
 2. 确认工作区除用户 `docs/feedback.md` 外没有未知修改。
 3. 按 packet 内 TDD 步骤执行。
 
