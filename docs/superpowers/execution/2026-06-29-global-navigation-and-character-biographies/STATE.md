@@ -1,0 +1,43 @@
+# 执行状态
+
+```yaml
+feature: global-navigation-and-character-biographies
+phase: 2
+status: ready
+current_packet: task-01-evaluation-models.md
+last_completed_packet: null
+last_good_commit: 2dae4e8
+worktree: current_main_user_approved
+blocking_issue: null
+```
+
+## 最近验证
+
+- 第一期“产物审计与运行报告”已完成，最后状态提交：`2dae4e8`。
+- 当前工作区已知用户修改：`docs/feedback.md`，不得纳入第二期提交。
+
+## 已确认且不得遗失
+
+- 第二期只做前置导航、`--window` 解耦、主要人物选择、完整小传和定向修复。
+- 第三期的分层世界观、实体关系、`work_profile.yaml`、存储和搜索适配不在本期。
+- 旧 `evaluation.yaml` 只读兼容，不在读取时自动改写。
+- 真实素材默认只读验收；真实 LLM 修复必须单独问用户。
+- 未完成人工检索基线前，不声称检索质量提升。
+
+## 本次开始动作
+
+1. 打开 `task-01-evaluation-models.md`。
+2. 确认工作区除用户 `docs/feedback.md` 外没有未知修改。
+3. 按 packet 内 TDD 步骤执行。
+
+## 每次结束必须更新
+
+- `status`：`ready`、`in_progress`、`blocked` 或 `complete`。
+- `current_packet`、`last_completed_packet`、`last_good_commit`。
+- 实际验证命令和结果。
+- 若中断，记录未提交文件与下一条具体命令。
+
+## 未来阶段
+
+- 第三期：分层世界观、实体关系、作品画像、存储与检索适配。
+- 规划依据：总体设计第 7、8、13–16 节。
