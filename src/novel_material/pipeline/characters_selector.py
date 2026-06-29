@@ -4,6 +4,13 @@
 供 characters_core.py 使用。
 """
 from novel_material.pipeline.characters_stats import CHARACTER_THRESHOLDS
+from novel_material.pipeline.characters_selection import (
+    BiographySelection,
+    BiographyTarget,
+    CharacterSignals,
+    build_character_signals,
+    select_biography_targets,
+)
 
 
 def _select_candidate_characters(appearance_stats: dict, thresholds: dict | None = None) -> dict:
@@ -51,4 +58,11 @@ def _select_candidate_characters(appearance_stats: dict, thresholds: dict | None
     }
 
 
-__all__ = ["_select_candidate_characters"]
+__all__ = [
+    "BiographySelection",
+    "BiographyTarget",
+    "CharacterSignals",
+    "_select_candidate_characters",
+    "build_character_signals",
+    "select_biography_targets",
+]

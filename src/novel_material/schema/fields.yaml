@@ -97,6 +97,12 @@ character_thresholds:
   supporting: 10
   minor: 5
 
+major_character_biography:
+  description: 完整人物小传目标数量范围
+  # 为什么是这个值：保证主线人物覆盖，同时控制 LLM 调用与档案维护成本
+  min: 5
+  max: 12
+
 sample_threshold:
   description: 章节数阈值，超过此数量启用分层采样
   # 为什么是这个值：200章以上的小说摘要池超过8000 tokens，超出LLM上下文窗口限制
