@@ -6,7 +6,7 @@
 import re
 from typing import Optional, Any
 
-from pydantic import BaseModel, field_validator, Field
+from pydantic import BaseModel, field_validator, Field, model_validator
 
 from novel_material.infra.config import VALID_STATUSES
 from novel_material.validation.pacing_normalize import PACING_CORE, normalize_pacing
@@ -158,12 +158,22 @@ class ChapterEntryModel(BaseModel):
 
 class EvaluationModel(BaseModel):
     """evaluation.yaml 的字段约束。"""
-    schema_version: str = Field(..., pattern=r"^2\.0\.1$")
+    schema_version: str = Field(..., pattern=r"^(2\.0\.1|3\.0\.0)$")
     novel_type: list[str] = Field(..., min_length=_NOVEL_TYPE_SCHEMA.min_length, max_length=_NOVEL_TYPE_SCHEMA.max_length)
     main_thread_summary: str = Field(..., min_length=_MAIN_THREAD_SUMMARY_SCHEMA.min_length, max_length=_MAIN_THREAD_SUMMARY_SCHEMA.max_length)
-    total_chapters: int = Field(..., ge=1)
-    core_characters_hint: list[str] = Field(..., min_length=_CORE_CHARACTERS_HINT_SCHEMA.min_length, max_length=_CORE_CHARACTERS_HINT_SCHEMA.max_length)
-    stage_summaries: dict[int, str] = Field(...)
+    total_chapters: Optional[int] = Field(None, ge=1)
+    core_characters_hint: Optional[list[str]] = Field(
+        None,
+        min_length=_CORE_CHARACTERS_HINT_SCHEMA.min_length,
+        max_length=_CORE_CHARACTERS_HINT_SCHEMA.max_length,
+    )
+    stage_summaries: Optional[dict[int, str]] = None
+    premise: Optional[str] = None
+    stage_map: list[dict[str, Any]] = Field(default_factory=list)
+    core_character_candidates: list[dict[str, Any]] = Field(default_factory=list)
+    worldbuilding_dimensions: list[str] = Field(default_factory=list)
+    analysis_focus: list[str] = Field(default_factory=list)
+    sample_coverage: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("novel_type")
     @classmethod
@@ -177,11 +187,35 @@ class EvaluationModel(BaseModel):
 
     @field_validator("stage_summaries")
     @classmethod
-    def check_stage_summaries(cls, v: dict[int, str]) -> dict[int, str]:
+    def check_stage_summaries(cls, v: Optional[dict[int, str]]) -> Optional[dict[int, str]]:
+        if v is None:
+            return v
         required_stages = {1, 2, 3, 4, 5}
         if set(v.keys()) != required_stages:
             raise ValueError(f"stage_summaries 必须包含5个阶段（1-5），实际：{sorted(v.keys())}")
         return v
+
+    @model_validator(mode="after")
+    def check_schema_specific_fields(self) -> "EvaluationModel":
+        if self.schema_version == "2.0.1":
+            if self.total_chapters is None:
+                raise ValueError("2.0.1 evaluation 必须包含 total_chapters")
+            if self.core_characters_hint is None:
+                raise ValueError("2.0.1 evaluation 必须包含 core_characters_hint")
+            if self.stage_summaries is None:
+                raise ValueError("2.0.1 evaluation 必须包含 stage_summaries")
+        else:
+            required_sample_keys = {
+                "sampled_chapters",
+                "covered_ranges",
+                "limitations",
+            }
+            missing = required_sample_keys - set(self.sample_coverage.keys())
+            if missing:
+                raise ValueError(
+                    f"3.0.0 evaluation sample_coverage 缺少字段：{sorted(missing)}"
+                )
+        return self
 
 
 class NovelTagsModel(BaseModel):

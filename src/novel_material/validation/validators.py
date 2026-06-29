@@ -298,14 +298,7 @@ def validate_evaluation(material_id: str) -> list[str]:
 
     errors: list[str] = []
     try:
-        EvaluationModel(
-            schema_version=data.get("schema_version", ""),
-            novel_type=data.get("novel_type", []),
-            main_thread_summary=data.get("main_thread_summary", ""),
-            total_chapters=data.get("total_chapters", 0),
-            core_characters_hint=data.get("core_characters_hint", []),
-            stage_summaries=data.get("stage_summaries", {}),
-        )
+        EvaluationModel(**data)
     except PydanticValidationError as exc:
         for err in exc.errors():
             field = ".".join(str(loc) for loc in err["loc"])

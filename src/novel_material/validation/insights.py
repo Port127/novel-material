@@ -5,7 +5,6 @@ from __future__ import annotations
 from novel_material.analysis_profiles import AnalysisProfile, load_profiles, merge_profiles
 from novel_material.infra.config import NOVELS_DIR
 from novel_material.infra.yaml_io import load_yaml
-from novel_material.pipeline.profile_resolver import resolve_profile_names
 
 COMMON_FIELD_NAMES = {
     "core_event",
@@ -72,6 +71,8 @@ def validate_insight(insight: dict, profile: AnalysisProfile) -> list[str]:
 
 def validate_material_insights(material_id: str) -> list[str]:
     """Validate all generated chapter insight files for one material."""
+    from novel_material.pipeline.profile_resolver import resolve_profile_names
+
     novel_dir = NOVELS_DIR / material_id
     meta_file = novel_dir / "meta.yaml"
     meta = load_yaml(meta_file) if meta_file.exists() else {}
