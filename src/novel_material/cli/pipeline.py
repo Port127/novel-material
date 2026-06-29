@@ -333,6 +333,11 @@ def cmd_worldbuilding(
 def cmd_characters(
     material_id: str = typer.Argument(..., help="素材 ID"),
     provider: str = typer.Option(None, "--provider", "-p", help="服务商名称"),
+    repair_character: list[str] | None = typer.Option(
+        None,
+        "--repair-character",
+        help="只重建指定人物，可重复",
+    ),
 ):
     """提取人物体系。"""
     with Progress(
@@ -353,6 +358,7 @@ def cmd_characters(
                 material_id,
                 progress_callback=update_chars_progress,
                 provider=provider,
+                repair_characters=tuple(repair_character or ()),
             )
 
     if result.status.value == "failed":

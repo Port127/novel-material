@@ -24,6 +24,8 @@ from novel_material.pipeline.loader import load_chapters_data, build_analysis_co
 from novel_material.infra.progress import get_pipeline_logger, PipelineRunner
 
 from novel_material.pipeline.characters_selection import (
+    BiographySelection,
+    BiographyTarget,
     build_character_signals,
     select_biography_targets,
 )
@@ -43,7 +45,12 @@ from novel_material.pipeline.evaluation_models import (
 logger = get_pipeline_logger()
 
 
-def generate_characters(material_id, progress_callback: Callable[[int, int, str], None] | None = None, provider: str | None = None) -> bool:
+def generate_characters(
+    material_id,
+    progress_callback: Callable[[int, int, str], None] | None = None,
+    provider: str | None = None,
+    repair_characters: tuple[str, ...] = (),
+) -> bool:
     """统计驱动的人物提取。
 
     新策略：
@@ -65,6 +72,7 @@ def generate_characters(material_id, progress_callback: Callable[[int, int, str]
         return False
 
     config = load_config(provider)
+    repair_names = tuple(dict.fromkeys(name for name in repair_characters if name))
     char_dir = novel_dir / "characters"
     char_dir.mkdir(exist_ok=True)
     profiles_dir = char_dir / "profiles"
@@ -103,9 +111,11 @@ def generate_characters(material_id, progress_callback: Callable[[int, int, str]
     navigation = load_evaluation_navigation(novel_dir) or EvaluationNavigation()
     signals = build_character_signals(chapters_data, navigation)
     selection = select_biography_targets(signals)
+    if repair_names:
+        selection = _repair_selection(repair_names, selection, appearance_stats)
     target_names = {target.name for target in selection.targets}
     qualified_candidates = _qualified_character_candidates(appearance_stats)
-    remaining_candidates = [
+    remaining_candidates = [] if repair_names else [
         (name, count) for name, count in qualified_candidates if name not in target_names
     ]
     supporting_candidates = [
@@ -138,6 +148,9 @@ def generate_characters(material_id, progress_callback: Callable[[int, int, str]
 
     # 加载已保存的人物（断点续传）
     existing_profiles, existing_names = _load_existing_profiles(char_dir)
+    if repair_names:
+        _delete_profiles_by_name(profiles_dir, set(repair_names))
+        existing_profiles, existing_names = _load_existing_profiles(char_dir)
     if existing_profiles:
         logger.info(f"[{material_id}] 断点续传：已保存 {len(existing_profiles)} 个人物")
     completed_biography_names = {
@@ -402,6 +415,7 @@ def generate_characters(material_id, progress_callback: Callable[[int, int, str]
             ),
         ),
         "biography_selection_reason": selection.selection_reason,
+        "repair_requested": bool(repair_names),
         "biography_targets": [
             {
                 "name": target.name,
@@ -444,6 +458,43 @@ def _qualified_character_candidates(appearance_stats: dict[str, int]) -> list[tu
     ]
     candidates.sort(key=lambda item: (-item[1], item[0]))
     return candidates
+
+
+def _repair_selection(
+    repair_names: tuple[str, ...],
+    base_selection: BiographySelection,
+    appearance_stats: dict[str, int],
+) -> BiographySelection:
+    """把修复名单转换为只包含指定人物的完整小传选择。"""
+    base_targets = {target.name: target for target in base_selection.targets}
+    targets = []
+    for name in repair_names:
+        base = base_targets.get(name)
+        targets.append(
+            BiographyTarget(
+                name=name,
+                score=base.score if base else 0.0,
+                reasons=(
+                    *((base.reasons if base else ())),
+                    "repair_requested",
+                ),
+                appearance_count=appearance_stats.get(name, 0),
+                role_hint=base.role_hint if base else "supporting",
+            )
+        )
+    return BiographySelection(
+        targets=tuple(targets),
+        selection_reason="repair_requested",
+        qualified_count=len(targets),
+    )
+
+
+def _delete_profiles_by_name(profiles_dir: Path, names: set[str]) -> None:
+    """删除指定人物现有 profile 文件，其他人物文件保持不变。"""
+    for profile_path in profiles_dir.glob("*.yaml"):
+        profile = load_yaml(profile_path)
+        if profile.get("name") in names:
+            profile_path.unlink()
 
 
 if __name__ == "__main__":

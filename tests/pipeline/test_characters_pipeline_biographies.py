@@ -1,5 +1,6 @@
 """characters 阶段完整小传接入测试。"""
 
+import hashlib
 from pathlib import Path
 
 from novel_material.infra.yaml_io import load_yaml, save_yaml
@@ -140,3 +141,98 @@ def test_characters_index_records_biography_selection_metadata(
     assert index["biography_selection_reason"] == "enough_candidates"
     assert len(index["biography_targets"]) == 6
     assert {"name", "score", "reasons"} <= set(index["biography_targets"][0])
+
+
+def test_repair_characters_only_rebuilds_requested_profile(tmp_path, monkeypatch):
+    names = ["甲", "乙", "丙"]
+    novels_dir = _prepare_material(tmp_path, names)
+    profiles_dir = novels_dir / "nm_demo" / "characters" / "profiles"
+    save_yaml(
+        profiles_dir / "甲_000.yaml",
+        {
+            "name": "甲",
+            "role": "supporting",
+            "description": "旧甲",
+            "relationships": [],
+            "biography_complete": False,
+        },
+    )
+    save_yaml(
+        profiles_dir / "乙_001.yaml",
+        {
+            "name": "乙",
+            "role": "supporting",
+            "description": "旧乙",
+            "relationships": [],
+            "biography_complete": False,
+        },
+    )
+    save_yaml(
+        profiles_dir / "丙_002.yaml",
+        {
+            "name": "丙",
+            "role": "minor",
+            "description": "旧丙",
+            "relationships": [],
+            "biography_complete": False,
+        },
+    )
+    before_hashes = {
+        path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in sorted(profiles_dir.glob("*.yaml"))
+    }
+    calls: list[list[str]] = []
+
+    def fake_extract(candidates, role_tier, *_args, **_kwargs):
+        calls.append([name for name, _count in candidates])
+        return [
+            {
+                "name": name,
+                "role": "supporting",
+                "description": "新甲",
+                "arc_summary": "重建小传",
+                "psychology": {"motivation": "修复"},
+                "relationships": [],
+                "key_events": [],
+                "profile_level": "full",
+                "biography_complete": True,
+            }
+            for name, _count in candidates
+        ]
+
+    monkeypatch.setattr(characters_core, "NOVELS_DIR", novels_dir)
+    monkeypatch.setattr(characters_core, "load_config", lambda _provider=None: {"llm": {}})
+    monkeypatch.setattr(
+        characters_core,
+        "build_analysis_context",
+        lambda *_args, **_kwargs: ("上下文", "摘要池"),
+    )
+    monkeypatch.setattr(
+        characters_core,
+        "start_llm_telemetry",
+        lambda: type("Telemetry", (), {"details": []})(),
+    )
+    monkeypatch.setattr(characters_core, "_extract_character_batch", fake_extract)
+
+    assert characters_core.generate_characters(
+        "nm_demo",
+        repair_characters=("甲",),
+    ) is True
+
+    assert calls == [["甲"]]
+    after_hashes = {
+        path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in sorted(profiles_dir.glob("*.yaml"))
+    }
+    assert after_hashes["乙_001.yaml"] == before_hashes["乙_001.yaml"]
+    assert after_hashes["丙_002.yaml"] == before_hashes["丙_002.yaml"]
+    repaired_profiles = [
+        load_yaml(path)
+        for path in profiles_dir.glob("*.yaml")
+        if load_yaml(path).get("name") == "甲"
+    ]
+    assert len(repaired_profiles) == 1
+    assert repaired_profiles[0]["description"] == "新甲"
+    assert repaired_profiles[0]["biography_complete"] is True
+    index = load_yaml(novels_dir / "nm_demo" / "characters" / "_index.yaml")
+    assert index["repair_requested"] is True
