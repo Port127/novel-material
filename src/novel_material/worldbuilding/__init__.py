@@ -11,8 +11,10 @@ from .models import (
     WorldbuildingView,
 )
 from .reader import load_worldbuilding_view
+from .dimensions import DimensionRoutingResult, resolve_worldbuilding_dimensions
 
 __all__ = [
+    "DimensionRoutingResult",
     "LayeredWorldbuilding",
     "WorldbuildingDimension",
     "WorldbuildingEntity",
@@ -22,4 +24,5 @@ __all__ = [
     "WorldbuildingRelation",
     "WorldbuildingView",
     "load_worldbuilding_view",
+    "resolve_worldbuilding_dimensions",
 ]
