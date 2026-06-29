@@ -141,6 +141,42 @@ def test_stage_plan_places_blocking_audit_before_sync():
     assert next(item for item in specs if item.name == "audit").blocking is True
 
 
+def test_standard_full_runs_navigation_without_window():
+    specs = pipeline_common._stage_specs("nm_demo", {"mode": "standard"})
+    evaluation = next(item for item in specs if item.name == "evaluation")
+
+    assert evaluation.enabled(None) is True
+
+
+def test_fast_skips_navigation_unless_explicit():
+    skipped = next(
+        item
+        for item in pipeline_common._stage_specs("nm_demo", {"mode": "fast"})
+        if item.name == "evaluation"
+    )
+    enabled = next(
+        item
+        for item in pipeline_common._stage_specs(
+            "nm_demo",
+            {"mode": "fast", "use_navigation": True},
+        )
+        if item.name == "evaluation"
+    )
+
+    assert skipped.enabled(None) is False
+    assert enabled.enabled(None) is True
+
+
+def test_window_no_longer_controls_evaluation_stage():
+    specs = pipeline_common._stage_specs(
+        "nm_demo",
+        {"mode": "fast", "use_window": True},
+    )
+    evaluation = next(item for item in specs if item.name == "evaluation")
+
+    assert evaluation.enabled(None) is False
+
+
 def test_pipeline_runtime_registers_jsonl_and_report_sinks(
     tmp_path, monkeypatch
 ):

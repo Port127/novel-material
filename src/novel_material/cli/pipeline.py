@@ -103,14 +103,13 @@ def cmd_analyze(
     start: int = typer.Option(None, "--start", "-s", help="起始章节号"),
     end: int = typer.Option(None, "--end", "-e", help="结束章节号（不指定则到结尾）"),
     provider: str = typer.Option(None, "--provider", "-p", help="服务商名称（如 deepseek）"),
-    use_window: bool = typer.Option(False, "--window", "-w", help="启用滑动窗口模式（需先运行 evaluate）"),
+    use_window: bool = typer.Option(False, "--window", "-w", help="启用滑动窗口模式"),
     skip_embedding: bool = typer.Option(False, "--skip-embedding", help="跳过章节向量化"),
 ):
     """章级分析：生成摘要、人物、标签（可选章节向量化）。
 
     滑动窗口模式（--window）：
-    - 需要先运行 `nm pipeline evaluate` 生成总体评估
-    - 为每章提供前章摘要和全局评估作为上下文
+    - 为每章提供前章摘要；若存在 evaluation.yaml，会一并使用前置导航作为上下文
     - 输出新增字段：tension_change、emotion_transition、plot_progress
     """
     # 验证参数
@@ -132,14 +131,6 @@ def cmd_analyze(
     if end is not None and end > total_chapters:
         console.print(f"[red]结束章节号 {end} 超出总章数 {total_chapters}[/red]")
         raise typer.Exit(1)
-
-    # 滑动窗口模式：检查 evaluation.yaml 是否存在
-    if use_window:
-        eval_file = novel_dir / "evaluation.yaml"
-        if not eval_file.exists():
-            console.print("[red]错误：滑动窗口模式需要先运行总体评估[/red]")
-            console.print("[red]请执行：nm pipeline evaluate {material_id}[/red]")
-            raise typer.Exit(1)
 
     # 计算范围内章节数
     chapters_in_range = [
@@ -424,7 +415,7 @@ def _legacy_cmd_full(
     start: int = typer.Option(None, "--start", "-s", help="起始章节号"),
     end: int = typer.Option(None, "--end", "-e", help="结束章节号（不指定则到结尾）"),
     provider: str = typer.Option(None, "--provider", "-p", help="服务商名称"),
-    use_window: bool = typer.Option(False, "--window", "-w", help="启用滑动窗口模式（自动执行总体评估）"),
+    use_window: bool = typer.Option(False, "--window", "-w", help="启用滑动窗口模式"),
     mode: str = typer.Option("standard", "--mode", help="运行模式：fast / standard / deep"),
     skip_sync: bool = typer.Option(False, "--skip-sync", help="跳过数据库同步"),
     skip_embedding: bool = typer.Option(False, "--skip-embedding", help="跳过章节向量化"),
@@ -432,8 +423,8 @@ def _legacy_cmd_full(
     """完整流水线：入库 → 章级分析 → 骨架分析 → 精调 → 数据库同步。
 
     滑动窗口模式（--window）：
-    - 自动执行总体评估阶段
-    - 为每章提供前章摘要和全局评估作为上下文
+    - 前置导航由运行模式或 --navigation 控制
+    - 为每章提供前章摘要；若存在 evaluation.yaml，会一并使用前置导航作为上下文
     - 输出新增字段：tension_change、emotion_transition、plot_progress
     """
     # 验证参数
@@ -691,7 +682,7 @@ def _legacy_cmd_continue(
     start: int = typer.Option(None, "--start", "-s", help="起始章节号"),
     end: int = typer.Option(None, "--end", "-e", help="结束章节号（不指定则到结尾）"),
     provider: str = typer.Option(None, "--provider", "-p", help="服务商名称"),
-    use_window: bool = typer.Option(False, "--window", "-w", help="启用滑动窗口模式（需先运行 evaluate）"),
+    use_window: bool = typer.Option(False, "--window", "-w", help="启用滑动窗口模式"),
     mode: str = typer.Option("standard", "--mode", help="运行模式：fast / standard / deep"),
     skip_embedding: bool = typer.Option(False, "--skip-embedding", help="跳过章节向量化"),
 ):
@@ -704,8 +695,7 @@ def _legacy_cmd_continue(
     - 数据库同步
 
     滑动窗口模式（--window）：
-    - 需要先运行 `nm pipeline evaluate` 生成总体评估
-    - 为每章提供前章摘要和全局评估作为上下文
+    - 为每章提供前章摘要；若存在 evaluation.yaml，会一并使用前置导航作为上下文
     """
     # 验证参数
     if start is not None and start < 1:
@@ -714,15 +704,6 @@ def _legacy_cmd_continue(
     if start is not None and end is not None and end < start:
         console.print("[red]结束章节号必须 >= 起始章节号[/red]")
         raise typer.Exit(1)
-
-    # 滑动窗口模式：检查 evaluation.yaml 是否存在
-    if use_window:
-        novel_dir = NOVELS_DIR / material_id
-        eval_file = novel_dir / "evaluation.yaml"
-        if not eval_file.exists():
-            console.print("[red]错误：滑动窗口模式需要先运行总体评估[/red]")
-            console.print("[red]请执行：nm pipeline evaluate {material_id}[/red]")
-            raise typer.Exit(1)
 
     runtime_mode = get_runtime_mode(mode)
     progress = get_pipeline_progress(material_id)
@@ -1022,6 +1003,8 @@ def cmd_full(
     end: int = typer.Option(None, "--end", "-e", min=1, help="结束章节号"),
     provider: str = typer.Option(None, "--provider", "-p", help="服务商名称"),
     use_window: bool = typer.Option(False, "--window", "-w", help="启用滑动窗口模式"),
+    use_navigation: bool = typer.Option(False, "--navigation", help="强制执行前置导航"),
+    skip_navigation: bool = typer.Option(False, "--skip-navigation", help="跳过前置导航"),
     mode: str = typer.Option("standard", "--mode", help="fast / standard / deep"),
     skip_sync: bool = typer.Option(False, "--skip-sync", help="跳过数据库同步"),
     skip_embedding: bool = typer.Option(False, "--skip-embedding", help="跳过章节向量化"),
@@ -1029,6 +1012,8 @@ def cmd_full(
     """使用统一阶段计划执行完整流水线。"""
     if start is not None and end is not None and end < start:
         raise typer.BadParameter("--end 必须大于等于 --start")
+    if use_navigation and skip_navigation:
+        raise typer.BadParameter("--navigation 与 --skip-navigation 不能同时使用")
     try:
         runtimes: list[PipelineRuntime] = []
         result = run_full_pipeline(
@@ -1037,6 +1022,8 @@ def cmd_full(
             end=end,
             provider=provider,
             use_window=use_window,
+            use_navigation=use_navigation,
+            skip_navigation=skip_navigation,
             mode=mode,
             skip_sync=skip_sync,
             skip_embedding=skip_embedding,
@@ -1060,12 +1047,16 @@ def cmd_continue(
     end: int = typer.Option(None, "--end", "-e", min=1, help="结束章节号"),
     provider: str = typer.Option(None, "--provider", "-p", help="服务商名称"),
     use_window: bool = typer.Option(False, "--window", "-w", help="启用滑动窗口模式"),
+    use_navigation: bool = typer.Option(False, "--navigation", help="强制执行前置导航"),
+    skip_navigation: bool = typer.Option(False, "--skip-navigation", help="跳过前置导航"),
     mode: str = typer.Option("standard", "--mode", help="fast / standard / deep"),
     skip_embedding: bool = typer.Option(False, "--skip-embedding", help="跳过章节向量化"),
 ):
     """使用持久化/legacy 检查生成统一续传计划。"""
     if start is not None and end is not None and end < start:
         raise typer.BadParameter("--end 必须大于等于 --start")
+    if use_navigation and skip_navigation:
+        raise typer.BadParameter("--navigation 与 --skip-navigation 不能同时使用")
     try:
         runtimes: list[PipelineRuntime] = []
         result = run_continue_pipeline(
@@ -1074,6 +1065,8 @@ def cmd_continue(
             end=end,
             provider=provider,
             use_window=use_window,
+            use_navigation=use_navigation,
+            skip_navigation=skip_navigation,
             mode=mode,
             skip_sync=skip_sync,
             skip_embedding=skip_embedding,

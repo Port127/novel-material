@@ -98,7 +98,7 @@ def _stage_specs(
                 silent=True,
             ),
             blocking=True,
-            enabled=lambda _request: bool(options.get("use_window")),
+            enabled=lambda _request: _use_navigation(options),
         ),
         StageSpec(
             "analyze",
@@ -175,6 +175,18 @@ def _stage_specs(
             enabled=lambda _request: not bool(options.get("skip_sync")),
         ),
     )
+
+
+def _use_navigation(options: dict) -> bool:
+    """判断本次统一流水线是否执行前置导航。"""
+    if options.get("use_navigation") is True:
+        return True
+    if options.get("skip_navigation") is True:
+        return False
+    return get_runtime_mode(options.get("mode", "standard")).name in {
+        "standard",
+        "deep",
+    }
 
 
 def _audit_stage(
