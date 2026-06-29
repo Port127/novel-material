@@ -4,16 +4,20 @@
 feature: global-navigation-and-character-biographies
 phase: 2
 status: ready
-current_packet: task-01-evaluation-models.md
-last_completed_packet: null
-last_good_commit: 2dae4e8
+current_packet: task-02-evaluation-v3-output.md
+last_completed_packet: task-01-evaluation-models.md
+last_good_commit: 90b0a8d
 worktree: current_main_user_approved
 blocking_issue: null
 ```
 
 ## 最近验证
 
-- 第一期“产物审计与运行报告”已完成，最后状态提交：`2dae4e8`。
+- `python -m pytest tests/pipeline/test_evaluation_models.py tests/validation/test_schema.py -v`：8 passed。
+- `python -m pytest tests/validation -v`：8 passed。
+- `python -m compileall -q src/novel_material`：通过。
+- `git diff --check -- . ':(exclude)docs/feedback.md'`：通过。
+- Packet 01 提交：`90b0a8d`。
 - 当前工作区已知用户修改：`docs/feedback.md`，不得纳入第二期提交。
 
 ## 已确认且不得遗失
@@ -26,7 +30,7 @@ blocking_issue: null
 
 ## 本次开始动作
 
-1. 打开 `task-01-evaluation-models.md`。
+1. 打开 `task-02-evaluation-v3-output.md`。
 2. 确认工作区除用户 `docs/feedback.md` 外没有未知修改。
 3. 按 packet 内 TDD 步骤执行。
 
