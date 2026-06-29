@@ -23,8 +23,11 @@ from novel_material.infra.llm import load_config, start_llm_telemetry
 from novel_material.pipeline.loader import load_chapters_data, build_analysis_context
 from novel_material.infra.progress import get_pipeline_logger, PipelineRunner
 
+from novel_material.pipeline.characters_selection import (
+    build_character_signals,
+    select_biography_targets,
+)
 from novel_material.pipeline.characters_stats import CHARACTER_THRESHOLDS, VALID_ROLES, _extract_appearance_stats
-from novel_material.pipeline.characters_selector import _select_candidate_characters
 from novel_material.pipeline.characters_profile import (
     _build_basic_profile_from_stats,
     _build_profile_from_character,
@@ -32,6 +35,10 @@ from novel_material.pipeline.characters_profile import (
     _load_existing_profiles,
 )
 from novel_material.pipeline.characters_layer import _extract_character_batch
+from novel_material.pipeline.evaluation_models import (
+    EvaluationNavigation,
+    load_evaluation_navigation,
+)
 
 logger = get_pipeline_logger()
 
@@ -93,17 +100,31 @@ def generate_characters(material_id, progress_callback: Callable[[int, int, str]
     appearance_stats = _extract_appearance_stats(chapters_data) if chapters_data else {}
     logger.info(f"[{material_id}] 出场人物统计: {len(appearance_stats)} 个不同人物")
 
-    # 统计驱动的分层筛选
-    candidates = _select_candidate_characters(appearance_stats)
-    core_candidates = candidates["core"]
-    supporting_candidates = candidates["supporting"]
-    minor_candidates = candidates["minor"]
+    navigation = load_evaluation_navigation(novel_dir) or EvaluationNavigation()
+    signals = build_character_signals(chapters_data, navigation)
+    selection = select_biography_targets(signals)
+    target_names = {target.name for target in selection.targets}
+    qualified_candidates = _qualified_character_candidates(appearance_stats)
+    remaining_candidates = [
+        (name, count) for name, count in qualified_candidates if name not in target_names
+    ]
+    supporting_candidates = [
+        (name, count)
+        for name, count in remaining_candidates
+        if count >= CHARACTER_THRESHOLDS["supporting"]
+    ]
+    minor_candidates = [
+        (name, count)
+        for name, count in remaining_candidates
+        if count < CHARACTER_THRESHOLDS["supporting"]
+    ]
 
     logger.info(
-        f"[{material_id}] 分层筛选结果:\n"
-        f"  核心人物（>= {CHARACTER_THRESHOLDS['core']} 章）: {len(core_candidates)} 人\n"
-        f"  配角（>= {CHARACTER_THRESHOLDS['supporting']} 章）: {len(supporting_candidates)} 人\n"
-        f"  次要（>= {CHARACTER_THRESHOLDS['minor']} 章）: {len(minor_candidates)} 人"
+        f"[{material_id}] 人物选择结果:\n"
+        f"  完整小传目标: {len(selection.targets)} 人\n"
+        f"  简档配角（>= {CHARACTER_THRESHOLDS['supporting']} 章）: {len(supporting_candidates)} 人\n"
+        f"  简档次要（>= {CHARACTER_THRESHOLDS['minor']} 章）: {len(minor_candidates)} 人\n"
+        f"  选择原因: {selection.selection_reason}"
     )
 
     # 构建分析上下文
@@ -119,6 +140,16 @@ def generate_characters(material_id, progress_callback: Callable[[int, int, str]
     existing_profiles, existing_names = _load_existing_profiles(char_dir)
     if existing_profiles:
         logger.info(f"[{material_id}] 断点续传：已保存 {len(existing_profiles)} 个人物")
+    completed_biography_names = {
+        profile.get("name")
+        for profile in existing_profiles
+        if profile.get("biography_complete") is True
+    }
+    core_candidates = [
+        (target.name, target.appearance_count)
+        for target in selection.targets
+        if target.name not in completed_biography_names
+    ]
 
     # 收集所有关系
     all_relationships = []
@@ -160,7 +191,7 @@ def generate_characters(material_id, progress_callback: Callable[[int, int, str]
 
         for ch in core_characters:
             name = ch.get("name")
-            if not name or name in existing_names:
+            if not name or name in completed_biography_names:
                 continue
 
             role = ch.get("role", "supporting")
@@ -168,6 +199,8 @@ def generate_characters(material_id, progress_callback: Callable[[int, int, str]
                 role = "supporting"
 
             profile = _build_profile_from_character(ch, role)
+            profile["profile_level"] = profile.get("profile_level", "full")
+            profile["biography_complete"] = profile.get("biography_complete", True)
             profile["appearance_count"] = appearance_stats.get(name, 0)
             _save_character_profile(profiles_dir, idx, profile, name)
             existing_profiles.append(profile)
@@ -199,7 +232,7 @@ def generate_characters(material_id, progress_callback: Callable[[int, int, str]
         )
         wall_start = time.monotonic()
     else:
-        logger.info(f"[{material_id}] 无核心人物候选人（>= {CHARACTER_THRESHOLDS['core']} 章）")
+        logger.info(f"[{material_id}] 无需新建完整小传目标")
 
     if progress_callback:
         progress_callback(1, total_batches, f"核心人物完成 ({new_core_count} 人)")
@@ -229,6 +262,9 @@ def generate_characters(material_id, progress_callback: Callable[[int, int, str]
                 continue
 
             profile = _build_profile_from_character(ch, "supporting")
+            if profile.get("profile_level") != "fallback":
+                profile["profile_level"] = "brief"
+                profile["biography_complete"] = False
             profile["appearance_count"] = appearance_stats.get(name, 0)
             _save_character_profile(profiles_dir, idx, profile, name)
             existing_profiles.append(profile)
@@ -290,6 +326,9 @@ def generate_characters(material_id, progress_callback: Callable[[int, int, str]
                 continue
 
             profile = _build_profile_from_character(ch, "minor")
+            if profile.get("profile_level") != "fallback":
+                profile["profile_level"] = "brief"
+                profile["biography_complete"] = False
             profile["appearance_count"] = appearance_stats.get(name, 0)
             _save_character_profile(profiles_dir, idx, profile, name)
             existing_profiles.append(profile)
@@ -346,6 +385,31 @@ def generate_characters(material_id, progress_callback: Callable[[int, int, str]
         "antagonist_count": sum(1 for c in all_characters if c.get("role") == "antagonist"),
         "supporting_count": sum(1 for c in all_characters if c.get("role") == "supporting"),
         "minor_count": sum(1 for c in all_characters if c.get("role") == "minor"),
+        "biography_target_count": len(selection.targets),
+        "biography_completed_count": sum(
+            1
+            for c in all_characters
+            if c.get("name") in target_names and c.get("biography_complete") is True
+        ),
+        "biography_failed_count": max(
+            0,
+            len(selection.targets)
+            - sum(
+                1
+                for c in all_characters
+                if c.get("name") in target_names
+                and c.get("biography_complete") is True
+            ),
+        ),
+        "biography_selection_reason": selection.selection_reason,
+        "biography_targets": [
+            {
+                "name": target.name,
+                "score": target.score,
+                "reasons": list(target.reasons),
+            }
+            for target in selection.targets
+        ],
         "created_at": time.strftime("%Y-%m-%dT%H:%M:%S")
     }
 
@@ -368,6 +432,18 @@ def generate_characters(material_id, progress_callback: Callable[[int, int, str]
 
     # 人物向量已移至 embed_all.py 统一处理
     return True
+
+
+def _qualified_character_candidates(appearance_stats: dict[str, int]) -> list[tuple[str, int]]:
+    """返回达到人物候选最低门槛的名单。"""
+    minor_threshold = CHARACTER_THRESHOLDS["minor"]
+    candidates = [
+        (name, count)
+        for name, count in appearance_stats.items()
+        if count >= minor_threshold
+    ]
+    candidates.sort(key=lambda item: (-item[1], item[0]))
+    return candidates
 
 
 if __name__ == "__main__":

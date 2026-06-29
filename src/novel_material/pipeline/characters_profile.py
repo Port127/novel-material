@@ -42,7 +42,9 @@ def _build_basic_profile_from_stats(name: str, count: int, role: str, chapters_d
         "first_appearance_chapter": first_chapter,
         "appearance_count": count,
         "narrative_function": "待补充",
-        "relationships": []
+        "relationships": [],
+        "profile_level": "fallback",
+        "biography_complete": False,
     }
 
     if role in ("protagonist", "antagonist", "supporting"):
@@ -63,7 +65,7 @@ def _build_profile_from_character(ch: dict, role: str) -> dict:
         dict: 人物档案
     """
     if role in ("protagonist", "antagonist", "supporting"):
-        return {
+        profile = {
             "name": ch.get("name"),
             "role": role,
             "archetype": ch.get("archetype"),
@@ -76,6 +78,28 @@ def _build_profile_from_character(ch: dict, role: str) -> dict:
             "key_events": ch.get("key_events", [])[:10],
             "relationships": ch.get("relationships", [])
         }
+        for field in (
+            "profile_level",
+            "biography_complete",
+            "identity",
+            "life_summary",
+            "external_goal",
+            "internal_need",
+            "fear",
+            "fatal_flaw",
+            "contradiction",
+            "arc_stages",
+            "habits",
+            "speech_style",
+            "interaction_patterns",
+            "key_scenes",
+            "craft_notes",
+            "confidence",
+            "basis",
+        ):
+            if field in ch:
+                profile[field] = ch.get(field)
+        return profile
     else:
         return {
             "name": ch.get("name"),
@@ -83,7 +107,9 @@ def _build_profile_from_character(ch: dict, role: str) -> dict:
             "description": ch.get("description"),
             "first_appearance_chapter": ch.get("first_appearance_chapter"),
             "narrative_function": ch.get("narrative_function"),
-            "relationships": ch.get("relationships", [])
+            "relationships": ch.get("relationships", []),
+            "profile_level": ch.get("profile_level", "brief"),
+            "biography_complete": ch.get("biography_complete", False),
         }
 
 
