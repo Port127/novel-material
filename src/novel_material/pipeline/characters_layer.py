@@ -7,6 +7,7 @@ import time
 
 from novel_material.infra.llm import call_llm
 from novel_material.infra.progress import get_pipeline_logger
+from novel_material.pipeline.characters_biography import normalize_biography_response
 from novel_material.pipeline.characters_stats import CHARACTER_BATCH_SIZE
 from novel_material.pipeline.characters_profile import _build_basic_profile_from_stats
 from novel_material.infra.llm_contracts import LLMResponseContractError, require_mapping, require_mapping_list, require_string
@@ -82,6 +83,14 @@ def _extract_character_batch(
       "role": "protagonist/antagonist/supporting",
       "archetype": "英雄/导师/伙伴/反派/隐士/复仇者/守护者/野心家",
       "moral_spectrum": "善良/灰色/邪恶",
+      "identity": "角色身份与社会位置",
+      "life_summary": "压缩小传：经历、选择与代价",
+      "external_goal": "外在目标",
+      "internal_need": "内在需求",
+      "fear": "恐惧",
+      "fatal_flaw": "致命缺陷",
+      "contradiction": "人物核心矛盾",
+      "arc_stages": [{"stage": "opening/development/turning/climax/resolution", "change": "阶段变化", "evidence": {"chapters": [1]}}],
       "description": "角色描述（100字）",
       "arc_summary": "角色弧线概述（50字）",
       "narrative_function": "在故事中的功能",
@@ -93,7 +102,14 @@ def _extract_character_batch(
       },
       "first_appearance_chapter": 1,
       "key_events": [{"chapter": 1, "description": "关键事件"}],
-      "relationships": [{"character": "角色名", "relationship": "关系", "nature": "ally/enemy/romance/mentor/rival"}]
+      "relationships": [{"character": "角色名", "dynamic": "关系动态", "relationship": "兼容旧字段", "nature": "ally/enemy/romance/mentor/rival", "evidence": {"chapters": [2]}}],
+      "habits": ["习惯或动作"],
+      "speech_style": "语言风格",
+      "interaction_patterns": ["互动模式"],
+      "key_scenes": [{"chapter": 1, "event": "关键场景", "function": "塑造功能"}],
+      "craft_notes": [{"technique": "写作手法", "boundary": "借鉴边界"}],
+      "confidence": 0.86,
+      "basis": "fact/inference"
     }
   ]
 }
@@ -102,7 +118,10 @@ def _extract_character_batch(
 1. 必须为输入名单中的每个角色返回档案，不能遗漏
 2. role 根据剧情重要性选择（主角用 protagonist，反派用 antagonist，其他用 supporting）
 3. key_events 按重要性排序，最多 10 个
-4. relationships 用中文描述"""
+4. relationships 用中文描述
+5. 每项分析必须标明事实依据或推断，basis 只能写 fact 或 inference
+6. key_scenes 必须包含章节号 chapter
+7. 不知道时写结构化不适用原因，不得留空"""
     elif role_tier == "supporting":
         system_prompt = """你是专业的小说人物分析师。请为以下已确认的配角补充标准档案，返回 JSON 格式：
 {
@@ -176,7 +195,10 @@ def _extract_character_batch(
 
             # 验证返回的人物是否在候选名单中
             candidate_names = {name for name, _ in batch_candidates}
-            characters = normalize_characters_response(result, candidate_names)
+            if role_tier == "core":
+                characters = normalize_biography_response(result, candidate_names)
+            else:
+                characters = normalize_characters_response(result, candidate_names)
             for ch in characters:
                 ch_name = ch.get("name")
                 if ch_name in candidate_names:

@@ -10,6 +10,7 @@ from novel_material.pipeline.evaluate import normalize_evaluation_response
 from novel_material.pipeline.outline_acts import normalize_acts_response
 from novel_material.pipeline.outline_beats import normalize_beats_response
 from novel_material.pipeline.characters_layer import normalize_characters_response
+from novel_material.pipeline.characters_biography import normalize_biography_response
 
 
 def test_worldbuilding_normalizes_empty_object_dimensions():
@@ -100,3 +101,11 @@ def test_characters_reject_unknown_candidate_and_bad_relationships():
         normalize_characters_response([{"name": "乙"}], {"甲"})
     with pytest.raises(LLMResponseContractError, match="relationships"):
         normalize_characters_response([{"name": "甲", "relationships": ["朋友"]}], {"甲"})
+
+
+def test_character_biography_rejects_missing_full_profile_fields():
+    with pytest.raises(LLMResponseContractError, match="arc_stages"):
+        normalize_biography_response(
+            {"characters": [{"name": "甲", "role": "protagonist"}]},
+            {"甲"},
+        )
