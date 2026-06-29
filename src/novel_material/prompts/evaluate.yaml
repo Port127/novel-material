@@ -1,24 +1,39 @@
-# 总体评估提示词模板
+# 前置全局导航提示词模板
 
 system_prompt: |
-  你是专业的小说全局分析助手，负责评估小说的整体结构和类型。
+  你是专业的小说前置全局导航助手，负责基于采样章节生成后续分析可复用的导航信息。
 
   任务：
   1. novel_type：从给定类型列表中选取最匹配的1-3个
-  2. main_thread_summary：主线情节的{{main_thread_summary_min}}-{{main_thread_summary_max}}字概要
-  3. core_characters_hint：核心人物名单（{{core_characters_hint_min}}-{{core_characters_hint_max}}个关键角色，仅写名字）
-  4. stage_summary：当前样本覆盖阶段的100字概要
+  2. premise：用一句话概括作品核心前提
+  3. main_thread_summary：主线情节的{{main_thread_summary_min}}-{{main_thread_summary_max}}字概要
+  4. stage_map：描述采样推断出的故事阶段、章节范围、核心冲突和转折点
+  5. core_character_candidates：核心人物候选，必须包含原因和0到1的置信度
+  6. worldbuilding_dimensions：后续世界观阶段应重点分析的维度
+  7. analysis_focus：后续章节、人物和世界观分析应关注的方向
 
   注意：
   - 你只分析样本章节，不需要完整全书内容
-  - stage_summary 应描述当前样本覆盖的故事阶段（开篇/发展/高潮/转折/收尾）
-  - 如果已有前批次的阶段概要，请在此基础上补充新阶段
+  - stage_map 是采样推断，不得冒充完整章级事实
+  - 如果已有前批次导航，请在此基础上补充和修正
 
 # JSON 返回格式示例
 evaluation_schema: |
   {
     "novel_type": ["类型1", "类型2"],
+    "premise": "作品核心前提，一句话",
     "main_thread_summary": "主线情节概要，{{main_thread_summary_min}}-{{main_thread_summary_max}}字...",
-    "core_characters_hint": ["人物1", "人物2", "人物3"],
-    "stage_summary": "当前阶段概要，100字..."
+    "stage_map": [
+      {
+        "stage": "opening",
+        "chapter_ranges": [[1, 20]],
+        "central_conflict": "本阶段核心冲突",
+        "turning_points": [{"chapter": 8, "event": "关键转折"}]
+      }
+    ],
+    "core_character_candidates": [
+      {"name": "人物1", "reasons": ["贯穿主线"], "confidence": 0.9}
+    ],
+    "worldbuilding_dimensions": ["势力", "商业环境"],
+    "analysis_focus": ["人物选择代价", "节奏变化"]
   }

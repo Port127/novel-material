@@ -62,11 +62,16 @@ def test_classification_rejects_quality_list():
         parse_classification_result({"genre_primary": "其他", "quality": []}, (["其他"], {}))
 
 
-def test_evaluation_rejects_string_character_list():
-    with pytest.raises(LLMResponseContractError, match="core_characters_hint"):
+def test_evaluation_rejects_string_character_candidates():
+    with pytest.raises(LLMResponseContractError, match="core_character_candidates"):
         normalize_evaluation_response({
-            "novel_type": ["都市"], "main_thread_summary": "主线",
-            "core_characters_hint": "王某", "stage_summary": "开篇",
+            "novel_type": ["都市"],
+            "premise": "主角重新选择人生",
+            "main_thread_summary": "主线",
+            "stage_map": [],
+            "core_character_candidates": "王某",
+            "worldbuilding_dimensions": [],
+            "analysis_focus": [],
         })
 
 

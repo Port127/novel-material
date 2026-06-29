@@ -1,10 +1,10 @@
-"""总体评估：对小说做全局评估，生成类型、主线概要、阶段概要、核心人物提示。
+"""前置全局导航：对小说采样分析，生成后续阶段可复用的导航信息。
 
 工作流程：
 1. 加载章节索引和原文
 2. 选取样本章节（小体量15章/大体量50章）
 3. 分5批次调用 LLM 评估，渐进式积累阶段概要
-4. 输出 evaluation.yaml
+4. 输出 evaluation.yaml 3.0.0
 
 特性：
 - 断点续传：使用 _evaluation_progress.yaml 记录进度
@@ -19,7 +19,15 @@ from novel_material.infra.config import NOVELS_DIR
 from novel_material.infra.yaml_io import load_yaml, save_yaml, load_yaml_list
 from novel_material.infra.llm import load_config, call_llm, truncate_to_tokens, start_llm_telemetry
 from novel_material.infra.progress import StageTracker, save_run_history, get_pipeline_logger
-from novel_material.infra.llm_contracts import LLMResponseContractError, require_mapping, require_string, require_string_list
+from novel_material.infra.llm_contracts import (
+    LLMResponseContractError,
+    require_mapping,
+    require_mapping_list,
+    require_number,
+    require_string,
+    require_string_list,
+)
+from novel_material.pipeline.evaluation_models import normalize_evaluation_navigation
 from novel_material.pipeline.progress import EVALUATION_STAGES
 from novel_material.infra.common import NOVEL_TYPE_VALUES
 from novel_material.schema import get_threshold
@@ -29,11 +37,99 @@ logger = get_pipeline_logger()
 
 def normalize_evaluation_response(payload: object) -> dict:
     result = dict(require_mapping(payload, "evaluation"))
+    result["schema_version"] = "3.0.0"
     result["novel_type"] = require_string_list(result.get("novel_type"), "evaluation.novel_type")
+    result["premise"] = require_string(result.get("premise"), "evaluation.premise")
     result["main_thread_summary"] = require_string(result.get("main_thread_summary"), "evaluation.main_thread_summary")
-    result["core_characters_hint"] = require_string_list(result.get("core_characters_hint"), "evaluation.core_characters_hint")
-    result["stage_summary"] = require_string(result.get("stage_summary"), "evaluation.stage_summary")
-    return result
+    result["stage_map"] = _normalize_stage_map(result.get("stage_map"))
+    result["core_character_candidates"] = _normalize_core_character_candidates(
+        result.get("core_character_candidates")
+    )
+    result["worldbuilding_dimensions"] = require_string_list(
+        result.get("worldbuilding_dimensions"),
+        "evaluation.worldbuilding_dimensions",
+    )
+    result["analysis_focus"] = require_string_list(
+        result.get("analysis_focus"),
+        "evaluation.analysis_focus",
+    )
+    result.setdefault(
+        "sample_coverage",
+        {"sampled_chapters": [], "covered_ranges": [], "limitations": []},
+    )
+    return normalize_evaluation_navigation(result).model_dump(mode="json")
+
+
+def _normalize_stage_map(value: object) -> list[dict]:
+    stage_map = require_mapping_list(value, "evaluation.stage_map")
+    normalized: list[dict] = []
+    for index, item in enumerate(stage_map):
+        path = f"evaluation.stage_map[{index}]"
+        ranges = _normalize_chapter_ranges(item.get("chapter_ranges"), f"{path}.chapter_ranges")
+        turning_points = []
+        for point_index, point in enumerate(
+            require_mapping_list(item.get("turning_points", []), f"{path}.turning_points")
+        ):
+            point_path = f"{path}.turning_points[{point_index}]"
+            chapter = point.get("chapter")
+            if isinstance(chapter, bool) or not isinstance(chapter, int) or chapter < 1:
+                raise LLMResponseContractError(f"{point_path}.chapter", "正整数", chapter)
+            turning_points.append(
+                {
+                    "chapter": chapter,
+                    "event": require_string(point.get("event"), f"{point_path}.event"),
+                }
+            )
+        normalized.append(
+            {
+                "stage": require_string(item.get("stage"), f"{path}.stage"),
+                "chapter_ranges": ranges,
+                "central_conflict": require_string(
+                    item.get("central_conflict", ""),
+                    f"{path}.central_conflict",
+                ),
+                "turning_points": turning_points,
+            }
+        )
+    return normalized
+
+
+def _normalize_chapter_ranges(value: object, path: str) -> list[list[int]]:
+    if not isinstance(value, list):
+        raise LLMResponseContractError(path, "章节范围数组", value)
+    ranges: list[list[int]] = []
+    for index, item in enumerate(value):
+        item_path = f"{path}[{index}]"
+        if not isinstance(item, list) or len(item) != 2:
+            raise LLMResponseContractError(item_path, "[start, end] 二元数组", item)
+        start, end = item
+        if (
+            isinstance(start, bool)
+            or isinstance(end, bool)
+            or not isinstance(start, int)
+            or not isinstance(end, int)
+            or start < 1
+            or end < start
+        ):
+            raise LLMResponseContractError(item_path, "正向章节范围", item)
+        ranges.append([start, end])
+    return ranges
+
+
+def _normalize_core_character_candidates(value: object) -> list[dict]:
+    candidates = require_mapping_list(value, "evaluation.core_character_candidates")
+    normalized: list[dict] = []
+    for index, item in enumerate(candidates):
+        path = f"evaluation.core_character_candidates[{index}]"
+        confidence = require_number(item.get("confidence"), f"{path}.confidence")
+        normalized.append(
+            {
+                "name": require_string(item.get("name"), f"{path}.name"),
+                "reasons": require_string_list(item.get("reasons", []), f"{path}.reasons"),
+                "confidence": confidence,
+            }
+        )
+    return normalized
 
 # 章节数阈值：超过此数量启用大样本策略（从契约加载）
 _SAMPLE_THRESHOLD = get_threshold("sample_threshold")
@@ -64,27 +160,75 @@ def _get_max_sample_tokens() -> int:
         return 8000
 
 
-_SYSTEM_PROMPT = """你是专业的小说全局分析助手，负责评估小说的整体结构和类型。
+_SYSTEM_PROMPT = """你是专业的小说前置全局导航助手，负责基于采样章节生成后续分析可复用的导航信息。
 
 任务：
 1. novel_type：从给定类型列表中选取最匹配的1-3个
-2. main_thread_summary：主线情节的200-300字概要
-3. core_characters_hint：核心人物名单（3-5个关键角色，仅写名字）
-4. stage_summary：当前样本覆盖阶段的100字概要
+2. premise：用一句话概括作品核心前提
+3. main_thread_summary：主线情节的200-300字概要
+4. stage_map：描述采样推断出的故事阶段、章节范围、核心冲突和转折点
+5. core_character_candidates：核心人物候选，必须包含原因和0到1的置信度
+6. worldbuilding_dimensions：后续世界观阶段应重点分析的维度
+7. analysis_focus：后续章节、人物和世界观分析应关注的方向
 
 注意：
 - 你只分析样本章节，不需要完整全书内容
-- stage_summary 应描述当前样本覆盖的故事阶段（开篇/发展/高潮/转折/收尾）
-- 如果已有前批次的阶段概要，请在此基础上补充新阶段"""
+- stage_map 是采样推断，不得冒充完整章级事实
+- 如果已有前批次导航，请在此基础上补充和修正"""
 
 
 # JSON 返回格式示例
 _EVALUATION_JSON_SCHEMA = """{
   "novel_type": ["类型1", "类型2"],
+  "premise": "作品核心前提，一句话",
   "main_thread_summary": "主线情节概要，200-300字...",
-  "core_characters_hint": ["人物1", "人物2", "人物3"],
-  "stage_summary": "当前阶段概要，100字..."
+  "stage_map": [
+    {
+      "stage": "opening",
+      "chapter_ranges": [[1, 20]],
+      "central_conflict": "本阶段核心冲突",
+      "turning_points": [{"chapter": 8, "event": "关键转折"}]
+    }
+  ],
+  "core_character_candidates": [
+    {"name": "人物1", "reasons": ["贯穿主线"], "confidence": 0.9}
+  ],
+  "worldbuilding_dimensions": ["势力", "商业环境"],
+  "analysis_focus": ["人物选择代价", "节奏变化"]
 }"""
+
+
+def build_sample_coverage(
+    batches: dict[int, list[dict]],
+    *,
+    total_chapters: int,
+) -> dict[str, list]:
+    """记录 evaluation 采样覆盖范围，供使用方理解导航局限。"""
+    sampled = sorted(
+        {
+            chapter
+            for chapters in batches.values()
+            for item in chapters
+            if isinstance((chapter := item.get("chapter")), int)
+            and not isinstance(chapter, bool)
+            and chapter >= 1
+        }
+    )
+    covered_ranges = [[sampled[0], sampled[-1]]] if sampled else []
+    limitations: list[str] = []
+    if not sampled:
+        limitations.append("未采样到有效章节")
+    elif len(sampled) < total_chapters:
+        limitations.append(
+            f"仅采样 {len(sampled)} / {total_chapters} 章，阶段和候选均为采样推断"
+        )
+    else:
+        limitations.append("覆盖全部章节，但仍需以后续章级事实校正")
+    return {
+        "sampled_chapters": sampled,
+        "covered_ranges": covered_ranges,
+        "limitations": limitations,
+    }
 
 
 def select_evaluation_samples(chapter_index: list[dict], total_chapters: int) -> dict[int, list[dict]]:
@@ -144,10 +288,13 @@ def load_evaluation_progress(material_id: str) -> dict:
     if not progress_file.exists():
         return {
             "completed_batches": [],
-            "stage_summaries": {},
             "novel_type": [],
+            "premise": "",
             "main_thread_summary": "",
-            "core_characters_hint": [],
+            "stage_map": [],
+            "core_character_candidates": [],
+            "worldbuilding_dimensions": [],
+            "analysis_focus": [],
         }
 
     return load_yaml(progress_file)
@@ -220,17 +367,25 @@ def evaluate_batch(
     sample_text = _build_sample_text(sample_chapters, lines, max_tokens, model)
 
     # 构建前批次概要提示
-    previous_stages = previous_progress.get("stage_summaries", {})
+    previous_stages = previous_progress.get("stage_map", [])
     previous_stages_text = ""
     if previous_stages:
-        previous_stages_text = "已完成的阶段概要：\n"
-        for stage_num, summary in sorted(previous_stages.items()):
-            previous_stages_text += f"阶段{stage_num}: {summary}\n"
-        previous_stages_text += "\n请在此基础上补充新阶段的概要。"
+        previous_stages_text = "已完成的阶段导航：\n"
+        for stage in previous_stages:
+            previous_stages_text += (
+                f"- {stage.get('stage', 'unknown')}: "
+                f"{stage.get('central_conflict', '')}\n"
+            )
+        previous_stages_text += "\n请在此基础上补充和修正阶段地图。"
 
     # 已有的主线概要和人物提示
     previous_main_thread = previous_progress.get("main_thread_summary", "")
-    previous_characters = previous_progress.get("core_characters_hint", [])
+    previous_candidates = previous_progress.get("core_character_candidates", [])
+    previous_characters = [
+        item.get("name", "")
+        for item in previous_candidates
+        if isinstance(item, dict) and item.get("name")
+    ]
 
     # 类型列表提示
     genres_list_str = ", ".join(available_genres)
@@ -252,9 +407,12 @@ def evaluate_batch(
 
 要求：
 1. novel_type：从上述类型列表中选取1-3个最匹配的类型
-2. main_thread_summary：如果有已有概要，请在此基础上补充完善（200-300字）
-3. core_characters_hint：如果有已有人物，请在此基础上补充（3-5个关键人物）
-4. stage_summary：描述当前批次样本覆盖的故事阶段（开篇/发展/高潮/转折/收尾，100字左右）"""
+2. premise：一句话概括作品核心前提
+3. main_thread_summary：如果有已有概要，请在此基础上补充完善（200-300字）
+4. stage_map：描述当前样本能推断出的阶段、章节范围、核心冲突和转折点
+5. core_character_candidates：如果有已有人物，请在此基础上补充，候选需包含 reasons 和 confidence
+6. worldbuilding_dimensions：列出后续世界观阶段应分析的维度
+7. analysis_focus：列出后续分析应关注的重点"""
 
     # 调用 LLM
     tracker.start_spinner(f"批次{batch_num}评估")
@@ -285,22 +443,83 @@ def evaluate_batch(
 
     # 解析结果
     novel_type = result.get("novel_type", [])
+    premise = result.get("premise", "")
     main_thread_summary = result.get("main_thread_summary", "")
-    core_characters_hint = result.get("core_characters_hint", [])
-    stage_summary = result.get("stage_summary", "")
+    stage_map = result.get("stage_map", [])
+    candidates = result.get("core_character_candidates", [])
+    worldbuilding_dimensions = result.get("worldbuilding_dimensions", [])
+    analysis_focus = result.get("analysis_focus", [])
 
     # 合并结果（保留前批次的积累）
-    merged_novel_type = list(set(previous_progress.get("novel_type", []) + novel_type))
+    merged_novel_type = _unique_strings((*previous_progress.get("novel_type", []), *novel_type))[:3]
+    merged_premise = premise if len(premise) > len(previous_progress.get("premise", "")) else previous_progress.get("premise", "")
     merged_main_thread = main_thread_summary if len(main_thread_summary) > len(previous_main_thread) else previous_main_thread
-    merged_characters = list(set(previous_characters + core_characters_hint))
+    merged_stage_map = _merge_stage_map(previous_progress.get("stage_map", []), stage_map)
+    merged_candidates = _merge_character_candidates(
+        previous_progress.get("core_character_candidates", []),
+        candidates,
+    )
+    merged_worldbuilding_dimensions = _unique_strings(
+        (*previous_progress.get("worldbuilding_dimensions", []), *worldbuilding_dimensions)
+    )
+    merged_analysis_focus = _unique_strings(
+        (*previous_progress.get("analysis_focus", []), *analysis_focus)
+    )
 
     return {
         "novel_type": merged_novel_type[:3],  # 最多3个类型
+        "premise": merged_premise,
         "main_thread_summary": merged_main_thread,
-        "core_characters_hint": merged_characters[:10],  # 最多10个人物
-        "stage_summary": stage_summary,
+        "stage_map": merged_stage_map,
+        "core_character_candidates": merged_candidates,
+        "worldbuilding_dimensions": merged_worldbuilding_dimensions,
+        "analysis_focus": merged_analysis_focus,
         "_finish_reason": telemetry.last.get("finish_reason", ""),
     }
+
+
+def _unique_strings(values: tuple | list) -> list[str]:
+    result: list[str] = []
+    for item in values:
+        if isinstance(item, str) and item.strip() and item not in result:
+            result.append(item)
+    return result
+
+
+def _merge_character_candidates(existing: list, new: list) -> list[dict]:
+    by_name: dict[str, dict] = {}
+    for item in (*existing, *new):
+        if not isinstance(item, dict) or not item.get("name"):
+            continue
+        name = item["name"]
+        current = by_name.get(name)
+        reasons = _unique_strings(
+            (*((current or {}).get("reasons", [])), *item.get("reasons", []))
+        )
+        confidence = float(item.get("confidence", 0))
+        if current is None or confidence >= float(current.get("confidence", 0)):
+            by_name[name] = {
+                "name": name,
+                "reasons": reasons,
+                "confidence": confidence,
+            }
+        else:
+            current["reasons"] = reasons
+    return sorted(by_name.values(), key=lambda item: (-item["confidence"], item["name"]))
+
+
+def _merge_stage_map(existing: list, new: list) -> list[dict]:
+    stages = [item for item in (*existing, *new) if isinstance(item, dict)]
+    return sorted(stages, key=_stage_sort_key)
+
+
+def _stage_sort_key(item: dict) -> tuple[int, str]:
+    ranges = item.get("chapter_ranges") or []
+    if ranges and isinstance(ranges[0], (list, tuple)) and ranges[0]:
+        start = ranges[0][0]
+        if isinstance(start, int) and not isinstance(start, bool):
+            return (start, str(item.get("stage", "")))
+    return (10**9, str(item.get("stage", "")))
 
 
 def run_evaluation(
@@ -443,10 +662,13 @@ def run_evaluation(
         # 注意：batch_num 与 stage_num 数值对应（批次1→开篇阶段，批次2→发展阶段...）
         # 但语义不同：batch_num 是采样批次序号，stage_num 是故事阶段序号
         progress["completed_batches"] = list(completed_batches | {batch_num})
-        progress["stage_summaries"][batch_num] = result.get("stage_summary", "")
         progress["novel_type"] = result.get("novel_type", [])
+        progress["premise"] = result.get("premise", "")
         progress["main_thread_summary"] = result.get("main_thread_summary", "")
-        progress["core_characters_hint"] = result.get("core_characters_hint", [])
+        progress["stage_map"] = result.get("stage_map", [])
+        progress["core_character_candidates"] = result.get("core_character_candidates", [])
+        progress["worldbuilding_dimensions"] = result.get("worldbuilding_dimensions", [])
+        progress["analysis_focus"] = result.get("analysis_focus", [])
         completed_batches.add(batch_num)
 
         # 保存进度（断点续传）
@@ -470,15 +692,15 @@ def run_evaluation(
 
     # 生成最终 evaluation.yaml
     evaluation = {
-        "schema_version": "2.0.1",
+        "schema_version": "3.0.0",
         "novel_type": progress.get("novel_type", []),
+        "premise": progress.get("premise", ""),
         "main_thread_summary": progress.get("main_thread_summary", ""),
-        "total_chapters": total_chapters,
-        "core_characters_hint": progress.get("core_characters_hint", []),
-        "stage_summaries": {
-            i: progress.get("stage_summaries", {}).get(i, "")
-            for i in range(1, 6)
-        },
+        "stage_map": progress.get("stage_map", []),
+        "core_character_candidates": progress.get("core_character_candidates", []),
+        "worldbuilding_dimensions": progress.get("worldbuilding_dimensions", []),
+        "analysis_focus": progress.get("analysis_focus", []),
+        "sample_coverage": build_sample_coverage(batches, total_chapters=total_chapters),
         "evaluation_timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
 
