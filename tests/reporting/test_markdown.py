@@ -11,6 +11,7 @@ def test_markdown_contains_conclusion_risks_and_next_actions(
     assert "状态：degraded" in text
     assert "API 调用：尝试 2，完成 1" in text
     assert "character_profile_fallback" in text
+    assert "完整小传：目标 5，完成 4，失败 1，简档 3" in text
     assert "nm pipeline characters" in text
     assert "未复审项" in text
     assert "[REDACTED]" in text

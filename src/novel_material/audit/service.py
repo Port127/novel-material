@@ -7,12 +7,14 @@ from pathlib import Path
 
 from novel_material.runtime.context import current_context, new_id
 from novel_material.runtime.contracts import Diagnostic, ProgressCounts, StageResult
+from novel_material.infra.yaml_io import load_yaml
 
 from .budget import ReviewBudget
 from .models import (
     ArtifactAudit,
     ArtifactIssue,
     AuditSeverity,
+    CharacterQualitySummary,
     ReviewBudgetUsage,
     ReviewState,
     audit_run_status,
@@ -66,6 +68,7 @@ def audit_material(
         material_id=material_id,
         checks=tuple(checks),
         issues=issues,
+        character_quality=_summarize_character_quality(context),
         review_budget=review_usage,
     )
 
@@ -81,6 +84,55 @@ def _sort_issues(issues: Iterable[ArtifactIssue]) -> tuple[ArtifactIssue, ...]:
             ),
         )
     )
+
+
+def _summarize_character_quality(context: AuditContext) -> CharacterQualitySummary:
+    index = load_yaml(context.novel_dir / "characters" / "_index.yaml")
+    profiles_dir = context.novel_dir / "characters" / "profiles"
+    profiles: list[dict] = []
+    if profiles_dir.is_dir():
+        profiles = [load_yaml(path) for path in sorted(profiles_dir.glob("*.yaml"))]
+
+    targets = index.get("biography_targets")
+    target_names = [
+        item.get("name")
+        for item in targets
+        if isinstance(item, dict) and isinstance(item.get("name"), str)
+    ] if isinstance(targets, list) else []
+    target_count = _non_negative_int(
+        index.get("biography_target_count"),
+        fallback=len(target_names),
+    )
+    completed_count = sum(
+        1
+        for profile in profiles
+        if profile.get("profile_level") == "full"
+        and profile.get("biography_complete") is True
+        and (
+            not target_names
+            or (
+                isinstance(profile.get("name"), str)
+                and profile.get("name") in target_names
+            )
+        )
+    )
+    if target_count and completed_count > target_count:
+        completed_count = target_count
+
+    return CharacterQualitySummary(
+        biography_target_count=target_count,
+        biography_completed_count=completed_count,
+        brief_profile_count=sum(
+            1 for profile in profiles if profile.get("profile_level") == "brief"
+        ),
+        biography_failed_count=_non_negative_int(index.get("biography_failed_count")),
+    )
+
+
+def _non_negative_int(value: object, *, fallback: int = 0) -> int:
+    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+        return value
+    return fallback
 
 
 def _review_issues(

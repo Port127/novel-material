@@ -90,6 +90,13 @@ def render_markdown(report: PipelineRunReport) -> str:
                 f"{summary.not_reviewed_due_to_budget}"
             ),
             (
+                "- 完整小传："
+                f"目标 {quality.character_quality.biography_target_count}，"
+                f"完成 {quality.character_quality.biography_completed_count}，"
+                f"失败 {quality.character_quality.biography_failed_count}，"
+                f"简档 {quality.character_quality.brief_profile_count}"
+            ),
+            (
                 "- 复审预算："
                 f"模式 {quality.review_budget.mode}，"
                 f"调用 {quality.review_budget.calls_used}/"

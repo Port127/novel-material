@@ -114,15 +114,38 @@ def check_character_profiles(context: AuditContext) -> Iterable[ArtifactIssue]:
     if not profiles_dir.is_dir():
         return
 
+    profiles_by_name: dict[str, dict] = {}
     for profile_path in sorted(profiles_dir.glob("*.yaml")):
         profile = load_yaml(profile_path)
+        name = profile.get("name")
+        if isinstance(name, str) and name:
+            profiles_by_name[name] = profile
         role = profile.get("role")
-        if role not in {"protagonist", "antagonist", "supporting"}:
+        profile_level = profile.get("profile_level")
+        if profile_level == "brief":
+            if not _brief_profile_has_minimum_info(profile):
+                yield _issue(
+                    "character_profile_fallback",
+                    AuditSeverity.WARNING,
+                    profile_path.relative_to(context.novel_dir).as_posix(),
+                    "人物简档缺少基础可用信息",
+                    evidence={"profile_level": "brief"},
+                    next_actions=(f"nm pipeline characters {context.material_id}",),
+                )
+            continue
+
+        requires_full_profile = role in {"protagonist", "antagonist"} or (
+            profile_level == "full"
+        )
+        if not requires_full_profile and role != "supporting":
             continue
 
         missing_fields = [
             field for field in _FULL_PROFILE_FIELDS if not profile.get(field)
         ]
+        biography_complete = profile.get("biography_complete")
+        if profile_level == "full" and biography_complete is not True:
+            missing_fields.append("biography_complete")
         description = profile.get("description")
         statistical_description = (
             isinstance(description, str)
@@ -134,11 +157,15 @@ def check_character_profiles(context: AuditContext) -> Iterable[ArtifactIssue]:
         evidence: dict[str, object] = {"missing_fields": missing_fields}
         if statistical_description:
             evidence["statistical_description"] = True
+        if profile_level:
+            evidence["profile_level"] = profile_level
+        if profile_level == "full":
+            evidence["biography_complete"] = biography_complete is True
         yield _issue(
             "character_profile_fallback",
             (
                 AuditSeverity.ERROR
-                if role in {"protagonist", "antagonist"}
+                if requires_full_profile
                 else AuditSeverity.WARNING
             ),
             profile_path.relative_to(context.novel_dir).as_posix(),
@@ -146,6 +173,61 @@ def check_character_profiles(context: AuditContext) -> Iterable[ArtifactIssue]:
             evidence=evidence,
             next_actions=(f"nm pipeline characters {context.material_id}",),
         )
+
+    index = load_yaml(context.novel_dir / "characters" / "_index.yaml")
+    targets = index.get("biography_targets")
+    if isinstance(targets, list) and targets:
+        target_names = [
+            item.get("name")
+            for item in targets
+            if isinstance(item, dict) and isinstance(item.get("name"), str)
+        ]
+        missing_targets = [
+            name
+            for name in target_names
+            if not _profile_has_completed_biography(profiles_by_name.get(name))
+        ]
+        if missing_targets:
+            yield _issue(
+                "character_biography_incomplete",
+                AuditSeverity.ERROR,
+                "characters/_index.yaml",
+                "完整小传目标未全部完成",
+                evidence={
+                    "target_count": len(target_names),
+                    "completed_count": len(target_names) - len(missing_targets),
+                    "missing_targets": missing_targets,
+                    "biography_target_count": index.get("biography_target_count"),
+                    "biography_completed_count": index.get(
+                        "biography_completed_count"
+                    ),
+                    "biography_failed_count": index.get("biography_failed_count"),
+                },
+                next_actions=(f"nm pipeline characters {context.material_id}",),
+            )
+
+
+def _brief_profile_has_minimum_info(profile: dict) -> bool:
+    """简档只要求具备至少一项可用基础信息。"""
+    return any(
+        profile.get(field)
+        for field in (
+            "name",
+            "role",
+            "description",
+            "first_appearance_chapter",
+            "narrative_function",
+        )
+    )
+
+
+def _profile_has_completed_biography(profile: dict | None) -> bool:
+    if not profile:
+        return False
+    return (
+        profile.get("profile_level") == "full"
+        and profile.get("biography_complete") is True
+    )
 
 
 def check_worldbuilding(context: AuditContext) -> Iterable[ArtifactIssue]:

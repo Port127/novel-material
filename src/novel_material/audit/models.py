@@ -57,6 +57,17 @@ class ReviewBudgetUsage(BaseModel):
     stop_reason: str | None = None
 
 
+class CharacterQualitySummary(BaseModel):
+    """人物小传质量信号，供审计事件和运行报告复用。"""
+
+    model_config = ConfigDict(frozen=True)
+
+    biography_target_count: int = Field(default=0, ge=0)
+    biography_completed_count: int = Field(default=0, ge=0)
+    brief_profile_count: int = Field(default=0, ge=0)
+    biography_failed_count: int = Field(default=0, ge=0)
+
+
 class ArtifactAudit(BaseModel):
     """一部素材的完整产物审计结论。"""
 
@@ -66,6 +77,9 @@ class ArtifactAudit(BaseModel):
     material_id: str = Field(min_length=1)
     checks: tuple[str, ...] = ()
     issues: tuple[ArtifactIssue, ...] = ()
+    character_quality: CharacterQualitySummary = Field(
+        default_factory=CharacterQualitySummary
+    )
     review_budget: ReviewBudgetUsage = Field(default_factory=ReviewBudgetUsage)
 
     @computed_field
@@ -95,6 +109,7 @@ __all__ = [
     "ArtifactAudit",
     "ArtifactIssue",
     "AuditSeverity",
+    "CharacterQualitySummary",
     "ReviewBudgetUsage",
     "ReviewState",
     "audit_run_status",

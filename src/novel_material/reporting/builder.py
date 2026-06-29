@@ -15,6 +15,7 @@ from novel_material.runtime.summary import RunSummaryAccumulator
 from .models import (
     ArtifactQualityReport,
     BaselineComparison,
+    CharacterQualityReport,
     PipelineRunReport,
     RuntimeMetrics,
     SeverityCounts,
@@ -200,8 +201,14 @@ def _artifact_quality(
         raise ReportBuildError("ArtifactAuditCompleted.audit 无效") from exc
     if audit.material_id != material_id:
         raise ReportBuildError("ArtifactAuditCompleted.audit 的 material_id 不一致")
+    character_quality_payload = (
+        payload.get("character_quality") if isinstance(payload, Mapping) else None
+    )
     return ArtifactQualityReport(
         checks=audit.checks,
+        character_quality=CharacterQualityReport.model_validate(
+            character_quality_payload or {}
+        ),
         summary=SeverityCounts.model_validate(audit.summary),
         issues=audit.issues,
         review_budget=audit.review_budget,

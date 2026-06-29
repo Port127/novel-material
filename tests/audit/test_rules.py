@@ -120,6 +120,93 @@ def test_supporting_fallback_is_warning_and_minor_profile_is_ignored(
     assert fallbacks[0].severity is AuditSeverity.WARNING
 
 
+def test_full_profile_with_incomplete_biography_is_error(tmp_path: Path) -> None:
+    novel = tmp_path / "nm_demo"
+    write_core_files(novel)
+    write_yaml(
+        novel / "characters/profiles/主角.yaml",
+        {
+            "name": "主角",
+            "role": "supporting",
+            "profile_level": "full",
+            "biography_complete": False,
+            "description": "完整小传伪完成。",
+            "arc_summary": "弧线",
+            "psychology": {"motivation": "目标"},
+            "relationships": [{"character": "配角", "relationship": "朋友"}],
+        },
+    )
+
+    issues = run_deterministic_rules(AuditContext("nm_demo", novel))
+
+    fallback = next(item for item in issues if item.code == "character_profile_fallback")
+    assert fallback.severity is AuditSeverity.ERROR
+    assert fallback.evidence["biography_complete"] is False
+
+
+def test_character_biography_targets_must_be_completed(tmp_path: Path) -> None:
+    novel = tmp_path / "nm_demo"
+    write_core_files(novel)
+    write_yaml(
+        novel / "characters/_index.yaml",
+        {
+            "biography_target_count": 5,
+            "biography_completed_count": 4,
+            "biography_failed_count": 1,
+            "biography_selection_reason": "enough_candidates",
+            "biography_targets": [
+                {"name": f"角色{index}", "score": 0.9, "reasons": []}
+                for index in range(1, 6)
+            ],
+        },
+    )
+    for index in range(1, 5):
+        write_yaml(
+            novel / f"characters/profiles/角色{index}.yaml",
+            {
+                "name": f"角色{index}",
+                "role": "supporting",
+                "profile_level": "full",
+                "biography_complete": True,
+                "description": "完整小传",
+                "arc_summary": "弧线",
+                "psychology": {"motivation": "目标"},
+                "relationships": [{"character": "他人", "relationship": "关系"}],
+            },
+        )
+
+    issues = run_deterministic_rules(AuditContext("nm_demo", novel))
+
+    incomplete = next(
+        item for item in issues if item.code == "character_biography_incomplete"
+    )
+    assert incomplete.severity is AuditSeverity.ERROR
+    assert incomplete.evidence["target_count"] == 5
+    assert incomplete.evidence["completed_count"] == 4
+    assert incomplete.evidence["missing_targets"] == ["角色5"]
+
+
+def test_brief_profile_does_not_require_full_biography_fields(
+    tmp_path: Path,
+) -> None:
+    novel = tmp_path / "nm_demo"
+    write_core_files(novel)
+    write_yaml(
+        novel / "characters/profiles/配角.yaml",
+        {
+            "name": "配角",
+            "role": "supporting",
+            "profile_level": "brief",
+            "biography_complete": False,
+            "description": "简档",
+        },
+    )
+
+    issues = run_deterministic_rules(AuditContext("nm_demo", novel))
+
+    assert "character_profile_fallback" not in {item.code for item in issues}
+
+
 def test_worldbuilding_empty_and_legacy_evidence_are_reported(
     tmp_path: Path,
 ) -> None:

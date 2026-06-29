@@ -53,6 +53,12 @@ def test_audit_dump_is_stable_and_contains_summary_counts():
     payload = audit.model_dump(mode="json")
 
     assert payload["schema_version"] == 1
+    assert payload["character_quality"] == {
+        "biography_target_count": 0,
+        "biography_completed_count": 0,
+        "brief_profile_count": 0,
+        "biography_failed_count": 0,
+    }
     assert payload["summary"] == {
         "blocker": 0,
         "error": 1,

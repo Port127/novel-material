@@ -13,6 +13,12 @@ def audit_payload() -> dict:
         "schema_version": 1,
         "material_id": "nm_demo",
         "checks": ["characters"],
+        "character_quality": {
+            "biography_target_count": 5,
+            "biography_completed_count": 4,
+            "brief_profile_count": 3,
+            "biography_failed_count": 1,
+        },
         "issues": [
             {
                 "code": "character_profile_fallback",
@@ -108,6 +114,10 @@ def test_builder_combines_runtime_and_artifact_quality() -> None:
     assert report.runtime.total_tokens == 150
     assert report.runtime.estimated_cost == 0.02
     assert report.artifact_quality.summary.error == 1
+    assert report.artifact_quality.character_quality.biography_target_count == 5
+    assert report.artifact_quality.character_quality.biography_completed_count == 4
+    assert report.artifact_quality.character_quality.brief_profile_count == 3
+    assert report.artifact_quality.character_quality.biography_failed_count == 1
     assert report.next_actions == (
         "nm pipeline characters nm_demo --repair-character 主角",
     )

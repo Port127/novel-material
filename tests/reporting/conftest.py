@@ -12,6 +12,7 @@ from novel_material.audit.models import (
 from novel_material.reporting.models import (
     ArtifactQualityReport,
     BaselineComparison,
+    CharacterQualityReport,
     PipelineRunReport,
     RuntimeMetrics,
     SeverityCounts,
@@ -51,6 +52,12 @@ def sample_report() -> PipelineRunReport:
         ),
         artifact_quality=ArtifactQualityReport(
             checks=("characters", "worldbuilding"),
+            character_quality=CharacterQualityReport(
+                biography_target_count=5,
+                biography_completed_count=4,
+                brief_profile_count=3,
+                biography_failed_count=1,
+            ),
             summary=SeverityCounts(
                 error=1,
                 warning=1,

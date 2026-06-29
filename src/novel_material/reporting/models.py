@@ -50,12 +50,26 @@ class StageReport(BaseModel):
     diagnostic_codes: tuple[str, ...] = ()
 
 
+class CharacterQualityReport(BaseModel):
+    """人物小传质量汇总，不包含人物正文。"""
+
+    model_config = ConfigDict(frozen=True)
+
+    biography_target_count: int = Field(default=0, ge=0)
+    biography_completed_count: int = Field(default=0, ge=0)
+    brief_profile_count: int = Field(default=0, ge=0)
+    biography_failed_count: int = Field(default=0, ge=0)
+
+
 class ArtifactQualityReport(BaseModel):
     """产物审计结论及其复审预算使用情况。"""
 
     model_config = ConfigDict(frozen=True)
 
     checks: tuple[str, ...] = ()
+    character_quality: CharacterQualityReport = Field(
+        default_factory=CharacterQualityReport
+    )
     summary: SeverityCounts = Field(default_factory=SeverityCounts)
     issues: tuple[ArtifactIssue, ...] = ()
     review_budget: ReviewBudgetUsage = Field(default_factory=ReviewBudgetUsage)
@@ -96,6 +110,7 @@ class PipelineRunReport(BaseModel):
 __all__ = [
     "ArtifactQualityReport",
     "BaselineComparison",
+    "CharacterQualityReport",
     "PipelineRunReport",
     "RuntimeMetrics",
     "SeverityCounts",
