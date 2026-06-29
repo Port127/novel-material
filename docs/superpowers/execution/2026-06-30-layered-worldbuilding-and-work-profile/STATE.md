@@ -4,15 +4,20 @@
 feature: layered-worldbuilding-and-work-profile
 phase: 3
 status: ready
-current_packet: task-01-state-and-index.md
-last_completed_packet: null
-last_good_commit: 9f8325f
+current_packet: task-02-worldbuilding-models-reader.md
+last_completed_packet: task-01-state-and-index.md
+last_good_commit: 2574873
 worktree: current_main_user_approved
 blocking_issue: null
 ```
 
 ## 最近验证
 
+- `rg -n "TBD|TODO|待定|以后再|implement later|fill in details|appropriate|类似|<[^>]+>|搜索质量提升|质量已经提升" docs/superpowers/plans/2026-06-30-layered-worldbuilding-and-work-profile.md docs/superpowers/execution/2026-06-30-layered-worldbuilding-and-work-profile`：无命中。
+- `find docs/superpowers/execution/2026-06-30-layered-worldbuilding-and-work-profile -maxdepth 1 -type f | sort`：确认 README、STATE 与 task-01 至 task-11 文件齐全。
+- `git diff --check -- docs/superpowers/plans/2026-06-30-layered-worldbuilding-and-work-profile.md docs/superpowers/execution/2026-06-30-layered-worldbuilding-and-work-profile`：通过。
+- `git diff --cached --check`：通过。
+- Packet 1 计划提交：`2574873`。
 - 第三期 spec 提交：`9f8325f`。
 - 当前工作区已知用户修改：`docs/feedback.md`，不得纳入第三期提交。
 
@@ -27,9 +32,9 @@ blocking_issue: null
 
 ## 当前开始动作
 
-1. 打开 `task-01-state-and-index.md`。
-2. 确认 execution 目录、计划和 packet 文件已经提交。
-3. 继续 `task-02-worldbuilding-models-reader.md`。
+1. 打开 `task-02-worldbuilding-models-reader.md`。
+2. 确认工作区除用户 `docs/feedback.md` 外没有未知修改。
+3. 按 packet 内 TDD 步骤实现世界观契约模型与兼容读取器。
 
 ## 每次结束必须更新
 
