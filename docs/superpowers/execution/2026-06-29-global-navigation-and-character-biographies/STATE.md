@@ -4,20 +4,23 @@
 feature: global-navigation-and-character-biographies
 phase: 2
 status: ready
-current_packet: task-10-performance-smoke.md
-last_completed_packet: task-09-state-continue-contract.md
-last_good_commit: a35ab1e
+current_packet: task-11-docs-final-verification.md
+last_completed_packet: task-10-performance-smoke.md
+last_good_commit: 871583d
 worktree: current_main_user_approved
 blocking_issue: null
 ```
 
 ## 最近验证
 
-- `python -m pytest tests/pipeline/test_state.py tests/pipeline/test_orchestrator.py tests/cli/test_pipeline_contract.py -v`：先出现 4 个预期失败，暴露 legacy inspection 缺少 `evaluation` 阶段与 `plan_continue` 缺少 `include_navigation` 参数。
-- `python -m pytest tests/pipeline/test_state.py tests/pipeline/test_orchestrator.py tests/cli/test_pipeline_contract.py tests/cli/test_pipeline_common.py tests/pipeline/test_evaluation_models.py -v`：63 passed。
+- `python -m pytest tests/pipeline/test_character_performance_budget.py -v`：1 passed；新增预算测试首跑通过，说明前序实现已满足只对目标人物生成完整小传。
+- `python -m pytest tests/pipeline/test_character_performance_budget.py tests/reporting/test_performance_baseline.py -v`：2 passed。
+- `python -m pytest tests/audit tests/reporting tests/runtime tests/run_logging tests/pipeline tests/terminal tests/cli/test_pipeline_contract.py tests/cli/test_command_contracts.py tests/validation -v`：260 passed。
+- `python -m novel_material.cli.main validate artifacts nm_novel_20260621_4si2`：退出码 3，符合真实素材只读 smoke 预期；未执行 LLM 修复。
+- 真实素材 `nm_novel_20260621_4si2` 非 `reports/` 文件：前后均为 2325 个，digest 均为 `8ff8b12156e6009db2bb49df2f84460b55ad2c1718085f2f805cfcaf97b8005b`。
 - `python -m compileall -q src/novel_material`：通过。
 - `git diff --check -- . ':(exclude)docs/feedback.md'`：通过。
-- Packet 09 提交：`a35ab1e`。
+- Packet 10 提交：`871583d`。
 - 当前工作区已知用户修改：`docs/feedback.md`，不得纳入第二期提交。
 
 ## 已确认且不得遗失
@@ -30,7 +33,7 @@ blocking_issue: null
 
 ## 本次开始动作
 
-1. 打开 `task-10-performance-smoke.md`。
+1. 打开 `task-11-docs-final-verification.md`。
 2. 确认工作区除用户 `docs/feedback.md` 外没有未知修改。
 3. 按 packet 内 TDD 步骤执行。
 
