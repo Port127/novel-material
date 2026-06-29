@@ -4,19 +4,22 @@
 feature: global-navigation-and-character-biographies
 phase: 2
 status: ready
-current_packet: task-03-window-decoupling.md
-last_completed_packet: task-02-evaluation-v3-output.md
-last_good_commit: fe7c04c
+current_packet: task-04-character-selection.md
+last_completed_packet: task-03-window-decoupling.md
+last_good_commit: 4ca80d1
 worktree: current_main_user_approved
 blocking_issue: null
 ```
 
 ## 最近验证
 
-- `python -m pytest tests/pipeline/test_evaluation_models.py tests/pipeline/test_evaluation_v3.py tests/pipeline/test_llm_response_contracts.py -v`：17 passed。
+- `python -m pytest tests/cli/test_pipeline_common.py tests/cli/test_pipeline_contract.py tests/cli/test_command_contracts.py tests/pipeline/test_navigation_window_decoupling.py -v`：51 passed。
+- `python -m novel_material.cli.main pipeline full --help`：通过，显示 `--navigation` 与 `--skip-navigation`。
+- `python -m novel_material.cli.main pipeline analyze --help`：通过，`--window` 不再提示需先运行 evaluate。
+- `python -m novel_material.cli.main pipeline continue --help`：通过，显示 `--navigation` 与 `--skip-navigation`。
 - `python -m compileall -q src/novel_material`：通过。
 - `git diff --check -- . ':(exclude)docs/feedback.md'`：通过。
-- Packet 02 提交：`fe7c04c`。
+- Packet 03 提交：`4ca80d1`。
 - 当前工作区已知用户修改：`docs/feedback.md`，不得纳入第二期提交。
 
 ## 已确认且不得遗失
@@ -29,7 +32,7 @@ blocking_issue: null
 
 ## 本次开始动作
 
-1. 打开 `task-03-window-decoupling.md`。
+1. 打开 `task-04-character-selection.md`。
 2. 确认工作区除用户 `docs/feedback.md` 外没有未知修改。
 3. 按 packet 内 TDD 步骤执行。
 
