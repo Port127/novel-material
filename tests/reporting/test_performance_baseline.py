@@ -120,7 +120,7 @@ def test_rules_only_audit_and_report_generation_perf_baseline(
     ReportWriter(novel_dir).write(report)
     elapsed_seconds = perf_counter() - started
 
-    record_property("baseline_type", audit.review_budget.mode)
+    record_property("baseline_type", "navigation_character_rules_only")
     record_property("rules_only_perf_seconds", elapsed_seconds)
 
     assert audit.review_budget.mode == "rules_only"
