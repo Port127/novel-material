@@ -2,6 +2,8 @@
 
 from types import SimpleNamespace
 
+import pytest
+
 from novel_material.cli import pipeline_common
 from novel_material.pipeline.orchestrator import RunRequest, StageSpec
 from novel_material.runtime.contracts import (
@@ -440,7 +442,7 @@ def test_continue_runtime_does_not_report_historical_stages(
     monkeypatch.setattr(
         pipeline_common.PipelineOrchestrator,
         "plan_continue",
-        lambda _inspection: SimpleNamespace(stage_names=("audit",)),
+        lambda _inspection, **_kwargs: SimpleNamespace(stage_names=("audit",)),
     )
 
     observed_runtimes = []
@@ -452,3 +454,62 @@ def test_continue_runtime_does_not_report_historical_stages(
     assert observed_runtimes == [runtime]
     started = memory.events_named("RunStarted")[0]
     assert started.attributes["report_prior_stages"] == []
+
+
+@pytest.mark.parametrize(
+    ("options", "expected"),
+    [
+        ({"mode": "standard"}, True),
+        ({"mode": "deep"}, True),
+        ({"mode": "fast"}, False),
+        ({"mode": "standard", "skip_navigation": True}, False),
+        ({"mode": "fast", "use_navigation": True}, True),
+    ],
+)
+def test_continue_plan_receives_navigation_switch(
+    tmp_path,
+    monkeypatch,
+    options,
+    expected,
+):
+    captured = {}
+    memory = MemoryEventSink()
+    runtime = SimpleNamespace(
+        dispatcher=RuntimeDispatcher([memory]),
+        report_sink=None,
+    )
+    inspection = SimpleNamespace(exists=True, stages={})
+    (tmp_path / "nm_demo").mkdir()
+    monkeypatch.setattr(pipeline_common, "NOVELS_DIR", tmp_path)
+    monkeypatch.setattr(
+        pipeline_common,
+        "inspect_pipeline_state",
+        lambda *_args, **_kwargs: inspection,
+    )
+    monkeypatch.setattr(
+        pipeline_common,
+        "_create_pipeline_runtime",
+        lambda *_args: runtime,
+    )
+    monkeypatch.setattr(
+        pipeline_common,
+        "_stage_specs",
+        lambda *_args, **_kwargs: (),
+    )
+
+    def fake_plan(_inspection, *, include_navigation):
+        captured["include_navigation"] = include_navigation
+        return SimpleNamespace(stage_names=())
+
+    monkeypatch.setattr(
+        pipeline_common.PipelineOrchestrator,
+        "plan_continue",
+        fake_plan,
+    )
+
+    pipeline_common.run_continue_pipeline(
+        material_id="nm_demo",
+        **options,
+    )
+
+    assert captured["include_navigation"] is expected

@@ -67,13 +67,23 @@ class PipelineOrchestrator:
         self._clock = clock
 
     @staticmethod
-    def plan_continue(inspection) -> PipelinePlan:
+    def plan_continue(inspection, *, include_navigation: bool = False) -> PipelinePlan:
         """从首个非成功阶段开始重跑其全部下游阶段。"""
         if not inspection.exists:
             return PipelinePlan(())
         order = (
-            "analyze", "outline", "worldbuilding", "characters", "tags",
-            "insights", "refine", "audit", "sync",
+            (("evaluation",) if include_navigation else ())
+            + (
+                "analyze",
+                "outline",
+                "worldbuilding",
+                "characters",
+                "tags",
+                "insights",
+                "refine",
+                "audit",
+                "sync",
+            )
         )
         for index, name in enumerate(order):
             stage = inspection.stages.get(name)

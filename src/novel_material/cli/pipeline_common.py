@@ -275,7 +275,10 @@ def run_continue_pipeline(
     run_start = time.monotonic()
     run_id = new_id("run")
     inspection = inspect_pipeline_state(material_id, novels_dir=NOVELS_DIR)
-    plan = PipelineOrchestrator.plan_continue(inspection)
+    plan = PipelineOrchestrator.plan_continue(
+        inspection,
+        include_navigation=_use_navigation(options),
+    )
     if not inspection.exists:
         missing = adapt_stage_result("status", None)
         return RunResult.from_stages(run_id, "pipeline continue", [missing])

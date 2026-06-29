@@ -11,6 +11,7 @@ from novel_material.infra.config import NOVELS_DIR
 from novel_material.infra.yaml_io import load_yaml, load_yaml_list
 from novel_material.analysis_profiles import load_profiles, merge_profiles
 from novel_material.pipeline.profile_resolver import resolve_profile_names
+from novel_material.pipeline.evaluation_models import load_evaluation_navigation
 from novel_material.validation.insights import validate_insight_file
 from novel_material.runtime.contracts import (
     Diagnostic,
@@ -106,6 +107,10 @@ def inspect_pipeline_state(
     meta = load_yaml(meta_file) if meta_file.exists() else {}
     stages = {
         "ingest": _legacy_presence_stage("ingest", (novel_dir / "chapter_index.yaml").exists()),
+        "evaluation": _legacy_presence_stage(
+            "evaluation",
+            _has_complete_evaluation(novel_dir),
+        ),
         "analyze": _legacy_presence_stage("analyze", (novel_dir / "chapters.yaml").exists()),
         "outline": _legacy_presence_stage("outline", (novel_dir / "outline/_index.yaml").exists()),
         "worldbuilding": _legacy_presence_stage("worldbuilding", (novel_dir / "worldbuilding/_index.yaml").exists()),
@@ -118,14 +123,29 @@ def inspect_pipeline_state(
     return PipelineInspection(True, True, stages, database)
 
 
-def next_pending_stage(inspection: PipelineInspection) -> str | None:
+def next_pending_stage(
+    inspection: PipelineInspection,
+    *,
+    include_navigation: bool = False,
+) -> str | None:
     """按公开流水线顺序返回第一个非成功阶段。"""
     if not inspection.exists:
         return None
-    for name in (
-        "ingest", "analyze", "outline", "worldbuilding", "characters",
-        "tags", "insights", "refine", "sync",
-    ):
+    order = (
+        ("ingest",)
+        + (("evaluation",) if include_navigation else ())
+        + (
+            "analyze",
+            "outline",
+            "worldbuilding",
+            "characters",
+            "tags",
+            "insights",
+            "refine",
+            "sync",
+        )
+    )
+    for name in order:
         stage = inspection.stages.get(name)
         if stage is None or stage.status is not RunStatus.SUCCESS:
             return name
@@ -138,6 +158,13 @@ def _legacy_presence_stage(name: str, present: bool) -> StageResult:
         name=name,
         status=RunStatus.SUCCESS if present else RunStatus.PENDING,
     )
+
+
+def _has_complete_evaluation(novel_dir: Path) -> bool:
+    try:
+        return load_evaluation_navigation(novel_dir) is not None
+    except (TypeError, ValueError):
+        return False
 
 
 def _inspect_legacy_insights(novel_dir: Path, meta: dict) -> StageResult:
@@ -256,7 +283,7 @@ def get_pipeline_progress(material_id: str) -> dict:
     return {
         "exists": True,
         "ingested": (novel_dir / "chapter_index.yaml").exists(),
-        "evaluation": (novel_dir / "evaluation.yaml").exists(),
+        "evaluation": _has_complete_evaluation(novel_dir),
         "analyzed": analyzed,
         "chapters_embedded": (novel_dir / "chapter_embeddings.npz").exists(),
         "outline": (novel_dir / "outline" / "_index.yaml").exists(),
@@ -320,7 +347,11 @@ def print_pipeline_status(progress: dict) -> None:
     console.print(embed_table)
 
 
-def get_next_pending_stage(progress: dict, include_insights: bool = True) -> str | None:
+def get_next_pending_stage(
+    progress: dict,
+    include_insights: bool = True,
+    include_navigation: bool = False,
+) -> str | None:
     """获取下一个待执行的阶段名称。
 
     Returns:
@@ -331,6 +362,9 @@ def get_next_pending_stage(progress: dict, include_insights: bool = True) -> str
 
     if not progress.get("ingested"):
         return "ingest"
+
+    if include_navigation and not progress.get("evaluation"):
+        return "evaluation"
 
     if not progress.get("analyzed"):
         return "analyze"

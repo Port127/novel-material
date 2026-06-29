@@ -140,6 +140,68 @@ def test_continue_plan_starts_from_invalid_insights_and_includes_downstream():
     assert plan.stage_names == ("insights", "refine", "audit", "sync")
 
 
+def test_continue_plan_starts_from_evaluation_when_navigation_enabled():
+    stages = {
+        name: stage(name, RunStatus.SUCCESS)
+        for name in (
+            "analyze",
+            "outline",
+            "worldbuilding",
+            "characters",
+            "tags",
+            "insights",
+            "refine",
+            "audit",
+            "sync",
+        )
+    }
+    inspection = SimpleNamespace(exists=True, stages=stages)
+
+    plan = PipelineOrchestrator.plan_continue(
+        inspection,
+        include_navigation=True,
+    )
+
+    assert plan.first_stage == "evaluation"
+    assert plan.stage_names == (
+        "evaluation",
+        "analyze",
+        "outline",
+        "worldbuilding",
+        "characters",
+        "tags",
+        "insights",
+        "refine",
+        "audit",
+        "sync",
+    )
+
+
+def test_continue_plan_skips_missing_evaluation_when_navigation_disabled():
+    stages = {
+        name: stage(name, RunStatus.SUCCESS)
+        for name in (
+            "analyze",
+            "outline",
+            "worldbuilding",
+            "characters",
+            "tags",
+            "insights",
+            "refine",
+            "audit",
+            "sync",
+        )
+    }
+    inspection = SimpleNamespace(exists=True, stages=stages)
+
+    plan = PipelineOrchestrator.plan_continue(
+        inspection,
+        include_navigation=False,
+    )
+
+    assert plan.stage_names == ()
+
+
 def test_continue_plan_starts_at_audit_for_old_sidecar_without_audit():
     stages = {
         name: stage(name, RunStatus.SUCCESS)

@@ -117,4 +117,60 @@ def test_invalid_legacy_insights_are_pending_without_writing_sidecar(
     assert inspection.stages["insights"].status is RunStatus.DEGRADED
     assert inspection.stages["insights"].counts.failed == 2
     assert next_pending_stage(inspection) == "insights"
+    assert next_pending_stage(inspection, include_navigation=True) == "evaluation"
     assert not (novel_dir / "runs").exists()
+
+
+def test_legacy_inspection_marks_v3_evaluation_complete(
+    tmp_path: Path,
+    monkeypatch,
+):
+    material_id = "nm_v3"
+    novel_dir = tmp_path / material_id
+    novel_dir.mkdir()
+    (novel_dir / "evaluation.yaml").write_text(
+        "schema_version: 3.0.0\n"
+        "novel_type:\n"
+        "  - 都市\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "novel_material.pipeline.progress.probe_database_status",
+        lambda _material_id: type("Probe", (), {"status": "not_synced", "diagnostic": None})(),
+    )
+
+    inspection = inspect_pipeline_state(material_id, novels_dir=tmp_path)
+
+    assert inspection.stages["evaluation"].status is RunStatus.SUCCESS
+
+
+def test_legacy_inspection_marks_v2_evaluation_complete_without_rewriting(
+    tmp_path: Path,
+    monkeypatch,
+):
+    material_id = "nm_v2"
+    novel_dir = tmp_path / material_id
+    novel_dir.mkdir()
+    evaluation = novel_dir / "evaluation.yaml"
+    evaluation.write_text(
+        "schema_version: 2.0.1\n"
+        "novel_type:\n"
+        "  - 都市\n"
+        "main_thread_summary: 旧版主线\n"
+        "total_chapters: 100\n"
+        "core_characters_hint:\n"
+        "  - 主角\n"
+        "stage_summaries:\n"
+        "  1: 开篇\n",
+        encoding="utf-8",
+    )
+    before = evaluation.read_text(encoding="utf-8")
+    monkeypatch.setattr(
+        "novel_material.pipeline.progress.probe_database_status",
+        lambda _material_id: type("Probe", (), {"status": "not_synced", "diagnostic": None})(),
+    )
+
+    inspection = inspect_pipeline_state(material_id, novels_dir=tmp_path)
+
+    assert inspection.stages["evaluation"].status is RunStatus.SUCCESS
+    assert evaluation.read_text(encoding="utf-8") == before
