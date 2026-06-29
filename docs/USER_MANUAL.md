@@ -26,7 +26,7 @@ clean → evaluated（可选）→ analyzed → finalized
 | 状态 | 含义 |
 |---|---|
 | `clean` | 已完成清洗和章节切分 |
-| `evaluated` | 已生成总体评估，用于滑动窗口上下文 |
+| `evaluated` | 已生成前置导航 `evaluation.yaml`，可供分析和人物阶段只读使用 |
 | `analyzed` | 已完成章级分析 |
 | `finalized` | 已完成精调，可校验并同步数据库 |
 | `failed` | 流水线失败，需要查看日志并继续 |
@@ -116,14 +116,18 @@ ingest analyze insights evaluate outline worldbuilding characters
 tags refine full status continue report
 ```
 
-### 4.1 入库与总体评估
+### 4.1 入库与前置导航
 
 ```bash
 nm pipeline ingest ./novel.txt
 nm pipeline evaluate nm_xxx
 ```
 
-入库生成 `source.txt`、`chapter_index.yaml` 和 `meta.yaml`，不调用 LLM。总体评估是可选步骤，主要为滑动窗口提供全局上下文。
+入库生成 `source.txt`、`chapter_index.yaml` 和 `meta.yaml`，不调用 LLM。`evaluate` 生成 `evaluation.yaml`，现在定位为前置导航：它根据采样章节输出类型、前提、主线、阶段地图、核心人物候选、世界观维度、分析重点和采样覆盖范围。
+
+`evaluation.yaml` 当前写入 schema `3.0.0`。旧版 `2.0.1` 或包含 `stage_summaries`/`core_characters_hint` 的文件会被只读适配为 v3 导航视图；读取时不会自动改写旧文件。
+
+前置导航与 `--window` 已解耦：`--window` 只控制章级分析是否使用前章摘要；如果存在可解析的 `evaluation.yaml`，章级分析可把它作为可选导航上下文读取。`full/continue --mode standard|deep` 默认执行前置导航，`fast` 默认跳过。
 
 ### 4.2 章级分析
 
@@ -134,7 +138,7 @@ nm pipeline analyze nm_xxx --start 1 --end 100
 nm pipeline analyze nm_xxx --skip-embedding
 ```
 
-主要产物为 `chapters.yaml` 和 `chapter_embeddings.npz`。指定章节范围时，后续骨架分析面对的是不完整数据。
+主要产物为 `chapters.yaml` 和 `chapter_embeddings.npz`。指定章节范围时，后续骨架分析面对的是不完整数据。`--window` 不会自动触发 `evaluate`；需要前置导航时先执行 `nm pipeline evaluate nm_xxx`，或在 `full/continue` 中使用运行模式/`--navigation` 控制。
 
 ### 4.3 题材感知深度分析
 
@@ -165,25 +169,34 @@ nm search insight "主角被压制后反杀" --mode quality --json
 nm pipeline outline nm_xxx
 nm pipeline worldbuilding nm_xxx
 nm pipeline characters nm_xxx
+nm pipeline characters nm_xxx --repair-character 陈汉升
 nm pipeline tags nm_xxx
 nm pipeline refine nm_xxx
 ```
 
 对应产物包括 `outline/`、`worldbuilding/`、`characters/`、`tags.yaml`，以及 refine 更新的统计和 `key_plot_point`。
 
+人物阶段会把自适应选择的主要人物写成完整小传：`profile_level: full` 且 `biography_complete: true`，包含弧线、心理、关键场景、关系和写作借鉴边界。非目标人物写成 `profile_level: brief` 简档，保留基础描述、出场、叙事功能和关系等信息。`characters/_index.yaml` 会记录完整小传目标数、完成数、失败数和目标名单。
+
+`--repair-character` 可重复传入，只重建指定人物 profile 并更新人物索引。该命令会修改目标人物 profile 和 `characters/_index.yaml`，真实素材上执行前应先确认 API 消耗和事实文件变更。
+
 ### 4.5 完整流水线
 
 ```bash
 nm pipeline full ./novel.txt --mode standard
+nm pipeline full ./novel.txt --mode fast --navigation
+nm pipeline full ./novel.txt --mode standard --skip-navigation
 ```
 
-常用选项：`--mode fast|standard|deep`、`--window`、`--provider NAME`、`--start N`、`--end N`、`--skip-sync`、`--skip-embedding`。
+常用选项：`--mode fast|standard|deep`、`--window`、`--navigation`、`--skip-navigation`、`--provider NAME`、`--start N`、`--end N`、`--skip-sync`、`--skip-embedding`。
 
 | 模式 | 目标 | insights 行为 |
 |---|---|---|
 | `fast` | 优先完成基础素材 | 跳过 core insights |
 | `standard` | 默认无人值守 | 默认分析开头 100 章，可通过 `INSIGHTS_STANDARD_CHAPTER_LIMIT` 调整 |
 | `deep` | 质量优先 | 全量执行 core insights，并保留关键章节深度分析扩展点 |
+
+`standard` 和 `deep` 默认执行前置导航；`fast` 默认跳过前置导航，但可通过 `--navigation` 强制执行。`--skip-navigation` 会跳过前置导航，即使处于 `standard`/`deep` 模式。`--window` 仍只影响章级分析上下文，不决定是否运行 `evaluate`。
 
 `full` 在 refine 后执行只读产物审计，再根据严重度决定终态：`blocker` 使运行失败并阻止数据库同步，`error` 使运行降级但允许同步，`warning/info` 不单独使运行失败。每次运行会写出：
 
@@ -201,9 +214,11 @@ data/novels/{material_id}/reports/
 ```bash
 nm pipeline status nm_xxx
 nm pipeline continue nm_xxx --mode standard
+nm pipeline continue nm_xxx --mode fast --navigation
+nm pipeline continue nm_xxx --mode standard --skip-navigation
 ```
 
-`continue` 自动检查未完成阶段。滑动窗口模式需要已有 `evaluation.yaml`。
+`continue` 自动检查未完成阶段。若 navigation 启用且缺少可解析的 `evaluation.yaml`，会从 `evaluation` 阶段恢复；若使用 `fast` 或 `--skip-navigation`，缺少 evaluation 不会阻塞续传。
 
 结构化日志完整但报告缺失时，可只读重建：
 
@@ -302,7 +317,7 @@ nm validate artifacts <material_id> [--review]
 - `validate`：检查 YAML 结构和完整性。
 - `quality`：检查摘要长度、覆盖率等内容质量。
 - `insights`：检查题材感知字段、证据和置信度。
-- `artifacts`：只读检查核心文件、章节覆盖、人物兜底档案、世界观和 insights 等产物质量；默认不调用 LLM。
+- `artifacts`：只读检查核心文件、章节覆盖、人物兜底档案、完整小传目标、世界观和 insights 等产物质量；默认不调用 LLM。
 
 `--review` 只复审规则标记为可疑的项目，并受配置中的调用次数和预计耗时预算约束。预算耗尽的项目保留为“因预算未复审”，不会偷偷扩大调用。该命令不会修复或改写 YAML。
 
@@ -312,6 +327,8 @@ nm validate artifacts <material_id> [--review]
 
 ```bash
 nm pipeline full ./novel.txt --mode standard
+nm pipeline full ./novel.txt --mode fast --navigation
+nm pipeline full ./novel.txt --mode standard --skip-navigation
 ```
 
 ### 10.2 分步执行
@@ -410,6 +427,7 @@ nm pipeline evaluate <id>
 nm pipeline outline <id>
 nm pipeline worldbuilding <id>
 nm pipeline characters <id>
+nm pipeline characters <id> --repair-character <name>
 nm pipeline tags <id>
 nm pipeline refine <id>
 nm pipeline full <file> --mode standard

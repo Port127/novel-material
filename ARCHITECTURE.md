@@ -105,7 +105,7 @@ novel-material/
 │   │   ├── prompt_loader.py      # Prompt 类 + 模板变量替换
 │   │   ├── analyze.yaml          # 章级分析提示词
 │   │   ├── characters.yaml       # 人物提取提示词（含子提示词）
-│   │   ├── evaluate.yaml         # 总体评估提示词
+│   │   ├── evaluate.yaml         # 前置导航提示词
 │   │   ├── outline.yaml          # 大纲生成提示词
 │   │   └── worldbuilding.yaml    # 世界观提取提示词
 │   │
@@ -146,7 +146,7 @@ novel-material/
 │   │   ├── preprocess.py         # 文本清洗
 │   │   ├── loader.py             # 章节加载 + 摘要池构建
 │   │   ├── loader_args.py        # loader 参数构建
-│   │   ├── evaluate.py           # 总体评估
+│   │   ├── evaluate.py           # 前置导航评估，输出 evaluation.yaml v3
 │   │   ├── analyze.py            # 章级分析主入口
 │   │   ├── analyze_batch.py      # 批量分析逻辑
 │   │   ├── analyze_single.py     # 单章分析逻辑
@@ -362,16 +362,20 @@ save_yaml(paths.meta_path, meta)
    │                                author_note
 ```
 
-### 总体评估阶段（LLM 调用）
+### 前置导航阶段（LLM 调用）
 
 ```
 章节索引 → 采样章节 → 5批次LLM评估 → evaluation.yaml
     │          │           │              │
-章节总数    分层采样     类型/主线      全局上下文
-    │       (15/50章)    阶段概要       (滑动窗口输入)
-    │                        │
-    └────────────────────────┴──→ 滑动窗口模式（--window）
+章节总数    分层采样     类型/主线      全局导航
+    │       (15/50章)    阶段地图       (可被分析/人物阶段只读使用)
+    │
+    └──→ full/continue 默认由 standard/deep 启用；fast 可用 --navigation 强制启用
 ```
+
+`evaluate` 现在是“前置导航”阶段，不再等同于 `--window`。`--window` 只控制章级分析是否带前章摘要；若素材中存在可解析的 `evaluation.yaml`，章级分析会把前置导航作为可选上下文读取。`pipeline full/continue --mode standard|deep` 默认执行前置导航；`--skip-navigation` 可跳过；`fast` 默认跳过，但可用 `--navigation` 强制执行。
+
+`evaluation.yaml` 当前写入 schema `3.0.0`，核心字段包括 `novel_type`、`premise`、`main_thread_summary`、`stage_map`、`core_character_candidates`、`worldbuilding_dimensions`、`analysis_focus`、`sample_coverage` 和 `evaluation_timestamp`。读取侧通过 `pipeline/evaluation_models.py` 提供只读兼容视图：旧版 `2.0.1` 或包含 `stage_summaries`/`core_characters_hint` 的文件会被适配为 v3 导航对象，但不会在读取时自动改写原文件。
 
 ### 分析阶段（LLM 调用）
 
@@ -396,6 +400,20 @@ save_yaml(paths.meta_path, meta)
 `fast` 模式跳过 insights；`standard` 模式默认只为开头 100 章生成 core insights，上限由 `INSIGHTS_STANDARD_CHAPTER_LIMIT` 配置；`deep` 当前仍对全部已分析章节调用同一个 core insight 生成器。`full/continue --start/--end` 的显式用户范围覆盖模式默认范围。`deep` 的关键章节比例与阻断语义只是扩展元数据，尚无独立 deep 分析实现，文档和 Agent 不得声称已经完成更深层分析。该自动上限不影响独立 `nm pipeline insights --start/--end`，也不缩小 `refine` 的全书 L1 输入范围。
 
 `insights.py` 按批调用 LLM，批次失败会为对应章节写入失败状态并继续；schema 校验失败最多修复一次，仍失败则保留结果并写入 `quality.validation_errors`，同时下调 confidence。新增 profile 时必须提供 YAML 字段契约，并覆盖 loader、resolver、prompt 和 validator 测试。
+
+### 人物档案与完整小传
+
+`characters` 阶段先从章级出场统计和前置导航候选构造人物信号，再自适应选择 5–12 名主要人物生成完整小传。完整小传 profile 使用 `profile_level: full` 与 `biography_complete: true`，包含人物弧线、心理动机、关系、关键场景和写作借鉴边界；其他达到候选阈值的人物写为 `profile_level: brief` 简档，只保留基础描述、叙事功能、出场和关系等可用信息。
+
+人物索引 `characters/_index.yaml` 记录 `biography_target_count`、`biography_completed_count`、`biography_failed_count`、`biography_selection_reason` 和 `biography_targets`。产物审计会把完整小传目标缺失、伪完成或主要人物空壳标为 error，并在运行报告中展示完整小传目标/完成/失败/简档数量。
+
+定向修复命令为：
+
+```bash
+nm pipeline characters nm_xxx --repair-character 陈汉升
+```
+
+该命令只删除并重建指定人物的 profile，同时更新人物索引；它会修改素材事实文件，真实素材上执行前必须获得用户明确授权。默认只读验收只运行 `nm validate artifacts`，不会触发 LLM 修复。
 
 ### 运行审计与报告
 
@@ -439,14 +457,14 @@ refine → artifact audit ─┬─ blocker → failed，不执行 sync
 | 命令 | 功能 | 底层调用 |
 |------|------|---------|
 | `nm pipeline ingest` | 入库 | `pipeline/ingest.py` |
-| `nm pipeline evaluate` | 总体评估 | `pipeline/evaluate.py` |
+| `nm pipeline evaluate` | 前置导航评估 | `pipeline/evaluate.py` |
 | `nm pipeline analyze` | 章级分析 | `pipeline/analyze.py` |
 | `nm pipeline outline` | 大纲生成 | `pipeline/outline_core.py` |
 | `nm pipeline worldbuilding` | 世界观提取 | `pipeline/worldbuilding.py` |
 | `nm pipeline characters` | 人物提取 | `pipeline/characters.py` |
 | `nm pipeline tags` | 标签生成 | `pipeline/tags.py` |
 | `nm pipeline insights` | 题材感知深度分析 | `pipeline/insights.py` |
-| `nm pipeline refine` | 调同步 | `pipeline/refine.py` + `pipeline/infer.py` |
+| `nm pipeline refine` | 精调 | `pipeline/refine.py` + `pipeline/infer.py` |
 | `nm pipeline report` | 从结构化日志只读重建报告 | `reporting/` + `run_logging/reader.py` |
 | `nm search chapter` | 章节检索 | `search/chapter.py` |
 | `nm search insight` | 深度分析 YAML 检索 | `search/insight.py` |
@@ -488,7 +506,7 @@ refine → artifact audit ─┬─ blocker → failed，不执行 sync
 | 模块 | 容错 |
 |------|------|
 | `ingest.py` | 失败返回 None |
-| `evaluate.py` | 断点续传 + 5批次采样 |
+| `evaluate.py` | 前置导航评估，断点续传 + 5批次采样 |
 | `analyze.py` | 断点续传 + 跳过失败章节 |
 | `outline_core.py` | 3层容错 + 简单划分兜底 |
 | `worldbuilding.py` | 空结构兜底 |
@@ -501,6 +519,8 @@ refine → artifact audit ─┬─ blocker → failed，不执行 sync
 `SearchService` 是外部 Agent 的上下文供应层。`quality` 模式编排中文词法、完整 4096 维语义和结构化过滤三路召回，经 RRF、跨素材多样性和可插拔重排后，批量补充邻章摘要与原文行号。单路失败写入 trace 并降级，全部通道失败才报错。
 
 `exact` 模式只执行 4096 维语义精确排序。生产 schema 不启用 ANN；候选实验必须通过 `docs/search-benchmark.md` 的质量门禁。七类公开命令统一返回 `SearchResponse`。LLM 重排默认关闭；人工 Golden Query 基线补齐前，不得宣称混合或重排质量优于精确基线。
+
+第三期计划中的分层世界观、实体关系、`work_profile.yaml` 作品画像、存储适配和检索适配尚未实现。当前第二期只让人物素材结构更完整，并为后续搜索与写作 Agent 提供更可靠的事实输入；不得据此声称人物检索或整体检索质量已经提升。
 
 ### Validation 层 (`validation/`)
 

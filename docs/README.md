@@ -16,6 +16,8 @@
 
 运行健康与产物质量能力已经纳入现行文档：架构文档定义 `runtime/run_logging/audit/reporting/terminal` 的边界和事件流；用户手册说明 `nm validate artifacts [--review]`、`nm pipeline report`、稳定退出码和报告目录；需求文档定义只读审计、严重度语义与可追溯报告的验收口径。
 
+前置导航和人物完整小传能力也已纳入现行文档：架构文档说明 `evaluation.yaml` v3、旧版兼容读取、`--window` 解耦和人物完整小传/简档边界；用户手册说明 `--navigation`、`--skip-navigation`、`--repair-character` 和 `validate artifacts` 的只读语义；需求文档说明该能力只提升人物素材结构完整性，不替代检索质量评测。
+
 文档发生冲突时，依次以项目需求、系统架构、用户手册、Agent 指南为准。README 只做摘要，不覆盖详细规范。
 
 ## 工作记录
@@ -31,7 +33,7 @@
 
 ## 待办与已知缺口
 
-运行报告能够说明流水线是否完整、资源消耗和产物规则问题，但不能替代检索质量评测。以下 Golden Query 缺口仍然有效。
+运行报告、前置导航和人物完整小传能够说明流水线是否完整、资源消耗和产物规则问题，并让人物素材结构更完整，但不能替代检索质量评测。以下 Golden Query 缺口仍然有效。
 
 ### 检索 Golden Query 人工标注
 
