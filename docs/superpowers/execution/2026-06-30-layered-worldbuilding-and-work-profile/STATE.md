@@ -4,15 +4,19 @@
 feature: layered-worldbuilding-and-work-profile
 phase: 3
 status: ready
-current_packet: task-03-dimension-router.md
-last_completed_packet: task-02-worldbuilding-models-reader.md
-last_good_commit: 5990e01
+current_packet: task-04-normalizer-contract.md
+last_completed_packet: task-03-dimension-router.md
+last_good_commit: b81b163
 worktree: current_main_user_approved
 blocking_issue: null
 ```
 
 ## 最近验证
 
+- `python -m pytest tests/worldbuilding/test_dimensions.py tests/pipeline/test_profile_resolver.py -v`：8 passed。
+- `python -m compileall -q src/novel_material/worldbuilding`：通过。
+- `git diff --check -- . ':(exclude)docs/feedback.md'`：通过。
+- Packet 3 代码提交：`b81b163`。
 - `python -m pytest tests/worldbuilding/test_reader.py tests/worldbuilding/test_models.py -v`：6 passed。
 - `python -m compileall -q src/novel_material/worldbuilding`：通过。
 - `git diff --check -- . ':(exclude)docs/feedback.md'`：通过。
@@ -36,9 +40,9 @@ blocking_issue: null
 
 ## 当前开始动作
 
-1. 打开 `task-03-dimension-router.md`。
+1. 打开 `task-04-normalizer-contract.md`。
 2. 确认工作区除用户 `docs/feedback.md` 外没有未知修改。
-3. 按 packet 内 TDD 步骤实现题材维度路由。
+3. 按 packet 内 TDD 步骤实现世界观 LLM 输出归一化与契约校验。
 
 ## 每次结束必须更新
 
