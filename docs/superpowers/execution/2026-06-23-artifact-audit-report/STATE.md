@@ -3,22 +3,25 @@
 ```yaml
 feature: artifact-audit-and-run-report
 phase: 1
-status: ready
-current_packet: task-14-final-verification.md
-last_completed_packet: task-13-docs-guards.md
-last_good_commit: db4377f
+status: complete
+current_packet: null
+last_completed_packet: task-14-final-verification.md
+last_good_commit: fe86a0c
 worktree: current_main_user_approved
 blocking_issue: null
 ```
 
 ## 最近验证
 
-- 依赖边界与 CLI 契约定向回归：25 passed。
-- `python -m pytest`：398 passed，1 skipped。
-- `validate artifacts --help` 与 `pipeline report --help`：通过。
-- `python -m compileall -q src/novel_material`、现行文档检查与计划内差异检查：通过。
-- audit/reviewer/report 只读集成测试确认原事实文件 SHA-256 不变，新增文件仅位于 `reports/`。
-- Packet 13 提交：`db4377f`。
+- `python -m pytest tests/audit tests/reporting tests/runtime tests/run_logging tests/pipeline tests/terminal tests/cli/test_pipeline_contract.py tests/cli/test_command_contracts.py tests/validation -v`：234 passed。
+- `python -m pytest tests/reporting/test_performance_baseline.py -v`：1 passed，覆盖 1084 个章节索引、134 个人物档案的 rules_only 审计与报告生成性能基线。
+- `python -m novel_material.cli.main validate artifacts --help`：通过，显示 `--review`。
+- `python -m novel_material.cli.main pipeline report --help`：通过，显示 `--run-id`。
+- `python -m compileall -q src/novel_material`：通过。
+- `git diff --check -- . ':(exclude)docs/feedback.md'`：通过，无输出。
+- `python -m novel_material.cli.main validate artifacts nm_novel_20260621_4si2`：返回退出码 3，稳定报告 `character_profile_fallback`。
+- 真实素材 `nm_novel_20260621_4si2` 审计前后 2325 个非 `reports/` 文件 SHA-256 不变；陈汉升证据包含缺少 `arc_summary`、`psychology`、`relationships`；`rules_only`、`calls_used=0`。
+- Packet 14 测试提交：`fe86a0c`。
 
 ## 已确认且不得遗失
 
@@ -28,11 +31,11 @@ blocking_issue: null
 - 报告为 `reports/runs/{run_id}.yaml`、`latest.yaml`、`latest.md`。
 - 用户原有 `docs/feedback.md` 修改不得纳入提交。
 
-## 本次开始动作
+## 本次完成动作
 
-1. 打开 `task-14-final-verification.md`。
-2. 确认工作区除用户 `docs/feedback.md` 外没有未知修改。
-3. 按 packet 内测试驱动步骤执行。
+1. 完成 `task-14-final-verification.md` 的第一期全量验收。
+2. 补齐 rules_only 性能基线测试，未引入 `pytest-benchmark` 依赖。
+3. 确认工作区除用户 `docs/feedback.md` 和本状态记录外没有未知修改。
 
 ## 每次结束必须更新
 
