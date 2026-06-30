@@ -22,6 +22,16 @@ from novel_material.infra.common import is_special_chapter_type
 from novel_material.pipeline.loader import load_chapters_data, build_analysis_context
 from novel_material.infra.progress import get_pipeline_logger, save_run_history
 from novel_material.infra.llm_contracts import LLMResponseContractError, require_mapping, require_mapping_list
+from novel_material.worldbuilding.dimensions import resolve_worldbuilding_dimensions
+from novel_material.worldbuilding.models import (
+    LayeredWorldbuilding,
+    WorldbuildingIndex,
+    WorldbuildingOverview,
+)
+from novel_material.worldbuilding.normalizer import (
+    normalize_layered_worldbuilding_response,
+)
+from novel_material.worldbuilding.writer import write_layered_worldbuilding
 
 logger = get_pipeline_logger()
 
@@ -146,6 +156,11 @@ def generate_worldbuilding(material_id, provider: str | None = None) -> bool:
     logger.info(
         f"[{material_id}] 聚合统计: {len(org_stats)} 个组织候选, {len(loc_stats)} 个地点候选"
     )
+    dimension_routing = resolve_worldbuilding_dimensions(
+        meta=meta,
+        navigation_dimensions=_load_navigation_dimensions(novel_dir),
+        chapter_signals=wb_stats,
+    )
 
     # 构建分析上下文（章级摘要池 > 原文片段，传入已加载的 chapters_data）
     context_text, context_label = build_analysis_context(
@@ -169,45 +184,45 @@ def generate_worldbuilding(material_id, provider: str | None = None) -> bool:
 
     stats_context = org_text + loc_text
 
-    system_prompt = """你是专业的小说世界观分析师。请根据提供的内容提取以下世界观设定，返回 JSON 格式：
+    dimension_lines = "\n".join(
+        f"- {item.id} / {item.name}: {item.applicability}，{item.reason}"
+        for item in dimension_routing.dimensions
+    )
+
+    system_prompt = """你是专业的小说世界观分析师。请根据提供的内容提取分层世界观设定，返回 JSON 格式：
 {
-  "power_system": {
-    "name": "体系名称",
-    "description": "体系概述",
-    "levels": [
-      {"name": "境界/等级名", "description": "特征描述", "abilities": ["能力1"]}
+  "overview": {
+    "world_summary": "世界如何运转，以及哪些设定真正驱动剧情",
+    "driving_mechanisms": [
+      {"mechanism": "机制名称", "description": "说明", "related_dimensions": ["维度ID"], "evidence": [{"chapter": 1, "summary": "证据摘要"}]}
     ],
-    "rules": ["规则1", "规则2"]
+    "confidence": 0.0,
+    "limitations": ["覆盖限制"]
   },
-  "geography": {
-    "world_name": "世界名称",
-    "regions": [
-      {"name": "地名", "description": "描述", "importance": "primary/secondary/minor", "notable_features": ["特征"]}
-    ],
-    "spatial_rules": ["空间规则"]
-  },
-  "factions": [
-    {"name": "势力名", "type": "宗门/帝国/家族/组织", "description": "描述", "leader": "领袖", "strength": "实力等级", "allies": ["盟友"], "enemies": ["敌人"], "importance": "primary/secondary/minor"}
+  "dimensions": [
+    {"id": "维度ID", "name": "维度名", "category": "social/power/rule/space/resource/history/concept", "applicability": "applicable/not_applicable/uncertain", "reason": "判断依据", "confidence": 0.0}
   ],
-  "lore": {
-    "history": ["历史事件"],
-    "myths": ["神话传说"],
-    "taboos": ["禁忌"],
-    "cultural_notes": ["文化特点"]
-  }
+  "entities": [
+    {"type": "organization/location/rule/resource/power_system/social_system/history_event/concept", "name": "实体名", "description": "描述", "properties": {}, "importance": "primary/secondary/minor", "first_appearance_chapter": 1, "key_appearances": [{"chapter": 1, "role": "作用"}], "evidence": [{"chapter": 1, "basis": "fact", "summary": "证据摘要"}], "confidence": 0.0}
+  ],
+  "relations": [
+    {"source": "实体名", "target": "实体名", "relation_type": "located_in/belongs_to/allied_with/conflicts_with/depends_on/constrains/evolves_to/interacts_with", "description": "关系说明", "evidence": [{"chapter": 1, "basis": "fact", "summary": "证据摘要"}], "confidence": 0.0}
+  ]
 }
 
 注意：
 1. 所有名称和描述用中文
-2. 不存在力量体系、地理或背景知识时，对应字段返回空对象；不存在势力时 factions 返回空数组，字段类型不得改变
+2. 不适用维度必须在 dimensions 中标记 not_applicable，并说明原因，不要硬编不存在的修炼等级或超自然规则
 3. importance 标注重要性（高频出现的组织/地点应为 primary）
-4. 只提取原文中明确提到的内容，不要编造
-5. 组织出现频率列表中的组织应优先提取，补充详细信息"""
+4. 只提取原文中明确提到的内容；推断必须用 evidence.basis=inference 标记
+5. relations 的 source/target 必须引用 entities 中的 name"""
 
     user_prompt = f"""请分析以下小说的世界观设定：
 
 类型：{meta.get('theme', ['未知'])}
 基调：{meta.get('tone', ['未知'])}
+题材维度路由：
+{dimension_lines}
 {stats_context}
 
 {context_label}：
@@ -218,56 +233,26 @@ def generate_worldbuilding(material_id, provider: str | None = None) -> bool:
     rate_limit = config["llm"].get("rate_limit_seconds", 1)
 
     # ── 容错调用 ──
-    result = {}
+    layered = None
     try:
-        result = normalize_worldbuilding_response(call_llm(system_prompt, user_prompt, config, timeout_override=config["llm"]["worldbuilding_timeout"], context=f"{material_id} 世界观提取"))
+        layered = normalize_layered_worldbuilding_response(call_llm(system_prompt, user_prompt, config, timeout_override=config["llm"]["worldbuilding_timeout"], context=f"{material_id} 世界观提取"))
+        layered = _apply_dimension_routing(layered, dimension_routing)
         logger.info(f"[{material_id}] 世界观提取完成: finish={telemetry.last.get('finish_reason', '')}")
         time.sleep(rate_limit)
     except Exception as e:
         error_kind = "schema_invalid" if isinstance(e, LLMResponseContractError) else "调用失败"
         logger.error(f"[{material_id}] 世界观提取 {error_kind}: {e}")
         logger.warning(f"[{material_id}] 使用空结构继续，不中断流程")
-        result = {
-            "power_system": {},
-            "geography": {},
-            "factions": [],
-            "lore": {}
-        }
+        layered = _empty_layered_worldbuilding(dimension_routing)
 
-    # 写入 _index.yaml
-    wb_index = {
-        "power_system_levels": len(result.get("power_system", {}).get("levels", [])),
-        "region_count": len(result.get("geography", {}).get("regions", [])),
-        "faction_count": len(result.get("factions", [])),
-        "lore_items": len(result.get("lore", {}).get("history", [])),
-        "created_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-        "llm_success": bool(result.get("power_system") or result.get("factions"))
-    }
-
-    save_yaml(wb_dir / "_index.yaml", wb_index)
-
-    # 写入力量体系
-    if result.get("power_system"):
-        save_yaml(wb_dir / "power_system.yaml", result["power_system"])
-
-    # 写入地理空间
-    if result.get("geography"):
-        save_yaml(wb_dir / "geography.yaml", result["geography"])
-
-    # 写入势力
-    if result.get("factions"):
-        save_yaml(wb_dir / "factions.yaml", result["factions"])
-
-    # 写入背景知识
-    if result.get("lore"):
-        save_yaml(wb_dir / "lore.yaml", result["lore"])
+    write_layered_worldbuilding(novel_dir, layered)
 
     logger.info(
         f"[{material_id}] 世界观提取完成:\n"
-        f"  力量体系: {wb_index['power_system_levels']} 个等级\n"
-        f"  地理区域: {wb_index['region_count']} 个\n"
-        f"  势力: {wb_index['faction_count']} 个\n"
-        f"  历史事件: {wb_index['lore_items']} 个"
+        f"  维度: {layered.index.dimension_count} 个\n"
+        f"  实体: {layered.index.entity_count} 个\n"
+        f"  关系: {layered.index.relation_count} 条\n"
+        f"  证据: {layered.index.evidence_count} 条"
     )
 
     # 保存运行历史
@@ -279,13 +264,63 @@ def generate_worldbuilding(material_id, provider: str | None = None) -> bool:
     save_run_history(
         novel_dir=novel_dir,
         pipeline_name="世界观提取",
-        stage_times=[{"name": "世界观提取", "elapsed_sec": elapsed, "api_calls": api_calls, "api_errors": 0 if result else 1, "tokens_in": tokens_in, "tokens_out": tokens_out}],
+        stage_times=[{"name": "世界观提取", "elapsed_sec": elapsed, "api_calls": api_calls, "api_errors": 0 if layered.index.llm_success else 1, "tokens_in": tokens_in, "tokens_out": tokens_out}],
         total_elapsed=elapsed,
         status="success"
     )
 
     # 世界观向量已移至 embed_all.py 统一处理
     return True
+
+
+def _load_navigation_dimensions(novel_dir: Path) -> list[str]:
+    evaluation = load_yaml(novel_dir / "evaluation.yaml")
+    dimensions = evaluation.get("worldbuilding_dimensions", [])
+    if isinstance(dimensions, list):
+        return [str(item) for item in dimensions if str(item)]
+    return []
+
+
+def _apply_dimension_routing(layered, dimension_routing):
+    dimensions = layered.dimensions or dimension_routing.dimensions
+    index = layered.index.model_copy(
+        update={
+            "dimension_count": len(dimensions),
+            "created_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        }
+    )
+    return layered.model_copy(
+        update={
+            "index": index,
+            "dimensions": dimensions,
+            "dimension_source": dimension_routing.source,
+        }
+    )
+
+
+def _empty_layered_worldbuilding(dimension_routing) -> LayeredWorldbuilding:
+    dimensions = dimension_routing.dimensions
+    return LayeredWorldbuilding(
+        index=WorldbuildingIndex(
+            layout="layered",
+            dimension_count=len(dimensions),
+            entity_count=0,
+            relation_count=0,
+            evidence_count=0,
+            legacy_compatible=True,
+            llm_success=False,
+            created_at=time.strftime("%Y-%m-%dT%H:%M:%S"),
+        ),
+        overview=WorldbuildingOverview(
+            world_summary="",
+            driving_mechanisms=(),
+            limitations=("LLM 世界观提取失败，已保留题材维度路由结果",),
+        ),
+        dimensions=dimensions,
+        entities=(),
+        relations=(),
+        dimension_source=dimension_routing.source,
+    )
 
 
 if __name__ == "__main__":

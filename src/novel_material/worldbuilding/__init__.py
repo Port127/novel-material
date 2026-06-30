@@ -13,6 +13,7 @@ from .models import (
 from .reader import load_worldbuilding_view
 from .dimensions import DimensionRoutingResult, resolve_worldbuilding_dimensions
 from .normalizer import normalize_layered_worldbuilding_response, slugify_entity_id
+from .writer import write_layered_worldbuilding
 
 __all__ = [
     "DimensionRoutingResult",
@@ -28,4 +29,5 @@ __all__ = [
     "normalize_layered_worldbuilding_response",
     "resolve_worldbuilding_dimensions",
     "slugify_entity_id",
+    "write_layered_worldbuilding",
 ]

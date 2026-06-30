@@ -1,0 +1,115 @@
+from pathlib import Path
+
+from novel_material.infra.yaml_io import load_yaml, save_yaml
+from novel_material.pipeline.worldbuilding import generate_worldbuilding
+
+
+def test_generate_worldbuilding_writes_layered_outputs(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    novel = tmp_path / "nm_demo"
+    novel.mkdir()
+    save_yaml(
+        novel / "meta.yaml",
+        {"material_id": "nm_demo", "name": "示例", "genre": ["都市"]},
+    )
+    save_yaml(novel / "chapter_index.yaml", [{"chapter": 1, "title": "开篇"}])
+    save_yaml(
+        novel / "chapters.yaml",
+        [
+            {
+                "chapter": 1,
+                "summary": "学生会推动校园冲突",
+                "characters_appear": ["学生会成员"],
+                "setting": ["江陵大学"],
+            }
+        ],
+    )
+    monkeypatch.setattr("novel_material.pipeline.worldbuilding.NOVELS_DIR", tmp_path)
+    monkeypatch.setattr(
+        "novel_material.pipeline.worldbuilding.load_config",
+        lambda _provider=None: {
+            "llm": {
+                "worldbuilding_timeout": 1,
+                "rate_limit_seconds": 0,
+                "worldbuilding_summary_tokens": 1000,
+            }
+        },
+    )
+    monkeypatch.setattr(
+        "novel_material.pipeline.worldbuilding.build_analysis_context",
+        lambda *_args, **_kwargs: ("第1章：学生会推动校园冲突", "章级摘要池"),
+    )
+    monkeypatch.setattr(
+        "novel_material.pipeline.worldbuilding.call_llm",
+        lambda *_args, **_kwargs: {
+            "overview": {
+                "world_summary": "校园组织关系驱动剧情",
+                "driving_mechanisms": [],
+            },
+            "dimensions": [],
+            "entities": [
+                {
+                    "type": "organization",
+                    "name": "学生会",
+                    "description": "校园组织",
+                    "importance": "secondary",
+                    "evidence": [{"chapter": 1, "basis": "fact", "summary": "出现"}],
+                }
+            ],
+            "relations": [],
+        },
+    )
+
+    assert generate_worldbuilding("nm_demo") is True
+
+    index = load_yaml(novel / "worldbuilding" / "_index.yaml")
+    assert index["layout"] == "layered"
+    assert index["entity_count"] == 1
+    assert (novel / "worldbuilding" / "overview.yaml").is_file()
+    assert (novel / "worldbuilding" / "dimensions.yaml").is_file()
+    assert len(list((novel / "worldbuilding" / "entities").glob("*.yaml"))) == 1
+    assert (novel / "worldbuilding" / "relations.yaml").is_file()
+
+
+def test_generate_worldbuilding_writes_empty_layered_outputs_on_llm_failure(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    novel = tmp_path / "nm_demo"
+    novel.mkdir()
+    save_yaml(
+        novel / "meta.yaml",
+        {"material_id": "nm_demo", "name": "示例", "genre": ["都市"]},
+    )
+    save_yaml(novel / "chapter_index.yaml", [{"chapter": 1, "title": "开篇"}])
+    save_yaml(novel / "chapters.yaml", [{"chapter": 1, "summary": "现实创业"}])
+    monkeypatch.setattr("novel_material.pipeline.worldbuilding.NOVELS_DIR", tmp_path)
+    monkeypatch.setattr(
+        "novel_material.pipeline.worldbuilding.load_config",
+        lambda _provider=None: {
+            "llm": {
+                "worldbuilding_timeout": 1,
+                "rate_limit_seconds": 0,
+                "worldbuilding_summary_tokens": 1000,
+            }
+        },
+    )
+    monkeypatch.setattr(
+        "novel_material.pipeline.worldbuilding.build_analysis_context",
+        lambda *_args, **_kwargs: ("第1章：现实创业", "章级摘要池"),
+    )
+    monkeypatch.setattr(
+        "novel_material.pipeline.worldbuilding.call_llm",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
+
+    assert generate_worldbuilding("nm_demo") is True
+
+    index = load_yaml(novel / "worldbuilding" / "_index.yaml")
+    dimensions = load_yaml(novel / "worldbuilding" / "dimensions.yaml")
+    assert index["layout"] == "layered"
+    assert index["llm_success"] is False
+    assert index["entity_count"] == 0
+    assert dimensions["dimensions"]
