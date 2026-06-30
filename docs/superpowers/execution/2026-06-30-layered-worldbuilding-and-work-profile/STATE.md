@@ -4,15 +4,20 @@
 feature: layered-worldbuilding-and-work-profile
 phase: 3
 status: ready
-current_packet: task-07-work-profile-contract.md
-last_completed_packet: task-06-audit-report-worldbuilding.md
-last_good_commit: 865e79d
+current_packet: task-08-profile-stage-cli.md
+last_completed_packet: task-07-work-profile-contract.md
+last_good_commit: 9724ad6
 worktree: current_main_user_approved
 blocking_issue: null
 ```
 
 ## 最近验证
 
+- `python -m pytest tests/pipeline/test_work_profile_contract.py -v`：3 passed。
+- `python -m compileall -q src/novel_material/pipeline`：通过。
+- `git diff --check -- . ':(exclude)docs/feedback.md'`：通过。
+- `git diff --cached --check`：通过。
+- Packet 7 代码提交：`9724ad6`。
 - `python -m pytest tests/audit/test_rules.py::test_layered_worldbuilding_reports_missing_evidence_and_broken_relation tests/audit/test_rules.py::test_layered_worldbuilding_reports_empty_applicable_dimension tests/audit/test_service.py::test_audit_service_summarizes_layered_worldbuilding_quality tests/reporting/test_builder.py::test_builder_combines_runtime_and_artifact_quality tests/reporting/test_markdown.py::test_markdown_contains_conclusion_risks_and_next_actions -v`：5 passed。
 - `python -m pytest tests/audit tests/reporting -v`：55 passed。
 - `python -m compileall -q src/novel_material/audit src/novel_material/reporting`：通过。
@@ -54,9 +59,9 @@ blocking_issue: null
 
 ## 当前开始动作
 
-1. 打开 `task-07-work-profile-contract.md`。
+1. 打开 `task-08-profile-stage-cli.md`。
 2. 确认工作区除用户 `docs/feedback.md` 外没有未知修改。
-3. 按 packet 内 TDD 步骤实现 `work_profile.yaml` 契约与提示词构造器。
+3. 按 packet 内 TDD 步骤实现 `profile` 阶段与 CLI/orchestrator/status/continue 接入。
 
 ## 每次结束必须更新
 
