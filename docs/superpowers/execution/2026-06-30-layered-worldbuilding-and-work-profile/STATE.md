@@ -4,15 +4,19 @@
 feature: layered-worldbuilding-and-work-profile
 phase: 3
 status: ready
-current_packet: task-05-layered-writer-pipeline.md
-last_completed_packet: task-04-normalizer-contract.md
-last_good_commit: 73ff065
+current_packet: task-06-audit-report-worldbuilding.md
+last_completed_packet: task-05-layered-writer-pipeline.md
+last_good_commit: 5246a04
 worktree: current_main_user_approved
 blocking_issue: null
 ```
 
 ## 最近验证
 
+- `python -m pytest tests/worldbuilding/test_writer.py tests/pipeline/test_worldbuilding_layered_pipeline.py tests/cli/test_pipeline_contract.py::test_remaining_single_stage_failures_exit_one -v`：8 passed。
+- `python -m compileall -q src/novel_material/worldbuilding src/novel_material/pipeline`：通过。
+- `git diff --check -- . ':(exclude)docs/feedback.md'`：通过。
+- Packet 5 代码提交：`5246a04`。
 - `python -m pytest tests/worldbuilding/test_normalizer.py tests/pipeline/test_llm_response_contracts.py -v`：17 passed。
 - `python -m compileall -q src/novel_material/worldbuilding src/novel_material/pipeline`：通过。
 - `git diff --check -- . ':(exclude)docs/feedback.md'`：通过。
@@ -44,9 +48,9 @@ blocking_issue: null
 
 ## 当前开始动作
 
-1. 打开 `task-05-layered-writer-pipeline.md`。
+1. 打开 `task-06-audit-report-worldbuilding.md`。
 2. 确认工作区除用户 `docs/feedback.md` 外没有未知修改。
-3. 按 packet 内 TDD 步骤写入 layered 世界观结构并接入 pipeline。
+3. 按 packet 内 TDD 步骤实现世界观审计与报告质量信号。
 
 ## 每次结束必须更新
 
