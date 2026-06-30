@@ -56,6 +56,7 @@ class SearchResult(BaseModel):
     result_id: str
     document_type: DocumentType
     material_id: str
+    entity_id: str | None = None
     chapter: int | None = None
     title: str = ""
     summary: str = ""

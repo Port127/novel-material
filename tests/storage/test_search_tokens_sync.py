@@ -233,6 +233,66 @@ def test_sync_worldbuilding_reads_layered_entities(tmp_path):
     assert "创业" in params[-1]
 
 
+def test_sync_worldbuilding_adds_relation_summaries_to_layered_entities(tmp_path):
+    world_dir = tmp_path / "worldbuilding" / "entities"
+    world_dir.mkdir(parents=True)
+    save_yaml(
+        tmp_path / "worldbuilding" / "_index.yaml",
+        {"layout": "layered", "llm_success": True},
+    )
+    save_yaml(
+        world_dir / "organization_x.yaml",
+        {
+            "id": "organization_x",
+            "type": "organization",
+            "name": "公司",
+            "description": "创业组织",
+        },
+    )
+    save_yaml(
+        world_dir / "person_y.yaml",
+        {
+            "id": "person_y",
+            "type": "social_group",
+            "name": "资本方",
+            "description": "投资人群体",
+        },
+    )
+    save_yaml(
+        tmp_path / "worldbuilding" / "relations.yaml",
+        {
+            "relations": [
+                {
+                    "id": "rel_0001",
+                    "source_id": "organization_x",
+                    "target_id": "person_y",
+                    "relation_type": "funded_by",
+                    "description": "公司依赖资本方融资。",
+                    "evidence": [{"chapter": 4, "summary": "获得投资"}],
+                }
+            ],
+        },
+    )
+
+    connection = RecordingConnection()
+    sync_worldbuilding(connection, tmp_path, "nm_demo")
+
+    company_write = next(
+        params for _sql, params in _search_token_writes(connection)
+        if params[2] == "公司"
+    )
+    properties = json.loads(company_write[4])
+    assert properties["relation_summaries"] == [
+        {
+            "relation_id": "rel_0001",
+            "related_entity_id": "person_y",
+            "relation_type": "funded_by",
+            "description": "公司依赖资本方融资。",
+            "evidence": [{"chapter": 4, "basis": "fact", "summary": "获得投资"}],
+        }
+    ]
+
+
 def test_sync_worldbuilding_uses_legacy_vector_alias_for_layered_entity(tmp_path):
     world_dir = tmp_path / "worldbuilding" / "entities"
     world_dir.mkdir(parents=True)

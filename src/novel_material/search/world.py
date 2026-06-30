@@ -10,8 +10,10 @@ from .text import tokenize_for_search
 from novel_material.infra.embedding import get_embedding, load_embedding_config
 
 _ENTITY_TYPE_ALIASES = {
+    "organization": "organization",
     "faction": "factions",
     "factions": "factions",
+    "location": "location",
     "region": "regions",
     "regions": "regions",
     "power_system": "power_systems",
@@ -20,15 +22,31 @@ _ENTITY_TYPE_ALIASES = {
 }
 
 
-def _normalize_entity_type(entity_type):
+_ENTITY_TYPE_COMPATIBILITY = {
+    "organization": ("organization", "factions"),
+    "factions": ("organization", "factions"),
+    "location": ("location", "region", "regions"),
+    "regions": ("location", "region", "regions"),
+    "power_systems": ("power_system", "power_systems"),
+}
+
+
+def _normalize_entity_type(entity_type: str | None) -> str | None:
     if not entity_type:
         return entity_type
     return _ENTITY_TYPE_ALIASES.get(entity_type, entity_type)
 
 
+def _entity_type_candidates(entity_type: str | None) -> list[str]:
+    normalized = _normalize_entity_type(entity_type)
+    if not normalized:
+        return []
+    return list(_ENTITY_TYPE_COMPATIBILITY.get(normalized, (normalized,)))
+
+
 def search_worldbuilding(query=None, entity_type=None, genre=None, importance=None, name_query=None, limit=10, semantic=False, material_id=None):
     """检索世界观设定，支持向量语义搜索。"""
-    entity_type = _normalize_entity_type(entity_type)
+    entity_types = _entity_type_candidates(entity_type)
     with readonly_connection() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
         # 向量语义搜索
         if semantic:
@@ -50,9 +68,9 @@ def search_worldbuilding(query=None, entity_type=None, genre=None, importance=No
                 sql += " AND w.material_id = %s"
                 params.append(material_id)
 
-            if entity_type:
-                sql += " AND w.entity_type = %s"
-                params.append(entity_type)
+            if entity_types:
+                sql += " AND w.entity_type = ANY(%s)"
+                params.append(entity_types)
 
             if genre:
                 sql += " AND n.genre @> ARRAY[%s]"
@@ -81,9 +99,9 @@ def search_worldbuilding(query=None, entity_type=None, genre=None, importance=No
                 sql += " AND w.material_id = %s"
                 params.append(material_id)
 
-            if entity_type:
-                sql += " AND w.entity_type = %s"
-                params.append(entity_type)
+            if entity_types:
+                sql += " AND w.entity_type = ANY(%s)"
+                params.append(entity_types)
 
             if genre:
                 sql += " AND n.genre @> ARRAY[%s]"
@@ -117,30 +135,38 @@ def search_worldbuilding(query=None, entity_type=None, genre=None, importance=No
         cur.execute(sql, params)
         rows = cur.fetchall()
 
-    return [
-        SearchResult(
-            result_id=(
-                f"world:{row['material_id']}:{row['entity_type']}:{row['name']}"
-            ),
-            document_type="world",
-            material_id=row["material_id"],
-            title=row.get("name") or "",
-            summary=row.get("description") or "",
-            metadata={
-                "novel_name": row.get("novel_name"),
-                "genre": row.get("novel_genre") or [],
-                "entity_type": row.get("entity_type"),
-                "properties": row.get("properties") or {},
-                "importance": row.get("importance"),
-                "first_appearance": row.get("first_appearance"),
-            },
-            scores={"semantic": 1 - float(row["distance"])}
-            if row.get("distance") is not None
-            else {},
-            matched_fields=["description"] if row.get("distance") is not None else [],
-        )
-        for row in rows
-    ]
+    return [_world_result(row) for row in rows]
+
+
+def _world_result(row) -> SearchResult:
+    properties = row.get("properties") or {}
+    entity_id = properties.get("entity_id")
+    return SearchResult(
+        result_id=(
+            f"world:{row['material_id']}:{row['entity_type']}:{row['name']}"
+        ),
+        document_type="world",
+        material_id=row["material_id"],
+        entity_id=entity_id,
+        title=row.get("name") or "",
+        summary=row.get("description") or "",
+        metadata={
+            "novel_name": row.get("novel_name"),
+            "genre": row.get("novel_genre") or [],
+            "entity_type": row.get("entity_type"),
+            "properties": properties,
+            "importance": row.get("importance"),
+            "first_appearance": row.get("first_appearance"),
+            "dimension_ids": properties.get("dimension_ids") or [],
+            "evidence": properties.get("evidence") or [],
+            "key_appearances": properties.get("key_appearances") or [],
+            "relation_summaries": properties.get("relation_summaries") or [],
+        },
+        scores={"semantic": 1 - float(row["distance"])}
+        if row.get("distance") is not None
+        else {},
+        matched_fields=["description"] if row.get("distance") is not None else [],
+    )
 
 
 def retrieve_worldbuilding_lexical(request: SearchRequest) -> list[SearchResult]:

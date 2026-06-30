@@ -30,6 +30,7 @@ def sync_worldbuilding(conn, novel_dir, material_id):
         logger.info(f"加载世界观向量: {len(embeddings)} 条")
 
     view = load_worldbuilding_view(novel_dir)
+    relation_summaries = _relation_summaries_by_entity(view.relations)
 
     synced = 0
     synced_with_vec = 0
@@ -37,7 +38,10 @@ def sync_worldbuilding(conn, novel_dir, material_id):
         for entity in view.entities:
             entity_type = entity.type
             entity_name = entity.name
-            entity_payload = _entity_payload(entity)
+            entity_payload = _entity_payload(
+                entity,
+                relation_summaries=relation_summaries.get(entity.id, []),
+            )
             properties_value = json.dumps(
                 entity_payload["properties"],
                 ensure_ascii=False,
@@ -105,7 +109,7 @@ def sync_worldbuilding(conn, novel_dir, material_id):
     logger.info(f"已同步世界观实体: {synced} 个，其中 {synced_with_vec} 条含向量")
 
 
-def _entity_payload(entity) -> dict:
+def _entity_payload(entity, *, relation_summaries: list[dict] | None = None) -> dict:
     properties = dict(entity.properties)
     properties.update(
         {
@@ -117,11 +121,54 @@ def _entity_payload(entity) -> dict:
             "key_appearances": list(entity.key_appearances),
         }
     )
+    if relation_summaries:
+        properties["relation_summaries"] = relation_summaries
     return {
         "name": entity.name,
         "description": entity.description,
         "properties": properties,
     }
+
+
+def _relation_summaries_by_entity(relations) -> dict[str, list[dict]]:
+    summaries: dict[str, list[dict]] = {}
+    for relation in relations:
+        evidence = [item.model_dump(mode="json") for item in relation.evidence]
+        _append_relation_summary(
+            summaries,
+            entity_id=relation.source_id,
+            related_entity_id=relation.target_id,
+            relation=relation,
+            evidence=evidence,
+        )
+        if relation.target_id != relation.source_id:
+            _append_relation_summary(
+                summaries,
+                entity_id=relation.target_id,
+                related_entity_id=relation.source_id,
+                relation=relation,
+                evidence=evidence,
+            )
+    return summaries
+
+
+def _append_relation_summary(
+    summaries: dict[str, list[dict]],
+    *,
+    entity_id: str,
+    related_entity_id: str,
+    relation,
+    evidence: list[dict],
+) -> None:
+    summaries.setdefault(entity_id, []).append(
+        {
+            "relation_id": relation.id,
+            "related_entity_id": related_entity_id,
+            "relation_type": relation.relation_type,
+            "description": relation.description,
+            "evidence": evidence,
+        }
+    )
 
 
 def _find_embedding(
