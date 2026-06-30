@@ -18,6 +18,8 @@
 
 前置导航和人物完整小传能力也已纳入现行文档：架构文档说明 `evaluation.yaml` v3、旧版兼容读取、`--window` 解耦和人物完整小传/简档边界；用户手册说明 `--navigation`、`--skip-navigation`、`--repair-character` 和 `validate artifacts` 的只读语义；需求文档说明该能力只提升人物素材结构完整性，不替代检索质量评测。
 
+分层世界观与作品画像能力已经纳入现行文档：架构文档说明 layered `worldbuilding/` 布局、旧格式只读适配、`work_profile.yaml`、`profile` 阶段和 storage/search metadata 适配；用户手册说明 `nm pipeline profile`、世界观目录结构、`search world` metadata 和真实素材 LLM 授权边界；需求文档说明该能力提供更完整的结构化参考，但在 Golden Query 人工标注完成前不构成检索质量提升证明。
+
 文档发生冲突时，依次以项目需求、系统架构、用户手册、Agent 指南为准。README 只做摘要，不覆盖详细规范。
 
 ## 工作记录
@@ -33,7 +35,7 @@
 
 ## 待办与已知缺口
 
-运行报告、前置导航和人物完整小传能够说明流水线是否完整、资源消耗和产物规则问题，并让人物素材结构更完整，但不能替代检索质量评测。以下 Golden Query 缺口仍然有效。
+运行报告、前置导航、人物完整小传、分层世界观和作品画像能够说明流水线是否完整、资源消耗、产物规则问题和作品级结构入口，并让素材结构更完整，但不能替代检索质量评测。以下 Golden Query 缺口仍然有效。
 
 ### 检索 Golden Query 人工标注
 

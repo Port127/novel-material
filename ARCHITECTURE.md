@@ -124,6 +124,7 @@ novel-material/
 │   ├── terminal/                 # Rich 进度展示和终态摘要（不负责报告写入）
 │   ├── audit/                    # 只读产物规则、严重度映射与受限可选复审
 │   ├── reporting/                # 报告聚合、Markdown 渲染、原子持久化与 ReportSink
+│   ├── worldbuilding/            # 分层世界观契约、旧格式只读适配、维度路由和写入
 │   │
 │   ├── infra/                    # 基础设施 + 服务层
 │   │   ├── __init__.py           # 统一导出
@@ -161,6 +162,9 @@ novel-material/
 │   │   ├── outline_logic.py      # 大纲业务逻辑
 │   │   ├── outline_temp.py       # 大纲模板生成
 │   │   ├── worldbuilding.py      # 世界观提取
+│   │   ├── work_profile.py       # 作品画像生成，输出 work_profile.yaml
+│   │   ├── work_profile_models.py # 作品画像稳定契约
+│   │   ├── work_profile_prompt.py # 作品画像提示词构造
 │   │   ├── characters.py         # 人物提取入口
 │   │   ├── characters_core.py    # 人物提取核心
 │   │   ├── characters_profile.py # 人物档案生成
@@ -172,6 +176,8 @@ novel-material/
 │   │   ├── insights_prompt.py    # 深度分析 prompt 构造
 │   │   ├── profile_resolver.py   # profile 路由
 │   │   ├── runtime_modes.py      # fast/standard/deep 运行模式
+│   │   ├── stages.py             # 阶段入口到 StageResult 的适配
+│   │   ├── state.py              # 运行状态持久化
 │   │   ├── refine.py             # 统计精调
 │   │   └── progress.py           # 进度追踪
 │   │
@@ -380,17 +386,17 @@ save_yaml(paths.meta_path, meta)
 ### 分析阶段（LLM 调用）
 
 ```
-章级分析 ─┬→ 向量化 ───────────────┐
-          ├→ insights（按运行模式） │
-          └→ 骨架分析 → 精调 ──────┼→ 同步数据库
-                 │         │        │
-              outline    统计     PostgreSQL
-              world      出场次数  novels
-              characters 钩子数   chapters
-              tags       结构推断  characters
-                                    worldbuilding
-                                    outline_sequences
-                                    outline_beats
+章级分析 ─┬→ 向量化 ─────────────────┐
+          ├→ insights（按运行模式）   │
+          └→ 骨架分析 → 精调 → 作品画像 ┼→ 审计 → 同步数据库
+                 │         │          │          │
+              outline    统计      work_profile PostgreSQL
+              world      出场次数              novels
+              characters 钩子数                chapters
+              tags       结构推断              characters
+                                              worldbuilding
+                                              outline_sequences
+                                              outline_beats
 ```
 
 `chapters.yaml` 是稳定的 L1 章级分析结果。`chapter_insights/{chapter:04d}.yaml` 是可选 L2 增强层，由 `common + 题材 profile + 可选叙事 profile` 合并字段契约后批量生成，不替代 L1，也不进入当前 PostgreSQL 同步表。
@@ -414,6 +420,16 @@ nm pipeline characters nm_xxx --repair-character 陈汉升
 ```
 
 该命令只删除并重建指定人物的 profile，同时更新人物索引；它会修改素材事实文件，真实素材上执行前必须获得用户明确授权。默认只读验收只运行 `nm validate artifacts`，不会触发 LLM 修复。
+
+### 分层世界观与作品画像
+
+`worldbuilding` 阶段当前写入分层布局。`worldbuilding/_index.yaml` 记录 schema、layout、实体/关系/证据计数和旧格式兼容状态；`overview.yaml` 保存世界观概览和运行机制；`dimensions.yaml` 用 `applicable`、`not_applicable`、`uncertain` 结构化表达题材维度是否适用；`entities/*.yaml` 保存稳定实体 ID、类型、名称、描述、重要性、首次出现、关键出场、证据和置信度；`relations.yaml` 保存实体关系、演化、证据和置信度。
+
+旧素材的四类世界观文件仍通过 `worldbuilding.reader.load_worldbuilding_view()` 只读适配为统一视图，读取时不会自动改写旧 YAML。`embedding`、`storage sync`、`search world` 和审计都通过统一读取器消费世界观实体，避免各层重复理解新旧布局。同步层会把 layered 实体写入 `worldbuilding_entities.properties`，包括 `entity_id`、`dimension_ids`、证据、关键出场和关系摘要；搜索结果会返回这些 metadata，并保留 `organization`/`factions`、`location`/`region`/`regions` 等旧过滤别名兼容。
+
+`profile` 阶段生成素材根目录下的 `work_profile.yaml`。它是面向写作 Agent 的作品级入口，汇总作品钩子、读者期待、结构节奏、人物动力、世界观驱动、技法启示、证据索引和限制；它只引用 `chapters.yaml`、`characters/`、`worldbuilding/` 等下层事实产物，不替代事实文件，也不是搜索质量评测结论。`nm pipeline profile nm_xxx` 可独立执行；`full`、`continue` 和 `status` 已识别该阶段。
+
+真实素材上的 `worldbuilding`、`characters --repair-character`、`profile`、`full` 或 `continue` 都可能调用 LLM 并修改事实文件；执行前必须获得用户明确授权。默认验收只运行只读校验和报告生成，不触发真实素材 LLM 重跑。
 
 ### 运行审计与报告
 
@@ -465,6 +481,7 @@ refine → artifact audit ─┬─ blocker → failed，不执行 sync
 | `nm pipeline tags` | 标签生成 | `pipeline/tags.py` |
 | `nm pipeline insights` | 题材感知深度分析 | `pipeline/insights.py` |
 | `nm pipeline refine` | 精调 | `pipeline/refine.py` + `pipeline/infer.py` |
+| `nm pipeline profile` | 作品画像生成 | `pipeline/work_profile.py` |
 | `nm pipeline report` | 从结构化日志只读重建报告 | `reporting/` + `run_logging/reader.py` |
 | `nm search chapter` | 章节检索 | `search/chapter.py` |
 | `nm search insight` | 深度分析 YAML 检索 | `search/insight.py` |
@@ -520,7 +537,7 @@ refine → artifact audit ─┬─ blocker → failed，不执行 sync
 
 `exact` 模式只执行 4096 维语义精确排序。生产 schema 不启用 ANN；候选实验必须通过 `docs/search-benchmark.md` 的质量门禁。七类公开命令统一返回 `SearchResponse`。LLM 重排默认关闭；人工 Golden Query 基线补齐前，不得宣称混合或重排质量优于精确基线。
 
-第三期计划中的分层世界观、实体关系、`work_profile.yaml` 作品画像、存储适配和检索适配尚未实现。当前第二期只让人物素材结构更完整，并为后续搜索与写作 Agent 提供更可靠的事实输入；不得据此声称人物检索或整体检索质量已经提升。
+分层世界观、实体关系、`work_profile.yaml` 作品画像、存储适配和 `search world` metadata 适配已经接入当前实现。它们让新旧世界观结构可统一读取、同步和检索，并为写作 Agent 提供更完整的作品级入口；但人工 Golden Query 基线尚未补齐，文档、报告和 Agent 仍不得据此声称人物检索、世界观检索或整体检索质量已经提升。
 
 ### Validation 层 (`validation/`)
 
@@ -670,6 +687,9 @@ worldbuilding_entities (
   name TEXT,
   description TEXT,
   description_embedding vector(4096),
+  properties JSONB,
+  first_appearance TEXT,
+  importance TEXT,
   PRIMARY KEY (material_id, entity_type, name)
 )
 

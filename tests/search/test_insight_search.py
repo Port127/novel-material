@@ -34,6 +34,7 @@ def test_search_insights_matches_common_and_genre_fields(tmp_path: Path):
             "result_id": "insight:nm_demo:1",
             "document_type": "insight",
             "material_id": "nm_demo",
+            "entity_id": None,
             "chapter": 1,
             "title": "第1章 开篇",
             "summary": "先压低主角处境，再用戒指线索制造期待。",

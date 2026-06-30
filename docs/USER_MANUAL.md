@@ -113,7 +113,7 @@ nm <模块> <命令> --help
 
 ```text
 ingest analyze insights evaluate outline worldbuilding characters
-tags refine full status continue report
+tags refine profile full status continue report
 ```
 
 ### 4.1 入库与前置导航
@@ -172,13 +172,29 @@ nm pipeline characters nm_xxx
 nm pipeline characters nm_xxx --repair-character 陈汉升
 nm pipeline tags nm_xxx
 nm pipeline refine nm_xxx
+nm pipeline profile nm_xxx
 ```
 
-对应产物包括 `outline/`、`worldbuilding/`、`characters/`、`tags.yaml`，以及 refine 更新的统计和 `key_plot_point`。
+对应产物包括 `outline/`、`worldbuilding/`、`characters/`、`tags.yaml`、`work_profile.yaml`，以及 refine 更新的统计和 `key_plot_point`。
+
+`worldbuilding/` 当前默认写入分层布局：
+
+```text
+worldbuilding/
+├── _index.yaml       # schema、layout、实体/关系/证据计数和兼容状态
+├── overview.yaml     # 世界观概览与运行机制
+├── dimensions.yaml   # applicable / not_applicable / uncertain 维度判定
+├── entities/*.yaml   # 稳定实体 ID、描述、重要性、首次出现和证据
+└── relations.yaml    # 实体关系、演化、证据和置信度
+```
+
+旧素材中的 `power_systems.yaml`、`regions.yaml`、`factions.yaml`、`lore.yaml` 仍可只读适配，不会在读取时自动改写。`not_applicable` 维度表示该题材维度不适用，不属于质量失败。
 
 人物阶段会把自适应选择的主要人物写成完整小传：`profile_level: full` 且 `biography_complete: true`，包含弧线、心理、关键场景、关系和写作借鉴边界。非目标人物写成 `profile_level: brief` 简档，保留基础描述、出场、叙事功能和关系等信息。`characters/_index.yaml` 会记录完整小传目标数、完成数、失败数和目标名单。
 
 `--repair-character` 可重复传入，只重建指定人物 profile 并更新人物索引。该命令会修改目标人物 profile 和 `characters/_index.yaml`，真实素材上执行前应先确认 API 消耗和事实文件变更。
+
+`profile` 阶段生成 `work_profile.yaml`，定位是写作 Agent 的作品级入口，不替代 `chapters.yaml`、`characters/`、`worldbuilding/` 等事实来源。稳定字段包括作品钩子、读者期待、结构节奏、人物动力、世界观驱动、技法启示、证据索引、限制和置信度。它会调用 LLM 并写入事实产物目录；真实素材上独立执行或通过 `full/continue` 自动执行前，需要明确授权。
 
 ### 4.5 完整流水线
 
@@ -257,6 +273,8 @@ nm search insight "主角被压制后反杀" --json
 
 通用参数为 `--mode quality|exact`、`--candidate-limit N`、`--time-budget N`、`--limit N` 和 `--json`。JSON 的 `trace.degraded` 与 `degradation_reasons` 说明 embedding、重排、时间预算或上下文降级。已有数据库先执行 `nm storage migrate`。
 
+`search world` 已兼容新旧世界观。分层实体结果会在 metadata 中返回 `entity_id`、`dimension_ids`、`evidence`、`key_appearances` 和 `relation_summaries`；旧过滤别名仍兼容，例如 `organization` 与 `factions`、`location`/`region` 与 `regions` 可匹配同类结果。
+
 ### 5.2 当前已知限制
 
 - 4096 维向量保持精确排序，生产环境没有 ANN 索引。
@@ -304,6 +322,8 @@ nm storage sync [material_id] [--provider NAME] [--window]
 
 `sync` 不传素材 ID 时同步全部素材。注意：同步预检发现短摘要、缺章或 schema 错误时，可能调用 LLM 自动修复并修改 YAML，同时产生 API 消耗。
 
+世界观同步通过统一读取器读取新旧布局。layered 实体会写入 `worldbuilding_entities.properties`，保留稳定实体 ID、适用维度、证据、关键出场和关系摘要；这是结构适配，不代表检索相关率或排序质量已经提升。
+
 ## 9. Validate 校验
 
 ```bash
@@ -342,6 +362,7 @@ nm pipeline characters nm_xxx
 nm pipeline tags nm_xxx
 nm pipeline insights nm_xxx
 nm pipeline refine nm_xxx
+nm pipeline profile nm_xxx
 nm validate validate nm_xxx
 nm storage sync nm_xxx
 ```
@@ -430,6 +451,7 @@ nm pipeline characters <id>
 nm pipeline characters <id> --repair-character <name>
 nm pipeline tags <id>
 nm pipeline refine <id>
+nm pipeline profile <id>
 nm pipeline full <file> --mode standard
 nm pipeline status <id>
 nm pipeline continue <id>
