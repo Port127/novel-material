@@ -97,6 +97,15 @@ def render_markdown(report: PipelineRunReport) -> str:
                 f"简档 {quality.character_quality.brief_profile_count}"
             ),
             (
+                "- 世界观："
+                f"{quality.worldbuilding_quality.layout or 'unknown'}，"
+                f"实体 {quality.worldbuilding_quality.entity_count}，"
+                f"关系 {quality.worldbuilding_quality.relation_count}，"
+                f"证据 {quality.worldbuilding_quality.evidence_count}，"
+                f"断裂关系 {quality.worldbuilding_quality.broken_relation_count}，"
+                f"缺证实体 {quality.worldbuilding_quality.missing_evidence_count}"
+            ),
+            (
                 "- 复审预算："
                 f"模式 {quality.review_budget.mode}，"
                 f"调用 {quality.review_budget.calls_used}/"

@@ -17,6 +17,7 @@ from novel_material.reporting.models import (
     RuntimeMetrics,
     SeverityCounts,
     StageReport,
+    WorldbuildingQualityReport,
 )
 from novel_material.runtime.contracts import RunStatus
 from novel_material.runtime.testing import event
@@ -57,6 +58,14 @@ def sample_report() -> PipelineRunReport:
                 biography_completed_count=4,
                 brief_profile_count=3,
                 biography_failed_count=1,
+            ),
+            worldbuilding_quality=WorldbuildingQualityReport(
+                layout="layered",
+                entity_count=8,
+                relation_count=6,
+                evidence_count=21,
+                broken_relation_count=1,
+                missing_evidence_count=2,
             ),
             summary=SeverityCounts(
                 error=1,
@@ -112,6 +121,9 @@ def sample_events(sample_report: PipelineRunReport):
         material_id=sample_report.material_id,
         checks=sample_report.artifact_quality.checks,
         issues=sample_report.artifact_quality.issues,
+        worldbuilding_quality=sample_report.artifact_quality.worldbuilding_quality.model_dump(
+            mode="json"
+        ),
         review_budget=sample_report.artifact_quality.review_budget,
     )
     return [

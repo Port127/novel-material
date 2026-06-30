@@ -19,6 +19,14 @@ def audit_payload() -> dict:
             "brief_profile_count": 3,
             "biography_failed_count": 1,
         },
+        "worldbuilding_quality": {
+            "layout": "layered",
+            "entity_count": 8,
+            "relation_count": 6,
+            "evidence_count": 21,
+            "broken_relation_count": 1,
+            "missing_evidence_count": 2,
+        },
         "issues": [
             {
                 "code": "character_profile_fallback",
@@ -118,6 +126,12 @@ def test_builder_combines_runtime_and_artifact_quality() -> None:
     assert report.artifact_quality.character_quality.biography_completed_count == 4
     assert report.artifact_quality.character_quality.brief_profile_count == 3
     assert report.artifact_quality.character_quality.biography_failed_count == 1
+    assert report.artifact_quality.worldbuilding_quality.layout == "layered"
+    assert report.artifact_quality.worldbuilding_quality.entity_count == 8
+    assert report.artifact_quality.worldbuilding_quality.relation_count == 6
+    assert report.artifact_quality.worldbuilding_quality.evidence_count == 21
+    assert report.artifact_quality.worldbuilding_quality.broken_relation_count == 1
+    assert report.artifact_quality.worldbuilding_quality.missing_evidence_count == 2
     assert report.next_actions == (
         "nm pipeline characters nm_demo --repair-character 主角",
     )

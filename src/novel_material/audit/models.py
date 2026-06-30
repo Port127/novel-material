@@ -68,6 +68,19 @@ class CharacterQualitySummary(BaseModel):
     biography_failed_count: int = Field(default=0, ge=0)
 
 
+class WorldbuildingQualitySummary(BaseModel):
+    """世界观结构质量信号，供审计事件和运行报告复用。"""
+
+    model_config = ConfigDict(frozen=True)
+
+    layout: str | None = None
+    entity_count: int = Field(default=0, ge=0)
+    relation_count: int = Field(default=0, ge=0)
+    evidence_count: int = Field(default=0, ge=0)
+    broken_relation_count: int = Field(default=0, ge=0)
+    missing_evidence_count: int = Field(default=0, ge=0)
+
+
 class ArtifactAudit(BaseModel):
     """一部素材的完整产物审计结论。"""
 
@@ -79,6 +92,9 @@ class ArtifactAudit(BaseModel):
     issues: tuple[ArtifactIssue, ...] = ()
     character_quality: CharacterQualitySummary = Field(
         default_factory=CharacterQualitySummary
+    )
+    worldbuilding_quality: WorldbuildingQualitySummary = Field(
+        default_factory=WorldbuildingQualitySummary
     )
     review_budget: ReviewBudgetUsage = Field(default_factory=ReviewBudgetUsage)
 
@@ -112,5 +128,6 @@ __all__ = [
     "CharacterQualitySummary",
     "ReviewBudgetUsage",
     "ReviewState",
+    "WorldbuildingQualitySummary",
     "audit_run_status",
 ]

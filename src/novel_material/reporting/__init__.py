@@ -9,6 +9,7 @@ from .models import (
     RuntimeMetrics,
     SeverityCounts,
     StageReport,
+    WorldbuildingQualityReport,
 )
 from .sink import ReportSink
 from .writer import (
@@ -33,6 +34,7 @@ __all__ = [
     "RuntimeMetrics",
     "SeverityCounts",
     "StageReport",
+    "WorldbuildingQualityReport",
     "build_run_report",
     "render_markdown",
 ]

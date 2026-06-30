@@ -131,6 +131,88 @@ def test_audit_service_summarizes_character_biography_quality(
     }
 
 
+def test_audit_service_summarizes_layered_worldbuilding_quality(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    novel = tmp_path / "nm_demo"
+    write_yaml(
+        novel / "worldbuilding/_index.yaml",
+        {
+            "layout": "layered",
+            "llm_success": True,
+            "entity_count": 2,
+            "relation_count": 1,
+            "evidence_count": 1,
+        },
+    )
+    write_yaml(
+        novel / "worldbuilding/entities/a.yaml",
+        {
+            "id": "a",
+            "type": "organization",
+            "name": "甲组织",
+            "importance": "primary",
+            "evidence": [{"chapter": 1, "summary": "登场"}],
+        },
+    )
+    write_yaml(
+        novel / "worldbuilding/entities/b.yaml",
+        {
+            "id": "b",
+            "type": "organization",
+            "name": "乙组织",
+            "importance": "primary",
+            "evidence": [],
+        },
+    )
+    write_yaml(
+        novel / "worldbuilding/relations.yaml",
+        {
+            "relations": [
+                {
+                    "id": "rel_1",
+                    "source_id": "a",
+                    "target_id": "missing",
+                    "relation_type": "conflicts_with",
+                }
+            ]
+        },
+    )
+    monkeypatch.setattr(
+        "novel_material.audit.service.RULES",
+        (
+            (
+                "worldbuilding",
+                lambda _context: (
+                    issue(
+                        "worldbuilding_entity_missing_evidence",
+                        AuditSeverity.WARNING,
+                        artifact="worldbuilding/entities/b.yaml",
+                    ),
+                    issue(
+                        "worldbuilding_relation_unknown_entity",
+                        AuditSeverity.ERROR,
+                        artifact="worldbuilding/relations.yaml",
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    audit = audit_material("nm_demo", novels_dir=tmp_path)
+    payload = audit.model_dump(mode="json")
+
+    assert payload["worldbuilding_quality"] == {
+        "layout": "layered",
+        "entity_count": 2,
+        "relation_count": 1,
+        "evidence_count": 1,
+        "broken_relation_count": 1,
+        "missing_evidence_count": 1,
+    }
+
+
 def test_audit_error_maps_to_degraded_stage(
     tmp_path: Path,
     monkeypatch,

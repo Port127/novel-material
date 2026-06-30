@@ -8,6 +8,7 @@ from pathlib import Path
 from novel_material.runtime.context import current_context, new_id
 from novel_material.runtime.contracts import Diagnostic, ProgressCounts, StageResult
 from novel_material.infra.yaml_io import load_yaml
+from novel_material.worldbuilding.reader import load_worldbuilding_view
 
 from .budget import ReviewBudget
 from .models import (
@@ -17,6 +18,7 @@ from .models import (
     CharacterQualitySummary,
     ReviewBudgetUsage,
     ReviewState,
+    WorldbuildingQualitySummary,
     audit_run_status,
 )
 from .reviewer import ArtifactReviewer
@@ -69,6 +71,7 @@ def audit_material(
         checks=tuple(checks),
         issues=issues,
         character_quality=_summarize_character_quality(context),
+        worldbuilding_quality=_summarize_worldbuilding_quality(context, issues),
         review_budget=review_usage,
     )
 
@@ -127,6 +130,57 @@ def _summarize_character_quality(context: AuditContext) -> CharacterQualitySumma
         ),
         biography_failed_count=_non_negative_int(index.get("biography_failed_count")),
     )
+
+
+def _summarize_worldbuilding_quality(
+    context: AuditContext,
+    issues: tuple[ArtifactIssue, ...],
+) -> WorldbuildingQualitySummary:
+    index_path = context.novel_dir / "worldbuilding" / "_index.yaml"
+    if not index_path.is_file():
+        return WorldbuildingQualitySummary()
+
+    try:
+        view = load_worldbuilding_view(context.novel_dir)
+    except Exception:
+        index = load_yaml(index_path)
+        return WorldbuildingQualitySummary(
+            layout=str(index.get("layout")) if index.get("layout") else None,
+            entity_count=_non_negative_int(index.get("entity_count")),
+            relation_count=_non_negative_int(
+                index.get("relation_count", index.get("relationship_count"))
+            ),
+            evidence_count=_non_negative_int(index.get("evidence_count")),
+            broken_relation_count=_count_issues(
+                issues, "worldbuilding_relation_unknown_entity"
+            ),
+            missing_evidence_count=_count_issues(
+                issues, "worldbuilding_entity_missing_evidence"
+            ),
+        )
+
+    return WorldbuildingQualitySummary(
+        layout=view.layout,
+        entity_count=_non_negative_int(
+            view.index.entity_count,
+            fallback=len(view.entities),
+        ),
+        relation_count=_non_negative_int(
+            view.index.relation_count,
+            fallback=len(view.relations),
+        ),
+        evidence_count=_non_negative_int(view.index.evidence_count),
+        broken_relation_count=_count_issues(
+            issues, "worldbuilding_relation_unknown_entity"
+        ),
+        missing_evidence_count=_count_issues(
+            issues, "worldbuilding_entity_missing_evidence"
+        ),
+    )
+
+
+def _count_issues(issues: tuple[ArtifactIssue, ...], code: str) -> int:
+    return sum(1 for issue in issues if issue.code == code)
 
 
 def _non_negative_int(value: object, *, fallback: int = 0) -> int:

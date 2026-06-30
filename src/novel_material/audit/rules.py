@@ -9,6 +9,7 @@ from pathlib import Path
 
 from novel_material.infra.common import is_special_chapter_type
 from novel_material.infra.yaml_io import load_yaml, load_yaml_list
+from novel_material.worldbuilding.reader import load_worldbuilding_view
 
 from .models import ArtifactIssue, AuditSeverity, ReviewState
 
@@ -231,12 +232,16 @@ def _profile_has_completed_biography(profile: dict | None) -> bool:
 
 
 def check_worldbuilding(context: AuditContext) -> Iterable[ArtifactIssue]:
-    """检查旧世界观索引中的空结构和证据能力缺口。"""
+    """检查世界观索引中的空结构、证据能力缺口和 layered 引用完整性。"""
     index_path = context.novel_dir / "worldbuilding" / "_index.yaml"
     if not index_path.is_file():
         return
 
     index = load_yaml(index_path)
+    if index.get("layout") == "layered":
+        yield from _check_layered_worldbuilding(context)
+        return
+
     count_fields = (
         "power_system_levels",
         "region_count",
@@ -269,6 +274,68 @@ def check_worldbuilding(context: AuditContext) -> Iterable[ArtifactIssue]:
             "旧版世界观结构不包含实体关系与章节证据统计",
             evidence={"legacy_fields": list(count_fields)},
             reviewable=True,
+        )
+
+
+def _check_layered_worldbuilding(context: AuditContext) -> Iterable[ArtifactIssue]:
+    view = load_worldbuilding_view(context.novel_dir)
+    applicable_dimensions = [
+        item.id for item in view.dimensions if item.applicability == "applicable"
+    ]
+    has_driving_mechanisms = bool(
+        view.overview is not None and view.overview.driving_mechanisms
+    )
+    if applicable_dimensions and not view.entities and not has_driving_mechanisms:
+        yield _issue(
+            "worldbuilding_empty_applicable_dimension",
+            AuditSeverity.WARNING,
+            "worldbuilding/dimensions.yaml",
+            "世界观存在适用维度，但缺少实体或运行机制支撑",
+            evidence={
+                "applicable_dimensions": applicable_dimensions,
+                "entity_count": len(view.entities),
+                "has_driving_mechanisms": has_driving_mechanisms,
+            },
+            next_actions=(f"nm pipeline worldbuilding {context.material_id}",),
+        )
+
+    for entity in view.entities:
+        if entity.importance != "primary" or entity.evidence:
+            continue
+        yield _issue(
+            "worldbuilding_entity_missing_evidence",
+            AuditSeverity.WARNING,
+            f"worldbuilding/entities/{entity.id}.yaml",
+            "主要世界观实体缺少章节证据",
+            evidence={
+                "entity_id": entity.id,
+                "name": entity.name,
+                "type": entity.type,
+            },
+            next_actions=(f"nm pipeline worldbuilding {context.material_id}",),
+        )
+
+    entity_ids = {item.id for item in view.entities}
+    for relation in view.relations:
+        unknown_ids = [
+            entity_id
+            for entity_id in (relation.source_id, relation.target_id)
+            if entity_id not in entity_ids
+        ]
+        if not unknown_ids:
+            continue
+        yield _issue(
+            "worldbuilding_relation_unknown_entity",
+            AuditSeverity.ERROR,
+            "worldbuilding/relations.yaml",
+            "世界观关系引用了不存在的实体",
+            evidence={
+                "relation_id": relation.id,
+                "source_id": relation.source_id,
+                "target_id": relation.target_id,
+                "unknown_entity_ids": unknown_ids,
+            },
+            next_actions=(f"nm pipeline worldbuilding {context.material_id}",),
         )
 
 

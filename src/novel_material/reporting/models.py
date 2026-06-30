@@ -61,6 +61,19 @@ class CharacterQualityReport(BaseModel):
     biography_failed_count: int = Field(default=0, ge=0)
 
 
+class WorldbuildingQualityReport(BaseModel):
+    """世界观结构质量汇总，不包含世界观正文。"""
+
+    model_config = ConfigDict(frozen=True)
+
+    layout: str | None = None
+    entity_count: int = Field(default=0, ge=0)
+    relation_count: int = Field(default=0, ge=0)
+    evidence_count: int = Field(default=0, ge=0)
+    broken_relation_count: int = Field(default=0, ge=0)
+    missing_evidence_count: int = Field(default=0, ge=0)
+
+
 class ArtifactQualityReport(BaseModel):
     """产物审计结论及其复审预算使用情况。"""
 
@@ -69,6 +82,9 @@ class ArtifactQualityReport(BaseModel):
     checks: tuple[str, ...] = ()
     character_quality: CharacterQualityReport = Field(
         default_factory=CharacterQualityReport
+    )
+    worldbuilding_quality: WorldbuildingQualityReport = Field(
+        default_factory=WorldbuildingQualityReport
     )
     summary: SeverityCounts = Field(default_factory=SeverityCounts)
     issues: tuple[ArtifactIssue, ...] = ()
@@ -115,4 +131,5 @@ __all__ = [
     "RuntimeMetrics",
     "SeverityCounts",
     "StageReport",
+    "WorldbuildingQualityReport",
 ]

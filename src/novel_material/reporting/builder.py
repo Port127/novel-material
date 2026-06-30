@@ -20,6 +20,7 @@ from .models import (
     RuntimeMetrics,
     SeverityCounts,
     StageReport,
+    WorldbuildingQualityReport,
 )
 
 
@@ -204,10 +205,16 @@ def _artifact_quality(
     character_quality_payload = (
         payload.get("character_quality") if isinstance(payload, Mapping) else None
     )
+    worldbuilding_quality_payload = (
+        payload.get("worldbuilding_quality") if isinstance(payload, Mapping) else None
+    )
     return ArtifactQualityReport(
         checks=audit.checks,
         character_quality=CharacterQualityReport.model_validate(
             character_quality_payload or {}
+        ),
+        worldbuilding_quality=WorldbuildingQualityReport.model_validate(
+            worldbuilding_quality_payload or {}
         ),
         summary=SeverityCounts.model_validate(audit.summary),
         issues=audit.issues,

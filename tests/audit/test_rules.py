@@ -253,6 +253,120 @@ def test_zero_power_levels_alone_does_not_mark_worldbuilding_empty(
     assert "worldbuilding_empty" not in {item.code for item in issues}
 
 
+def test_layered_worldbuilding_reports_missing_evidence_and_broken_relation(
+    tmp_path: Path,
+) -> None:
+    novel = tmp_path / "nm_demo"
+    write_core_files(novel)
+    write_yaml(
+        novel / "worldbuilding/_index.yaml",
+        {
+            "layout": "layered",
+            "llm_success": True,
+            "dimension_count": 1,
+            "entity_count": 1,
+            "relation_count": 1,
+            "evidence_count": 0,
+        },
+    )
+    write_yaml(
+        novel / "worldbuilding/dimensions.yaml",
+        {
+            "dimensions": [
+                {
+                    "id": "organization_network",
+                    "applicability": "applicable",
+                }
+            ]
+        },
+    )
+    write_yaml(
+        novel / "worldbuilding/entities/organization_a.yaml",
+        {
+            "id": "organization_a",
+            "type": "organization",
+            "name": "甲组织",
+            "importance": "primary",
+            "evidence": [],
+        },
+    )
+    write_yaml(
+        novel / "worldbuilding/relations.yaml",
+        {
+            "relations": [
+                {
+                    "id": "rel_1",
+                    "source_id": "organization_a",
+                    "target_id": "missing_entity",
+                    "relation_type": "conflicts_with",
+                }
+            ]
+        },
+    )
+
+    issues = run_deterministic_rules(AuditContext("nm_demo", novel))
+    by_code = {item.code: item for item in issues}
+
+    assert by_code["worldbuilding_entity_missing_evidence"].severity is (
+        AuditSeverity.WARNING
+    )
+    assert by_code["worldbuilding_entity_missing_evidence"].artifact == (
+        "worldbuilding/entities/organization_a.yaml"
+    )
+    assert by_code["worldbuilding_relation_unknown_entity"].severity is (
+        AuditSeverity.ERROR
+    )
+    assert by_code["worldbuilding_relation_unknown_entity"].evidence == {
+        "relation_id": "rel_1",
+        "source_id": "organization_a",
+        "target_id": "missing_entity",
+        "unknown_entity_ids": ["missing_entity"],
+    }
+
+
+def test_layered_worldbuilding_reports_empty_applicable_dimension(
+    tmp_path: Path,
+) -> None:
+    novel = tmp_path / "nm_demo"
+    write_core_files(novel)
+    write_yaml(
+        novel / "worldbuilding/_index.yaml",
+        {
+            "layout": "layered",
+            "llm_success": True,
+            "dimension_count": 1,
+            "entity_count": 0,
+            "relation_count": 0,
+            "evidence_count": 0,
+        },
+    )
+    write_yaml(
+        novel / "worldbuilding/dimensions.yaml",
+        {
+            "dimensions": [
+                {
+                    "id": "cultivation_levels",
+                    "applicability": "applicable",
+                }
+            ]
+        },
+    )
+
+    issues = run_deterministic_rules(AuditContext("nm_demo", novel))
+
+    empty_dimension = next(
+        item
+        for item in issues
+        if item.code == "worldbuilding_empty_applicable_dimension"
+    )
+    assert empty_dimension.severity is AuditSeverity.WARNING
+    assert empty_dimension.evidence == {
+        "applicable_dimensions": ["cultivation_levels"],
+        "entity_count": 0,
+        "has_driving_mechanisms": False,
+    }
+
+
 def test_finalized_material_reports_each_missing_stage_entry_file(
     tmp_path: Path,
 ) -> None:
