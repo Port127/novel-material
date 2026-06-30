@@ -1,5 +1,7 @@
 """Pipeline 子命令：数据处理流水线。"""
 import sys
+import re
+from pathlib import Path
 from types import SimpleNamespace
 
 import typer
@@ -7,9 +9,9 @@ from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn, TimeRemainingColumn
 from rich.table import Table
 
-from novel_material.infra.config import NOVELS_DIR
+from novel_material.infra.config import NOVELS_DIR, INDEX_FILE
 from novel_material.infra.logging_config import ensure_log_dir
-from novel_material.infra.yaml_io import load_yaml_list
+from novel_material.infra.yaml_io import load_yaml, load_yaml_list
 from novel_material.infra.progress import silent_console, get_pipeline_logger
 from novel_material.pipeline import (
     ingest_file,
@@ -73,6 +75,79 @@ app = typer.Typer(help="数据处理流水线")
 console = Console()
 logger = get_pipeline_logger()
 _PIPELINE_SEPARATOR = "=" * 60
+
+
+def _stdin_is_interactive() -> bool:
+    return bool(getattr(sys.stdin, "isatty", lambda: False)())
+
+
+def _candidate_duplicate_names(file_path: str) -> set[str]:
+    stem = Path(file_path).stem.strip()
+    names = {stem} if stem else set()
+    stripped = re.sub(r"^\d+[_\-、.\s]+", "", stem).strip()
+    if stripped:
+        names.add(stripped)
+    return names
+
+
+def _find_duplicate_materials(file_path: str) -> list[dict[str, str]]:
+    names = _candidate_duplicate_names(file_path)
+    if not names:
+        return []
+
+    duplicates: dict[str, dict[str, str]] = {}
+    if INDEX_FILE.exists():
+        index = load_yaml(INDEX_FILE)
+        if isinstance(index, dict):
+            for material_id, item in index.items():
+                if not isinstance(item, dict) or item.get("name") not in names:
+                    continue
+                duplicates[str(material_id)] = {
+                    "material_id": str(material_id),
+                    "name": str(item.get("name", "")),
+                    "status": str(item.get("status", "")),
+                    "path": str(item.get("path", "")),
+                }
+
+    if NOVELS_DIR.exists():
+        for meta_file in NOVELS_DIR.glob("*/meta.yaml"):
+            meta = load_yaml(meta_file)
+            if not isinstance(meta, dict) or meta.get("name") not in names:
+                continue
+            material_id = str(meta.get("material_id") or meta_file.parent.name)
+            duplicates.setdefault(
+                material_id,
+                {
+                    "material_id": material_id,
+                    "name": str(meta.get("name", "")),
+                    "status": str(meta.get("status", "")),
+                    "path": str(meta_file.parent),
+                },
+            )
+    return list(duplicates.values())
+
+
+def _confirm_duplicate_full(file_path: str) -> bool:
+    duplicates = _find_duplicate_materials(file_path)
+    if not duplicates:
+        return True
+
+    console.print("[yellow]同名小说已存在：[/yellow]")
+    for item in duplicates:
+        status = item["status"] or "未知"
+        console.print(
+            f"- [cyan]{item['name']}[/cyan] "
+            f"({item['material_id']}, 状态: {status})"
+        )
+
+    if not _stdin_is_interactive():
+        console.print("[yellow]当前环境不可交互，已选择不分析。[/yellow]")
+        return False
+
+    should_reanalyze = typer.confirm("是否重新分析并创建新的素材记录？", default=False)
+    if not should_reanalyze:
+        console.print("[yellow]已选择不分析。[/yellow]")
+    return should_reanalyze
 
 
 @app.command("ingest")
@@ -1059,6 +1134,8 @@ def cmd_full(
         raise typer.BadParameter("--end 必须大于等于 --start")
     if use_navigation and skip_navigation:
         raise typer.BadParameter("--navigation 与 --skip-navigation 不能同时使用")
+    if not _confirm_duplicate_full(file_path):
+        return
     try:
         runtimes: list[PipelineRuntime] = []
         result = run_full_pipeline(

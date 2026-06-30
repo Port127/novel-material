@@ -171,6 +171,42 @@ def test_full_uses_run_result_exit_code(monkeypatch):
     assert "流水线失败" in result.stderr
 
 
+def test_full_duplicate_name_decline_skips_pipeline(tmp_path, monkeypatch):
+    from novel_material.cli import pipeline as pipeline_cli
+    from novel_material.infra.yaml_io import save_yaml
+
+    index_file = tmp_path / "index.yaml"
+    save_yaml(
+        index_file,
+        {
+            "nm_novel_20260630_abcd": {
+                "name": "大道争锋",
+                "status": "finalized",
+                "path": "data/novels/nm_novel_20260630_abcd",
+            }
+        },
+    )
+    novel_file = tmp_path / "0016_大道争锋.txt"
+    novel_file.write_text("第一章 开始\n正文", encoding="utf-8")
+
+    def fail_full(**_kwargs):
+        raise AssertionError("同名小说选择不分析时不应启动完整流水线")
+
+    monkeypatch.setattr(pipeline_cli, "INDEX_FILE", index_file, raising=False)
+    monkeypatch.setattr(pipeline_cli, "_stdin_is_interactive", lambda: True, raising=False)
+    monkeypatch.setattr(pipeline_cli, "run_full_pipeline", fail_full)
+
+    result = runner.invoke(
+        app,
+        ["pipeline", "full", str(novel_file), "--mode", "standard"],
+        input="n\n",
+    )
+
+    assert result.exit_code == 0
+    assert "同名小说已存在" in result.stdout
+    assert "已选择不分析" in result.stdout
+
+
 def test_full_registers_terminal_progress_sink_for_tty(monkeypatch):
     captured = {}
 
