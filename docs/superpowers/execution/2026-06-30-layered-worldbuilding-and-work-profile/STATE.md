@@ -4,15 +4,21 @@
 feature: layered-worldbuilding-and-work-profile
 phase: 3
 status: ready
-current_packet: task-10-search-world-metadata.md
-last_completed_packet: task-09-storage-embedding-sync.md
-last_good_commit: ccb35f5
+current_packet: task-11-docs-final-verification.md
+last_completed_packet: task-10-search-world-metadata.md
+last_good_commit: 07fc7bb
 worktree: current_main_user_approved
 blocking_issue: null
 ```
 
 ## 最近验证
 
+- `python -m pytest tests/search/test_retrievers.py tests/search/test_contracts.py tests/cli/test_command_contracts.py tests/storage/test_search_tokens_sync.py -v`：61 passed。
+- `python -m novel_material.cli.main search world --help`：通过。
+- `python -m compileall -q src/novel_material/search src/novel_material/cli src/novel_material/storage`：通过。
+- `git diff --check -- . ':(exclude)docs/feedback.md'`：通过。
+- `git diff --cached --check`：通过。
+- Packet 10 代码提交：`07fc7bb`。
 - `python -m pytest tests/storage/test_search_tokens_sync.py tests/storage/test_worldbuilding_embedding.py -v`：13 passed。
 - `python -m compileall -q src/novel_material/storage src/novel_material/worldbuilding`：通过。
 - `git diff --check -- . ':(exclude)docs/feedback.md'`：通过。
