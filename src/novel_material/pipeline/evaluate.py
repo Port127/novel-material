@@ -414,30 +414,54 @@ def evaluate_batch(
 6. worldbuilding_dimensions：列出后续世界观阶段应分析的维度
 7. analysis_focus：列出后续分析应关注的重点"""
 
-    # 调用 LLM
+    # 调用 LLM（含 contract 校验重试）
     tracker.start_spinner(f"批次{batch_num}评估")
-    telemetry = start_llm_telemetry()
+    max_attempts = 3
+    last_contract_error: LLMResponseContractError | None = None
 
-    try:
-        result = normalize_evaluation_response(call_llm(
-            _SYSTEM_PROMPT,
-            user_prompt,
-            config,
-            max_tokens_override=config["llm"].get("evaluation_max_tokens", 3000),
-            timeout_override=config["llm"].get("other_timeout", 120),
-            context=f"{material_id} 批次#{batch_num}",
-        ))
-        tracker.record_api_call(success=True)
+    for attempt in range(1, max_attempts + 1):
+        telemetry = start_llm_telemetry()
+        try:
+            raw_result = call_llm(
+                _SYSTEM_PROMPT,
+                user_prompt,
+                config,
+                max_tokens_override=config["llm"].get("evaluation_max_tokens", 3000),
+                timeout_override=config["llm"].get("other_timeout", 120),
+                context=f"{material_id} 批次#{batch_num}",
+            )
+            result = normalize_evaluation_response(raw_result)
+            tracker.record_api_call(success=True)
 
-        # 记录 tokens
-        in_tokens = telemetry.last.get("input_tokens", 0)
-        out_tokens = telemetry.last.get("output_tokens", 0)
-        tracker.record_tokens(in_tokens, out_tokens)
+            # 记录 tokens
+            in_tokens = telemetry.last.get("input_tokens", 0)
+            out_tokens = telemetry.last.get("output_tokens", 0)
+            tracker.record_tokens(in_tokens, out_tokens)
 
-    except Exception as e:
-        tracker.record_api_call(success=False)
-        tracker.stop_spinner()
-        raise e
+            if attempt > 1:
+                logger.info(f"[{material_id}] 批次#{batch_num} 第{attempt}次尝试成功")
+            break
+
+        except LLMResponseContractError as e:
+            last_contract_error = e
+            if attempt < max_attempts:
+                logger.warning(
+                    f"[{material_id}] 批次#{batch_num} 第{attempt}次尝试 schema 校验失败: {e}，"
+                    f"将进行第{attempt + 1}次尝试"
+                )
+                # 重试前停止 spinner 并短暂等待
+                tracker.stop_spinner()
+                time.sleep(2)
+                tracker.start_spinner(f"批次{batch_num}评估(重试{attempt + 1}/{max_attempts})")
+            else:
+                tracker.record_api_call(success=False)
+                tracker.stop_spinner()
+                raise last_contract_error
+
+        except Exception as e:
+            tracker.record_api_call(success=False)
+            tracker.stop_spinner()
+            raise e
 
     tracker.stop_spinner()
 
