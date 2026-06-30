@@ -4,15 +4,21 @@
 feature: layered-worldbuilding-and-work-profile
 phase: 3
 status: ready
-current_packet: task-08-profile-stage-cli.md
-last_completed_packet: task-07-work-profile-contract.md
-last_good_commit: 9724ad6
+current_packet: task-09-storage-embedding-sync.md
+last_completed_packet: task-08-profile-stage-cli.md
+last_good_commit: b93e1b3
 worktree: current_main_user_approved
 blocking_issue: null
 ```
 
 ## 最近验证
 
+- `python -m pytest tests/pipeline/test_work_profile_stage.py tests/pipeline/test_orchestrator.py tests/cli/test_pipeline_contract.py tests/cli/test_command_contracts.py tests/cli/test_pipeline_common.py -v`：76 passed。
+- `python -m novel_material.cli.main pipeline profile --help`：通过。
+- `python -m compileall -q src/novel_material/pipeline src/novel_material/cli`：通过。
+- `git diff --check -- . ':(exclude)docs/feedback.md'`：通过。
+- `git diff --cached --check`：通过。
+- Packet 8 代码提交：`b93e1b3`。
 - `python -m pytest tests/pipeline/test_work_profile_contract.py -v`：3 passed。
 - `python -m compileall -q src/novel_material/pipeline`：通过。
 - `git diff --check -- . ':(exclude)docs/feedback.md'`：通过。
@@ -59,9 +65,9 @@ blocking_issue: null
 
 ## 当前开始动作
 
-1. 打开 `task-08-profile-stage-cli.md`。
+1. 打开 `task-09-storage-embedding-sync.md`。
 2. 确认工作区除用户 `docs/feedback.md` 外没有未知修改。
-3. 按 packet 内 TDD 步骤实现 `profile` 阶段与 CLI/orchestrator/status/continue 接入。
+3. 按 packet 内 TDD 步骤实现 storage/embedding 对 layered 与 legacy 世界观的统一读取兼容。
 
 ## 每次结束必须更新
 
