@@ -9,7 +9,29 @@
 - ~~novels/chapter_insights 是什么文件，干什么的，我看到了日志一直在insights，你不会要精调所有的章节吧？那我一本小说要分析3天？~~
   ~~我运行的是nm pipleline full，我觉得精调只进行开头的80或者100章就够了~~
   ~~还有这个精调的部分是怎么用的？~~
-- 看看pipeline_2026-06-29_23-07-24_98630.log，为什么批次2、4、5都失败了，是不是token不够用？
+- ~~看看pipeline_2026-06-29_23-07-24_98630.log，为什么批次2、4、5都失败了，是不是token不够用？~~
+- 很好，现在满屏的：
+···
+⠙ 阶段 1/12: 前置导航 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   0% 0:07:32 -:--:--阶段完成: 总体评估 | elapsed=451.8s | tokens_in=27523 tokens_out=20834 | api_calls=5
+    API: 5 次调用 | 0 错误 (0.0%) | 健康
+⠙ 阶段 1/12: 前置导航 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   0% 0:07:32 -:--:--    API 健康状态: 5 调用, 0 错误, 健康
+[nm_novel_20260630_0kjq] 评估完成，已写入: /Users/kiki/Documents/Project/my-github/novel/novel-material/data/novels/nm_novel_20260630_0kjq/evaluation.yaml
+⠸ 阶段 2/12: 章级分析 ━━━╺━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   8% 0:07:32 -:--:--[nm_novel_20260630_0kjq] 小说: 0025_一念永恒 | 1314 章 | 3693274 字 | 状态: evaluated
+⠴ 阶段 2/12: 章级分析 ━━━╺━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   8% 0:07:32 -:--:--[nm_novel_20260630_0kjq] 待分析: 1314 章，批量大小: 10，共 132 批次
+=== 流水线启动: 章级分析 (132 个阶段) ===
+  小说: 0025_一念永恒 | 1314 章 | 3693274 字
+[nm_novel_20260630_0kjq] [批次 1/132] 第 1-10 章 | 进度 0/1314 (0.0%)
+⠏ 阶段 2/12: 章级分析 ━━━╺━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   8% 0:09:43 -:--:--[nm_novel_20260630_0kjq] 批次#1-10 API: 130.8s | model=qwen3.7-plus | max_tokens=15000 | thinking=enabled budget=12000 | temp=None | in=21285 out=7107 total=28392 | thinking_tokens=4302 | finish=stop | context=nm_novel_20260630_0kjq 批次#1-10 | req=chatcmpl-63b...
+[nm_novel_20260630_0kjq] 批量解析成功 | chapters=10 | keys=['chapter', 'summary', 'characters_appear', 'chapter_functions', 'tension_level']
+[nm_novel_20260630_0kjq] 批次#1-10 完成: 返回 10/10 章 | 摘要=53字 | 张力=2-5 | API 130.8s | 解析 0.00s
+[nm_novel_20260630_0kjq] [批次 1/132] 完成: 130.8s | 返回 10/10 章 | 降级 0 次 | 错误 0 次 | finish=stop
+⠴ 阶段 2/12: 章级分析 ━━━╺━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   8% 0:09:53 -:--:--[nm_novel_20260630_0kjq] [批次 2/132] 第 11-20 章 | 进度 10/1314 (0.8%)
+⠧ 阶段 2/12: 章级分析 ━━━╺━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   8% 0:11:58 -:--:--[nm_novel_20260630_0kjq] 批次#11-20 API: 125.0s | model=qwen3.7-plus | max_tokens=15000 | thinking=enabled budget=12000 | temp=None | in=21243 out=6572 total=27815 | thinking_tokens=3880 | finish=stop | context=nm_novel_20260630_0kjq 批次#11-20 | req=chatcmpl-5c5...
+[nm_novel_20260630_0kjq] 批量解析成功 | chapters=10 | keys=['chapter', 'summary', 'characters_appear', 'chapter_functions', 'tension_level']
+[nm_novel_20260630_0kjq] 批次#11-20 完成: 返回 10/10 章 | 摘要=71字 | 张力=2-4 | API 125.0s | 解析 0.00s
+[nm_novel_20260630_0kjq] [批次 2/132] 完成: 125.0s | 返回 10/10 章 | 降级 0 次 | 错误 0 次 | finish=stop
+···
+你还是改回日志算了
 
 # 阶段行优化
 - ~~结束了以后，是不是可以分析一下运行情况，然后输出一份报告？~~

@@ -209,3 +209,53 @@ def test_terminal_event_sink_renders_stage_progress_in_plain_mode():
     output = terminal.stderr_text
     assert "阶段 1/3: 章级分析 | 0/3" in output
     assert "阶段 1/3: 章级分析 | 1/3" in output
+
+
+def test_terminal_event_sink_uses_log_lines_in_tty_mode():
+    terminal = RecordingTerminal()
+    reporter = TerminalReporter(terminal, mode=TerminalMode.TTY, no_color=True)
+    sink = TerminalEventSink(reporter)
+
+    sink.emit(
+        event(
+            "RunStarted",
+            run_id="run-test",
+            command="pipeline full",
+            material_id="nm_demo",
+            attributes={"expected_stages": 2},
+        )
+    )
+    sink.emit(
+        event(
+            "StageStarted",
+            run_id="run-test",
+            command="pipeline full",
+            material_id="nm_demo",
+            attributes={"stage_name": "evaluation"},
+        )
+    )
+    sink.emit(
+        event(
+            "StageCompleted",
+            run_id="run-test",
+            command="pipeline full",
+            material_id="nm_demo",
+            status=RunStatus.SUCCESS,
+            attributes={"stage_name": "evaluation"},
+        )
+    )
+    sink.emit(
+        event(
+            "RunCompleted",
+            run_id="run-test",
+            command="pipeline full",
+            material_id="nm_demo",
+            status=RunStatus.SUCCESS,
+        )
+    )
+
+    output = terminal.stderr_text
+    assert "阶段 1/2: 前置导航 | 0/2" in output
+    assert "阶段 1/2: 前置导航 | 1/2" in output
+    assert "\r" not in output
+    assert "\x1b[" not in output

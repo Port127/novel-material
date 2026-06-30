@@ -2,13 +2,10 @@
 
 from __future__ import annotations
 
-from rich.progress import Progress
-
-from novel_material.runtime.contracts import RunEvent, RunStatus
+from novel_material.runtime.contracts import RunEvent
 from novel_material.runtime.dispatcher import SinkCriticality
 
 from .modes import TerminalMode
-from .progress import create_progress, finish_task
 from .reporter import TerminalReporter
 
 
@@ -38,8 +35,6 @@ class TerminalEventSink:
         self._expected = 0
         self._completed = 0
         self._current_stage = ""
-        self._progress: Progress | None = None
-        self._task_id: int | None = None
 
     def emit(self, event: RunEvent) -> None:
         if self._reporter.mode in {TerminalMode.JSON, TerminalMode.QUIET}:
@@ -56,36 +51,16 @@ class TerminalEventSink:
     def _start(self, event: RunEvent) -> None:
         self._expected = int(event.attributes.get("expected_stages") or 0)
         self._completed = 0
-        if self._reporter.mode is TerminalMode.TTY:
-            self._progress = create_progress(console=self._reporter.stderr)
-            self._progress.start()
 
     def _stage_started(self, event: RunEvent) -> None:
         stage_name = str(event.attributes.get("stage_name") or event.operation)
         self._current_stage = stage_name
         description = self._description(stage_name)
-        if self._reporter.mode is TerminalMode.PLAIN:
-            self._reporter.progress(
-                description=description,
-                completed=self._completed,
-                total=self._expected,
-            )
-            return
-        if self._progress is None:
-            return
-        if self._task_id is None:
-            self._task_id = self._progress.add_task(
-                description,
-                total=self._expected or None,
-                completed=self._completed,
-            )
-        else:
-            self._progress.update(
-                self._task_id,
-                description=description,
-                total=self._expected or None,
-                completed=self._completed,
-            )
+        self._reporter.progress(
+            description=description,
+            completed=self._completed,
+            total=self._expected,
+        )
 
     def _stage_completed(self, event: RunEvent) -> None:
         stage_name = str(
@@ -95,40 +70,14 @@ class TerminalEventSink:
         )
         description = self._description(stage_name)
         self._completed += 1
-        if self._reporter.mode is TerminalMode.PLAIN:
-            self._reporter.progress(
-                description=description,
-                completed=self._completed,
-                total=self._expected,
-            )
-            return
-        if self._progress is None or self._task_id is None:
-            return
-        self._progress.update(
-            self._task_id,
+        self._reporter.progress(
             description=description,
-            total=self._expected or None,
             completed=self._completed,
+            total=self._expected,
         )
-        if event.status not in {RunStatus.SUCCESS, None}:
-            finish_task(
-                self._progress,
-                self._task_id,
-                status=event.status.value,
-            )
 
     def _stop(self) -> None:
-        if self._progress is None:
-            return
-        if self._task_id is not None:
-            self._progress.update(
-                self._task_id,
-                completed=self._expected or self._completed,
-            )
-            self._progress.stop_task(self._task_id)
-        self._progress.stop()
-        self._progress = None
-        self._task_id = None
+        return
 
     def _description(self, stage_name: str) -> str:
         label = _STAGE_LABELS.get(stage_name, stage_name)
