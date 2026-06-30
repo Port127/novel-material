@@ -43,6 +43,7 @@ from novel_material.runtime.contracts import (
     exit_code_for,
 )
 from novel_material.runtime.dispatcher import RuntimeDispatcher
+from novel_material.runtime.dispatcher import EventSink
 from novel_material.storage.sync import sync_novel
 
 
@@ -58,6 +59,7 @@ def _create_pipeline_runtime(
     material_id: str,
     command: str,
     run_id: str,
+    extra_sinks: Iterable[EventSink] = (),
 ) -> PipelineRuntime:
     settings = get_settings()
     log_sink = JsonlSink(
@@ -68,7 +70,7 @@ def _create_pipeline_runtime(
     )
     report_sink = ReportSink(NOVELS_DIR / material_id)
     return PipelineRuntime(
-        dispatcher=RuntimeDispatcher([log_sink, report_sink]),
+        dispatcher=RuntimeDispatcher([*tuple(extra_sinks), log_sink, report_sink]),
         report_sink=report_sink,
     )
 
@@ -231,6 +233,7 @@ def _audit_stage(
 def run_full_pipeline(
     *,
     runtime_observer: Callable[[PipelineRuntime], None] | None = None,
+    terminal_sink: EventSink | None = None,
     **options,
 ) -> RunResult:
     run_id = new_id("run")
@@ -245,7 +248,12 @@ def run_full_pipeline(
     if ingest.status.value == "failed":
         return RunResult.from_stages(run_id, "pipeline full", [ingest])
     material_id = str(ingest.outputs["material_id"])
-    runtime = _create_pipeline_runtime(material_id, "pipeline full", run_id)
+    runtime = _create_pipeline_runtime(
+        material_id,
+        "pipeline full",
+        run_id,
+        (terminal_sink,) if terminal_sink is not None else (),
+    )
     if runtime_observer is not None:
         runtime_observer(runtime)
     request = RunRequest(
@@ -278,6 +286,7 @@ def run_continue_pipeline(
     *,
     material_id: str,
     runtime_observer: Callable[[PipelineRuntime], None] | None = None,
+    terminal_sink: EventSink | None = None,
     **options,
 ) -> RunResult:
     run_start = time.monotonic()
@@ -290,7 +299,12 @@ def run_continue_pipeline(
     if not inspection.exists:
         missing = adapt_stage_result("status", None)
         return RunResult.from_stages(run_id, "pipeline continue", [missing])
-    runtime = _create_pipeline_runtime(material_id, "pipeline continue", run_id)
+    runtime = _create_pipeline_runtime(
+        material_id,
+        "pipeline continue",
+        run_id,
+        (terminal_sink,) if terminal_sink is not None else (),
+    )
     if runtime_observer is not None:
         runtime_observer(runtime)
     specs = tuple(

@@ -2,7 +2,15 @@
 
 from __future__ import annotations
 
-from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
+from rich.progress import (
+    BarColumn,
+    Progress,
+    SpinnerColumn,
+    TaskProgressColumn,
+    TextColumn,
+    TimeElapsedColumn,
+    TimeRemainingColumn,
+)
 
 
 def create_progress(*, console) -> Progress:
@@ -11,6 +19,8 @@ def create_progress(*, console) -> Progress:
         TextColumn("{task.description}"),
         BarColumn(),
         TaskProgressColumn(),
+        TimeElapsedColumn(),
+        TimeRemainingColumn(),
         console=console,
     )
 

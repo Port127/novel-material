@@ -26,6 +26,7 @@ from novel_material.pipeline.state import (
     PipelineStateStore,
 )
 from novel_material.runtime.testing import event
+from novel_material.terminal.modes import TerminalMode
 
 
 runner = CliRunner()
@@ -168,6 +169,62 @@ def test_full_uses_run_result_exit_code(monkeypatch):
 
     assert result.exit_code == 1
     assert "流水线失败" in result.stderr
+
+
+def test_full_registers_terminal_progress_sink_for_tty(monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr(
+        "novel_material.cli.pipeline._terminal_mode",
+        lambda _ctx: (TerminalMode.TTY, False),
+        raising=False,
+    )
+
+    def fake_full(**kwargs):
+        captured.update(kwargs)
+        return RunResult.from_stages(
+            run_id="run-1",
+            command="pipeline full",
+            stages=[],
+        )
+
+    monkeypatch.setattr(
+        "novel_material.cli.pipeline.run_full_pipeline",
+        fake_full,
+    )
+
+    result = runner.invoke(app, ["pipeline", "full", "novel.txt"])
+
+    assert result.exit_code == 0
+    assert captured["terminal_sink"] is not None
+
+
+def test_full_no_progress_skips_terminal_progress_sink(monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr(
+        "novel_material.cli.pipeline._terminal_mode",
+        lambda _ctx: (TerminalMode.PLAIN, False),
+        raising=False,
+    )
+
+    def fake_full(**kwargs):
+        captured.update(kwargs)
+        return RunResult.from_stages(
+            run_id="run-1",
+            command="pipeline full",
+            stages=[],
+        )
+
+    monkeypatch.setattr(
+        "novel_material.cli.pipeline.run_full_pipeline",
+        fake_full,
+    )
+
+    result = runner.invoke(app, ["--no-progress", "pipeline", "full", "novel.txt"])
+
+    assert result.exit_code == 0
+    assert captured["terminal_sink"] is None
 
 
 def test_continue_uses_run_result_degraded_exit_code(monkeypatch):

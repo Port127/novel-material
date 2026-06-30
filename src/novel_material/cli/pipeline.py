@@ -65,7 +65,9 @@ from novel_material.reporting.writer import (
 )
 from novel_material.run_logging.reader import RunLogReadError, read_run_events
 from novel_material.terminal.modes import resolve_mode
+from novel_material.terminal.modes import TerminalMode
 from novel_material.terminal.reporter import TerminalReporter
+from novel_material.terminal.sink import TerminalEventSink
 
 app = typer.Typer(help="数据处理流水线")
 console = Console()
@@ -996,6 +998,22 @@ def _finish_pipeline_command(
 
 
 def _terminal_reporter(ctx: typer.Context | None) -> TerminalReporter:
+    mode, no_color = _terminal_mode(ctx)
+    return TerminalReporter(
+        SimpleNamespace(stdout=sys.stdout, stderr=sys.stderr),
+        mode=mode,
+        no_color=no_color,
+    )
+
+
+def _terminal_event_sink(ctx: typer.Context | None) -> TerminalEventSink | None:
+    reporter = _terminal_reporter(ctx)
+    if reporter.mode is not TerminalMode.TTY:
+        return None
+    return TerminalEventSink(reporter)
+
+
+def _terminal_mode(ctx: typer.Context | None) -> tuple[TerminalMode, bool]:
     options = None
     if ctx is not None:
         root_object = ctx.find_root().obj or {}
@@ -1009,11 +1027,7 @@ def _terminal_reporter(ctx: typer.Context | None) -> TerminalReporter:
         no_progress=no_progress,
         is_tty=bool(getattr(sys.stderr, "isatty", lambda: False)()),
     )
-    return TerminalReporter(
-        SimpleNamespace(stdout=sys.stdout, stderr=sys.stderr),
-        mode=mode,
-        no_color=no_color,
-    )
+    return mode, no_color
 
 
 def _raise_pipeline_state_cli_error(exc: PipelineStateError) -> None:
@@ -1059,6 +1073,7 @@ def cmd_full(
             skip_sync=skip_sync,
             skip_embedding=skip_embedding,
             runtime_observer=runtimes.append,
+            terminal_sink=_terminal_event_sink(ctx),
         )
     except PipelineStateError as exc:
         _raise_pipeline_state_cli_error(exc)
@@ -1102,6 +1117,7 @@ def cmd_continue(
             skip_sync=skip_sync,
             skip_embedding=skip_embedding,
             runtime_observer=runtimes.append,
+            terminal_sink=_terminal_event_sink(ctx),
         )
     except PipelineStateError as exc:
         _raise_pipeline_state_cli_error(exc)

@@ -14,9 +14,11 @@ from novel_material.reporting.models import (
 )
 from novel_material.runtime.contracts import Diagnostic, RunResult, RunStatus
 from novel_material.runtime.testing import FakeClock
+from novel_material.runtime.testing import event
 from novel_material.terminal.eta import BatchEtaEstimator
 from novel_material.terminal.modes import TerminalMode, resolve_mode
 from novel_material.terminal.reporter import TerminalReporter
+from novel_material.terminal.sink import TerminalEventSink
 from novel_material.terminal.testing import RecordingTerminal
 from novel_material.terminal.progress import create_progress, finish_task
 
@@ -168,3 +170,42 @@ def test_indeterminate_progress_has_explicit_terminal_status():
     task = progress.tasks[0]
     assert task.finished is True
     assert task.description.startswith("△")
+
+
+def test_terminal_event_sink_renders_stage_progress_in_plain_mode():
+    terminal = RecordingTerminal()
+    reporter = TerminalReporter(terminal, mode=TerminalMode.PLAIN)
+    sink = TerminalEventSink(reporter)
+
+    sink.emit(
+        event(
+            "RunStarted",
+            run_id="run-test",
+            command="pipeline full",
+            material_id="nm_demo",
+            attributes={"expected_stages": 3},
+        )
+    )
+    sink.emit(
+        event(
+            "StageStarted",
+            run_id="run-test",
+            command="pipeline full",
+            material_id="nm_demo",
+            attributes={"stage_name": "analyze"},
+        )
+    )
+    sink.emit(
+        event(
+            "StageCompleted",
+            run_id="run-test",
+            command="pipeline full",
+            material_id="nm_demo",
+            status=RunStatus.SUCCESS,
+            attributes={"stage_name": "analyze"},
+        )
+    )
+
+    output = terminal.stderr_text
+    assert "阶段 1/3: 章级分析 | 0/3" in output
+    assert "阶段 1/3: 章级分析 | 1/3" in output

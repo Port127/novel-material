@@ -119,6 +119,7 @@ class PipelineOrchestrator:
                     occurred_at=request.started_at,
                     attributes={
                         "report_prior_stages": _report_prior_stages(request),
+                        "expected_stages": len(self._prior_stages) + len(enabled),
                     },
                 )
             )
