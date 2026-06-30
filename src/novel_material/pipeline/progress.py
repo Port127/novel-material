@@ -36,6 +36,7 @@ PIPELINE_STAGES = [
     ("标签", "tags", True),
     ("深度分析", "insights", True),
     ("精调", "refined", True),
+    ("作品画像", "profile", True),
     ("数据库同步", "synced", False),      # 不计入总阶段数，仅用于进度状态表
 ]
 
@@ -118,6 +119,7 @@ def inspect_pipeline_state(
         "tags": _legacy_presence_stage("tags", (novel_dir / "tags.yaml").exists()),
         "insights": _inspect_legacy_insights(novel_dir, meta),
         "refine": _legacy_presence_stage("refine", meta.get("refined_at") is not None),
+        "profile": _legacy_presence_stage("profile", (novel_dir / "work_profile.yaml").exists()),
         "sync": _legacy_presence_stage("sync", database.status == "synced"),
     }
     return PipelineInspection(True, True, stages, database)
@@ -142,6 +144,7 @@ def next_pending_stage(
             "tags",
             "insights",
             "refine",
+            "profile",
             "sync",
         )
     )
@@ -295,6 +298,7 @@ def get_pipeline_progress(material_id: str) -> dict:
         "tags": (novel_dir / "tags.yaml").exists(),
         "insights": has_complete_insights(novel_dir),
         "refined": meta.get("refined_at") is not None,
+        "profile": (novel_dir / "work_profile.yaml").exists(),
         "synced": database.status == "synced",
         "database_status": database.status,
         "database_diagnostic": database.diagnostic,
@@ -386,6 +390,9 @@ def get_next_pending_stage(
 
     if not progress.get("refined"):
         return "refine"
+
+    if not progress.get("profile"):
+        return "profile"
 
     if not progress.get("synced"):
         return "sync"

@@ -81,6 +81,7 @@ class PipelineOrchestrator:
                 "tags",
                 "insights",
                 "refine",
+                "profile",
                 "audit",
                 "sync",
             )

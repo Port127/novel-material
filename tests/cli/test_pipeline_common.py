@@ -132,15 +132,48 @@ def test_explicit_pipeline_range_overrides_standard_default(monkeypatch):
     assert recorded["end_ch"] == 350
 
 
-def test_stage_plan_places_blocking_audit_before_sync():
+def test_stage_plan_places_profile_before_blocking_audit_and_sync():
     specs = pipeline_common._stage_specs(
         "nm_demo",
         {"mode": "fast"},
         elapsed_provider=lambda: 0.0,
     )
 
-    assert [item.name for item in specs][-3:] == ["refine", "audit", "sync"]
+    assert [item.name for item in specs][-4:] == ["refine", "profile", "audit", "sync"]
+    assert next(item for item in specs if item.name == "profile").enabled(None) is False
     assert next(item for item in specs if item.name == "audit").blocking is True
+
+
+def test_standard_stage_plan_enables_profile(monkeypatch):
+    recorded = {}
+
+    def fake_profile(material_id, **kwargs):
+        recorded.update(material_id=material_id, **kwargs)
+        return StageResult(
+            stage_id="stage-profile",
+            name="profile",
+            status=RunStatus.SUCCESS,
+        )
+
+    monkeypatch.setattr(pipeline_common, "run_profile_stage", fake_profile)
+    profile = next(
+        item
+        for item in pipeline_common._stage_specs(
+            "nm_demo",
+            {"mode": "standard", "provider": "fake"},
+        )
+        if item.name == "profile"
+    )
+
+    assert profile.enabled(None) is True
+    profile.execute(
+        RunRequest(
+            run_id="run-test",
+            command="pipeline full",
+            material_id="nm_demo",
+        )
+    )
+    assert recorded == {"material_id": "nm_demo", "provider": "fake"}
 
 
 def test_standard_full_runs_navigation_without_window():

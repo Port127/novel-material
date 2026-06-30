@@ -28,6 +28,7 @@ from novel_material.pipeline.stages import (
     run_ingest_stage,
     run_insights_stage,
     run_outline_stage,
+    run_profile_stage,
     run_refine_stage,
     run_tags_stage,
     run_worldbuilding_stage,
@@ -79,6 +80,7 @@ def _stage_specs(
 ) -> tuple[StageSpec, ...]:
     provider = options.get("provider")
     runtime_mode = get_runtime_mode(options.get("mode", "standard"))
+    runtime_mode_name = getattr(runtime_mode, "name", options.get("mode", "standard"))
     insight_limit = runtime_mode.core_insight_chapter_limit
     has_explicit_range = (
         options.get("start") is not None or options.get("end") is not None
@@ -153,6 +155,12 @@ def _stage_specs(
             "refine",
             lambda _request: run_refine_stage(material_id),
             blocking=True,
+        ),
+        StageSpec(
+            "profile",
+            lambda _request: run_profile_stage(material_id, provider=provider),
+            blocking=False,
+            enabled=lambda _request: runtime_mode_name in {"standard", "deep"},
         ),
         StageSpec(
             "audit",

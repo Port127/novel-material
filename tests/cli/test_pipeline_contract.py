@@ -131,6 +131,7 @@ def test_status_reads_pipeline_inspection_instead_of_legacy_progress(monkeypatch
         ("characters", "run_characters_stage", "人物提取失败"),
         ("tags", "run_tags_stage", "标签生成失败"),
         ("refine", "run_refine_stage", "精调失败"),
+        ("profile", "run_profile_stage", "作品画像生成失败"),
     ],
 )
 def test_remaining_single_stage_failures_exit_one(

@@ -8,6 +8,7 @@
 - generate_characters：人物提取入口
 - generate_tags：标签生成入口
 - refine：精修入口
+- generate_work_profile：作品画像生成入口
 - run_evaluation：评估入口
 - get_pipeline_progress：进度查询
 - print_pipeline_status：进度打印
@@ -29,6 +30,7 @@ from .worldbuilding import generate_worldbuilding
 from .characters import generate_characters
 from .tags import generate_tags
 from .refine import refine
+from .work_profile import generate_work_profile
 from .evaluate import run_evaluation
 from .progress import (
     get_pipeline_progress,
@@ -45,6 +47,7 @@ __all__ = [
     "generate_characters",
     "generate_tags",
     "refine",
+    "generate_work_profile",
     "run_evaluation",
     "get_pipeline_progress",
     "print_pipeline_status",

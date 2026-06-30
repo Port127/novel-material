@@ -18,6 +18,7 @@ from .outline import generate_outline
 from .refine import refine
 from .stage_contracts import adapt_stage_result
 from .tags import generate_tags
+from .work_profile import generate_work_profile
 from .worldbuilding import generate_worldbuilding
 
 
@@ -61,6 +62,10 @@ def run_refine_stage(*args, **kwargs):
     return adapt_stage_result("refine", refine(*args, **kwargs))
 
 
+def run_profile_stage(*args, **kwargs):
+    return adapt_stage_result("profile", generate_work_profile(*args, **kwargs))
+
+
 def run_artifact_audit_stage(material_id: str, **kwargs):
     audit = audit_material(material_id, **kwargs)
     dispatcher = current_dispatcher()
@@ -94,6 +99,7 @@ __all__ = [
     "run_ingest_stage",
     "run_insights_stage",
     "run_outline_stage",
+    "run_profile_stage",
     "run_refine_stage",
     "run_tags_stage",
     "run_worldbuilding_stage",

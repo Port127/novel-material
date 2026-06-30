@@ -46,6 +46,7 @@ from novel_material.pipeline.stages import (
     run_characters_stage,
     run_ingest_stage,
     run_outline_stage,
+    run_profile_stage,
     run_refine_stage,
     run_tags_stage,
     run_worldbuilding_stage,
@@ -414,6 +415,30 @@ def cmd_refine(
         progress.update(task, completed=2)
 
     console.print("[green]精调完成[/green]")
+
+
+@app.command("profile")
+def cmd_profile(
+    material_id: str = typer.Argument(..., help="素材 ID"),
+    provider: str = typer.Option(None, "--provider", "-p", help="服务商名称"),
+):
+    """生成作品画像 work_profile.yaml。"""
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        TimeRemainingColumn(),
+        console=console,
+    ) as progress:
+        task = progress.add_task(f"生成作品画像: {material_id}", total=1)
+        result = run_profile_stage(material_id, provider=provider)
+        progress.update(task, completed=1)
+
+    if result.status.value == "failed":
+        typer.echo("作品画像生成失败", err=True)
+        raise typer.Exit(1)
+    console.print("[green]作品画像生成完成[/green]")
 
 
 def _legacy_cmd_full(
