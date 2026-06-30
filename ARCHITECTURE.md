@@ -368,6 +368,8 @@ save_yaml(paths.meta_path, meta)
    │                                author_note
 ```
 
+`pipeline full` 在进入统一流水线前由 CLI 层执行同名保护：先根据文件名 stem 和去编号前缀后的名称查询全局索引与素材 `meta.yaml`；命中同名素材时要求用户确认是否创建新素材并重新分析。不可交互环境默认不分析。底层 `ingest_file()` 仍保持“给定文件创建新素材”的语义，避免影响批量导入和其他调用方。
+
 ### 前置导航阶段（LLM 调用）
 
 ```
@@ -382,6 +384,8 @@ save_yaml(paths.meta_path, meta)
 `evaluate` 现在是“前置导航”阶段，不再等同于 `--window`。`--window` 只控制章级分析是否带前章摘要；若素材中存在可解析的 `evaluation.yaml`，章级分析会把前置导航作为可选上下文读取。`pipeline full/continue --mode standard|deep` 默认执行前置导航；`--skip-navigation` 可跳过；`fast` 默认跳过，但可用 `--navigation` 强制执行。
 
 `evaluation.yaml` 当前写入 schema `3.0.0`，核心字段包括 `novel_type`、`premise`、`main_thread_summary`、`stage_map`、`core_character_candidates`、`worldbuilding_dimensions`、`analysis_focus`、`sample_coverage` 和 `evaluation_timestamp`。读取侧通过 `pipeline/evaluation_models.py` 提供只读兼容视图：旧版 `2.0.1` 或包含 `stage_summaries`/`core_characters_hint` 的文件会被适配为 v3 导航对象，但不会在读取时自动改写原文件。
+
+前置导航批次的输出预算从 `config/settings.yaml` 的 `LLM_EVALUATION_MAX_TOKENS` 进入 `config_service.py`，再由 `evaluate_batch()` 作为 `max_tokens_override` 传给 LLM 客户端。该配置只控制评估 JSON 输出上限，不改变章级分析、摘要池或后续骨架阶段的输入 token 策略。
 
 ### 分析阶段（LLM 调用）
 
@@ -451,6 +455,8 @@ refine → artifact audit ─┬─ blocker → failed，不执行 sync
 `audit/` 只读取素材目录内的事实文件，检查核心产物存在性、章节覆盖、人物兜底档案、世界观与 insights 等质量信号。默认执行确定性规则；只有显式 `--review` 才启用带时间和调用次数上限的 LLM 复审。审计与报告不得修改事实文件，允许新增内容仅位于 `reports/`。
 
 `reporting/` 从事件构建统一报告，包含运行状态、阶段耗时与计数、API/Token/成本（可用时）、诊断、产物问题、复审预算和下一步动作。每个 run YAML 是不可变记录；`latest.yaml` 与 `latest.md` 使用原子替换。`ReportSink` 是流水线 required sink，写入失败会使运行失败；终端展示仍是 best effort。
+
+TTY 模式下 CLI 会附加终端事件 sink，用于显示阶段、进度、ETA 和终态摘要；非 TTY、`--quiet` 或 `--no-progress` 场景不会依赖动态终端展示，结构化日志与运行报告仍是事实来源。
 
 ### 断点续传机制
 
@@ -721,6 +727,10 @@ tags (
 JSON 解析失败
 ├─ 自动翻倍 max_tokens 重试（最多 2 次）
 └─ 上限 65536 tokens
+
+前置导航输出截断
+├─ 优先调整 LLM_EVALUATION_MAX_TOKENS
+└─ 不改变章节批量大小或摘要池 token
 
 分析脚本容错
 ├─ outline: 3层容错 + generate_simple_acts() 兜底

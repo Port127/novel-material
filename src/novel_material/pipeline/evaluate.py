@@ -423,7 +423,7 @@ def evaluate_batch(
             _SYSTEM_PROMPT,
             user_prompt,
             config,
-            max_tokens_override=1500,
+            max_tokens_override=config["llm"].get("evaluation_max_tokens", 3000),
             timeout_override=config["llm"].get("other_timeout", 120),
             context=f"{material_id} 批次#{batch_num}",
         ))

@@ -214,6 +214,8 @@ nm pipeline full ./novel.txt --mode standard --skip-navigation
 
 `standard` 和 `deep` 默认执行前置导航；`fast` 默认跳过前置导航，但可通过 `--navigation` 强制执行。`--skip-navigation` 会跳过前置导航，即使处于 `standard`/`deep` 模式。`--window` 仍只影响章级分析上下文，不决定是否运行 `evaluate`。
 
+`full` 入库前会检查同名小说，匹配文件名 stem 和去掉编号前缀后的名称，例如 `0016_大道争锋.txt` 会同时匹配 `0016_大道争锋` 与 `大道争锋`。发现同名素材时会询问是否重新分析并创建新的素材记录；直接回车默认“不分析”。在 CI、脚本批处理等不可交互环境中，默认不分析，避免重复触发 LLM 消耗。若要继续已有素材，应使用 `nm pipeline continue <material_id>`。
+
 `full` 在 refine 后执行只读产物审计，再根据严重度决定终态：`blocker` 使运行失败并阻止数据库同步，`error` 使运行降级但允许同步，`warning/info` 不单独使运行失败。每次运行会写出：
 
 ```text
@@ -386,7 +388,15 @@ LLM 客户端会指数退避重试，429 会优先读取服务商等待时间。
 
 ### 上下文超限
 
-`context_length_exceeded` 会快速失败。检查批次大小、章节长度和摘要池 token 配置，不要盲目增加重试次数。
+`context_length_exceeded` 会快速失败。检查批次大小、章节长度和摘要池 token 配置，不要盲目增加重试次数。前置导航批次如果出现 JSON 截断或缺字段，先检查 `LLM_EVALUATION_MAX_TOKENS`；章级分析、outline、worldbuilding 和 characters 的输入池仍分别由对应的 `LLM_*_TOKENS` 配置控制。
+
+### 同名小说或重复入库
+
+`nm pipeline full <file>` 发现同名小说时会先询问是否重新分析。选择“不分析”只会退出当前命令，不会删除或修改已有素材。选择“重新分析”会创建新的 `material_id` 并完整运行流水线；如果只是想补跑失败阶段或继续旧素材，使用：
+
+```bash
+nm pipeline continue <material_id> --mode standard
+```
 
 ### Pipeline 中断
 
@@ -434,6 +444,15 @@ nm storage sync nm_xxx
 | 字段阈值 | `src/novel_material/schema/fields.yaml` |
 | 提示词 | `src/novel_material/prompts/` |
 | 题材 profiles | `src/novel_material/analysis_profiles/profiles/` |
+
+常用 `config/settings.yaml` 项：
+
+| 配置 | 作用 |
+|---|---|
+| `LLM_EVALUATION_MAX_TOKENS` | 前置导航单批输出上限，避免长篇采样评估 JSON 截断 |
+| `INSIGHTS_STANDARD_CHAPTER_LIMIT` | `standard` 自动流水线默认生成 core insights 的章节上限 |
+| `LLM_CHAPTER_BATCH_SIZE` | 章级分析默认批量大小；`--window` 会禁用批量处理 |
+| `LLM_RATE_LIMIT_SECONDS` | LLM 批次间等待时间，避免触发服务商限流 |
 
 结构化运行日志位于 `logs/{YYYY-MM-DD}/{command}_{run_id}.jsonl`，用于逐事件诊断和报告重建；素材目录中的兼容文本日志保留模块细节。运行报告位于 `data/novels/{material_id}/reports/`。所有结构化输出都会做敏感信息脱敏。字段阈值以契约文件为准，不要在业务代码或文档中复制维护。
 

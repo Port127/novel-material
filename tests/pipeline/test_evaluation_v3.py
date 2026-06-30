@@ -69,7 +69,10 @@ def test_run_evaluation_writes_v3_navigation(tmp_path, monkeypatch) -> None:
         encoding="utf-8",
     )
 
-    def fake_call_llm(*_args, **_kwargs):
+    max_token_overrides = []
+
+    def fake_call_llm(*_args, **kwargs):
+        max_token_overrides.append(kwargs.get("max_tokens_override"))
         return {
             "novel_type": ["都市"],
             "premise": "重生者重新选择人生。",
@@ -110,3 +113,4 @@ def test_run_evaluation_writes_v3_navigation(tmp_path, monkeypatch) -> None:
     assert evaluation["schema_version"] == "3.0.0"
     assert evaluation["sample_coverage"]["sampled_chapters"] == list(range(1, 16))
     assert evaluation["core_character_candidates"][0]["name"] == "陈汉升"
+    assert max_token_overrides == [3000] * 5

@@ -67,6 +67,7 @@ def _build_llm_config(settings: dict, providers_yaml: dict | None, provider: str
         "api_key": settings.get("LLM_API_KEY", ""),
         "base_url": settings.get("LLM_BASE_URL"),
         "max_tokens": int(settings.get("LLM_MAX_TOKENS", 8000)),
+        "evaluation_max_tokens": int(settings.get("LLM_EVALUATION_MAX_TOKENS", 3000)),
         "temperature": float(settings.get("LLM_TEMPERATURE", 0.3)),
         "rate_limit_seconds": int(settings.get("LLM_RATE_LIMIT_SECONDS", 60)),
         "analyze_timeout": int(settings.get("LLM_ANALYZE_TIMEOUT", 180)),

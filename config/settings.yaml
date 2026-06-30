@@ -8,6 +8,9 @@
 # 单次调用输出上限（tokens）
 LLM_MAX_TOKENS: 8000
 
+# 总体评估单批输出上限（tokens），避免长篇前置导航 JSON 截断
+LLM_EVALUATION_MAX_TOKENS: 3000
+
 # 生成温度（0-1），越低越稳定
 LLM_TEMPERATURE: 0.3
 

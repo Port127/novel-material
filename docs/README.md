@@ -20,6 +20,8 @@
 
 分层世界观与作品画像能力已经纳入现行文档：架构文档说明 layered `worldbuilding/` 布局、旧格式只读适配、`work_profile.yaml`、`profile` 阶段和 storage/search metadata 适配；用户手册说明 `nm pipeline profile`、世界观目录结构、`search world` metadata 和真实素材 LLM 授权边界；需求文档说明该能力提供更完整的结构化参考，但在 Golden Query 人工标注完成前不构成检索质量提升证明。
 
+CLI 成本保护和前置导航输出预算已经纳入现行文档：用户手册说明 `pipeline full` 的同名小说确认、不可交互默认不分析和 `LLM_EVALUATION_MAX_TOKENS`；架构文档说明重复分析保护位于 CLI 层，前置导航输出预算从 settings 经 config service 传入 `evaluate_batch()`。
+
 文档发生冲突时，依次以项目需求、系统架构、用户手册、Agent 指南为准。README 只做摘要，不覆盖详细规范。
 
 ## 工作记录
