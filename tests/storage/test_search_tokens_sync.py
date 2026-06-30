@@ -1,5 +1,10 @@
 """同步阶段词法检索文本构造测试。"""
 
+import json
+
+import numpy as np
+import pytest
+
 from novel_material.infra.yaml_io import save_yaml
 from novel_material.storage.sync_chapters import (
     build_chapter_search_tokens,
@@ -189,6 +194,74 @@ def test_sync_worldbuilding_writes_search_tokens_without_embedding(tmp_path):
     writes = _search_token_writes(connection)
     assert len(writes) == 1
     assert "宗门" in writes[0][1][-1]
+
+
+def test_sync_worldbuilding_reads_layered_entities(tmp_path):
+    world_dir = tmp_path / "worldbuilding" / "entities"
+    world_dir.mkdir(parents=True)
+    save_yaml(
+        tmp_path / "worldbuilding" / "_index.yaml",
+        {"layout": "layered", "llm_success": True},
+    )
+    save_yaml(
+        world_dir / "organization_x.yaml",
+        {
+            "id": "organization_x",
+            "type": "organization",
+            "name": "公司",
+            "description": "创业组织",
+            "properties": {"dimension_ids": ["business_rules"]},
+            "importance": "primary",
+            "first_appearance_chapter": 3,
+            "evidence": [{"chapter": 3, "summary": "成立公司"}],
+        },
+    )
+
+    connection = RecordingConnection()
+    sync_worldbuilding(connection, tmp_path, "nm_demo")
+
+    writes = _search_token_writes(connection)
+    assert len(writes) == 1
+    params = writes[0][1]
+    properties = json.loads(params[4])
+    assert params[1] == "organization"
+    assert params[2] == "公司"
+    assert properties["entity_id"] == "organization_x"
+    assert properties["dimension_ids"] == ["business_rules"]
+    assert properties["evidence"][0]["summary"] == "成立公司"
+    assert params[5] == 3
+    assert "创业" in params[-1]
+
+
+def test_sync_worldbuilding_uses_legacy_vector_alias_for_layered_entity(tmp_path):
+    world_dir = tmp_path / "worldbuilding" / "entities"
+    world_dir.mkdir(parents=True)
+    save_yaml(
+        tmp_path / "worldbuilding" / "_index.yaml",
+        {"layout": "layered", "llm_success": True},
+    )
+    save_yaml(
+        world_dir / "organization_x.yaml",
+        {
+            "id": "organization_x",
+            "type": "organization",
+            "name": "公司",
+            "description": "创业组织",
+        },
+    )
+    np.savez_compressed(
+        tmp_path / "worldbuilding" / "wb_embeddings.npz",
+        keys=np.array(["factions:公司"], dtype=np.str_),
+        vectors=np.array([[0.1, 0.2, 0.3]], dtype=np.float32),
+    )
+
+    connection = RecordingConnection()
+    sync_worldbuilding(connection, tmp_path, "nm_demo")
+
+    writes = _search_token_writes(connection)
+    assert len(writes) == 1
+    assert len(writes[0][1]) == 9
+    assert writes[0][1][7] == pytest.approx([0.1, 0.2, 0.3])
 
 
 def test_sync_outline_writes_sequence_and_beat_search_tokens(tmp_path):

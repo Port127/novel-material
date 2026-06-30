@@ -1,9 +1,9 @@
 """同步世界观元素和向量。"""
 import json
 
-from novel_material.infra.yaml_io import load_yaml_list
 from novel_material.storage.sync_utils import logger, _load_embeddings_npz
 from novel_material.search.text import build_search_text, tokenize_for_search
+from novel_material.worldbuilding.reader import load_worldbuilding_view
 
 
 def build_worldbuilding_search_tokens(entity: dict, entity_type: str) -> str:
@@ -29,106 +29,120 @@ def sync_worldbuilding(conn, novel_dir, material_id):
     if embeddings:
         logger.info(f"加载世界观向量: {len(embeddings)} 条")
 
-    def _load_worldbuilding_entities(entity_type: str) -> list[dict]:
-        """加载世界观实体数据，兼容新旧格式。"""
-        files_by_type = {
-            "factions": ["factions.yaml"],
-            "regions": ["regions.yaml", "geography.yaml"],
-            "power_systems": ["power_systems.yaml", "power_system.yaml"],
-        }
-
-        loaded = None
-        for filename in files_by_type.get(entity_type, []):
-            path = novel_dir / "worldbuilding" / filename
-            if path.exists():
-                loaded = load_yaml_list(path)
-                break
-
-        if loaded is None:
-            return []
-
-        if entity_type == "regions" and isinstance(loaded, dict):
-            loaded = loaded.get("regions", [])
-        elif entity_type == "power_systems" and isinstance(loaded, dict):
-            loaded = [{
-                "name": loaded.get("name", ""),
-                "description": loaded.get("description", ""),
-                "importance": "primary",
-                "properties": {
-                    "levels": loaded.get("levels", []),
-                    "rules": loaded.get("rules", []),
-                },
-            }]
-        elif isinstance(loaded, dict):
-            loaded = [loaded]
-
-        return [entity for entity in loaded if isinstance(entity, dict)]
+    view = load_worldbuilding_view(novel_dir)
 
     synced = 0
     synced_with_vec = 0
     with conn.cursor() as cur:
-        for entity_type in ["factions", "regions", "power_systems"]:
-            entities = _load_worldbuilding_entities(entity_type)
-            if not entities:
-                continue
+        for entity in view.entities:
+            entity_type = entity.type
+            entity_name = entity.name
+            entity_payload = _entity_payload(entity)
+            properties_value = json.dumps(
+                entity_payload["properties"],
+                ensure_ascii=False,
+            )
+            vec = _find_embedding(
+                embeddings,
+                entity_type=entity_type,
+                entity_name=entity_name,
+            )
+            search_tokens = build_worldbuilding_search_tokens(
+                entity_payload,
+                entity_type,
+            )
 
-            for entity in entities:
-                properties_value = json.dumps(
-                    entity.get("properties", {}), ensure_ascii=False
-                )
-                entity_name = entity.get("name", "")
-                vec_key = f"{entity_type}:{entity_name}"
-                vec = embeddings.get(vec_key)
-                search_tokens = build_worldbuilding_search_tokens(entity, entity_type)
-
-                if vec is not None:
-                    cur.execute("""
-                        INSERT INTO worldbuilding_entities (
-                            material_id, entity_type, name, description,
-                            properties, first_appearance, importance,
-                            description_embedding, search_tokens
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                        ON CONFLICT (material_id, entity_type, name) DO UPDATE SET
-                            description = EXCLUDED.description,
-                            properties = EXCLUDED.properties,
-                            first_appearance = EXCLUDED.first_appearance,
-                            importance = EXCLUDED.importance,
-                            description_embedding = EXCLUDED.description_embedding,
-                            search_tokens = EXCLUDED.search_tokens
-                    """, (
-                        material_id,
-                        entity_type,
-                        entity_name,
-                        entity.get("description", ""),
-                        properties_value,
-                        entity.get("first_appearance"),
-                        entity.get("importance", "secondary"),
-                        vec,
-                        search_tokens,
-                    ))
-                    synced_with_vec += 1
-                else:
-                    cur.execute("""
-                        INSERT INTO worldbuilding_entities (
-                            material_id, entity_type, name, description,
-                            properties, first_appearance, importance, search_tokens
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                        ON CONFLICT (material_id, entity_type, name) DO UPDATE SET
-                            description = EXCLUDED.description,
-                            properties = EXCLUDED.properties,
-                            first_appearance = EXCLUDED.first_appearance,
-                            importance = EXCLUDED.importance,
-                            search_tokens = EXCLUDED.search_tokens
-                    """, (
-                        material_id,
-                        entity_type,
-                        entity_name,
-                        entity.get("description", ""),
-                        properties_value,
-                        entity.get("first_appearance"),
-                        entity.get("importance", "secondary"),
-                        search_tokens,
-                    ))
-                synced += 1
+            if vec is not None:
+                cur.execute("""
+                    INSERT INTO worldbuilding_entities (
+                        material_id, entity_type, name, description,
+                        properties, first_appearance, importance,
+                        description_embedding, search_tokens
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (material_id, entity_type, name) DO UPDATE SET
+                        description = EXCLUDED.description,
+                        properties = EXCLUDED.properties,
+                        first_appearance = EXCLUDED.first_appearance,
+                        importance = EXCLUDED.importance,
+                        description_embedding = EXCLUDED.description_embedding,
+                        search_tokens = EXCLUDED.search_tokens
+                """, (
+                    material_id,
+                    entity_type,
+                    entity_name,
+                    entity.description,
+                    properties_value,
+                    entity.first_appearance_chapter,
+                    entity.importance,
+                    vec,
+                    search_tokens,
+                ))
+                synced_with_vec += 1
+            else:
+                cur.execute("""
+                    INSERT INTO worldbuilding_entities (
+                        material_id, entity_type, name, description,
+                        properties, first_appearance, importance, search_tokens
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (material_id, entity_type, name) DO UPDATE SET
+                        description = EXCLUDED.description,
+                        properties = EXCLUDED.properties,
+                        first_appearance = EXCLUDED.first_appearance,
+                        importance = EXCLUDED.importance,
+                        search_tokens = EXCLUDED.search_tokens
+                """, (
+                    material_id,
+                    entity_type,
+                    entity_name,
+                    entity.description,
+                    properties_value,
+                    entity.first_appearance_chapter,
+                    entity.importance,
+                    search_tokens,
+                ))
+            synced += 1
 
     logger.info(f"已同步世界观实体: {synced} 个，其中 {synced_with_vec} 条含向量")
+
+
+def _entity_payload(entity) -> dict:
+    properties = dict(entity.properties)
+    properties.update(
+        {
+            "entity_id": entity.id,
+            "aliases": list(entity.aliases),
+            "evidence": [
+                item.model_dump(mode="json") for item in entity.evidence
+            ],
+            "key_appearances": list(entity.key_appearances),
+        }
+    )
+    return {
+        "name": entity.name,
+        "description": entity.description,
+        "properties": properties,
+    }
+
+
+def _find_embedding(
+    embeddings: dict,
+    *,
+    entity_type: str,
+    entity_name: str,
+):
+    keys = [f"{entity_type}:{entity_name}"]
+    legacy_aliases = {
+        "faction": "factions",
+        "organization": "factions",
+        "region": "regions",
+        "location": "regions",
+        "power_system": "power_systems",
+        "power_systems": "power_systems",
+    }
+    alias = legacy_aliases.get(entity_type)
+    if alias:
+        keys.append(f"{alias}:{entity_name}")
+    for key in keys:
+        if key in embeddings:
+            return embeddings[key]
+    return None

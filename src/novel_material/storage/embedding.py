@@ -22,6 +22,7 @@ from novel_material.storage.embedding_manifest import (
     save_manifest,
     validate_vector,
 )
+from novel_material.worldbuilding.reader import load_worldbuilding_view
 
 logger = get_embedding_logger()
 
@@ -330,14 +331,36 @@ def _build_worldbuilding_text(entity: dict, entity_type: str) -> str:
             for key in ["notable_features", "importance"]:
                 if properties.get(key):
                     parts.append(f"{key}: {properties[key]}")
+        else:
+            for key, value in properties.items():
+                if value:
+                    parts.append(f"{key}: {_stringify_property(value)}")
+
+    evidence = entity.get("evidence", [])
+    if evidence:
+        summaries = [
+            item.get("summary", "")
+            for item in evidence
+            if isinstance(item, dict) and item.get("summary")
+        ]
+        if summaries:
+            parts.append(f"证据: {'; '.join(summaries[:5])}")
 
     return " | ".join(parts) if parts else entity.get("name", "")
+
+
+def _stringify_property(value) -> str:
+    if isinstance(value, list):
+        return ", ".join(str(item) for item in value[:8])
+    if isinstance(value, dict):
+        return ", ".join(f"{key}={item}" for key, item in list(value.items())[:8])
+    return str(value)
 
 
 def embed_worldbuilding(material_id: str) -> None:
     """生成世界观向量，保存到 worldbuilding/wb_embeddings.npz。
 
-    处理实体类型: factions, regions, power_systems
+    处理统一世界观实体，兼容 legacy 与 layered。
     """
     novel_dir = NOVELS_DIR / material_id
     wb_dir = novel_dir / "worldbuilding"
@@ -352,44 +375,28 @@ def embed_worldbuilding(material_id: str) -> None:
     if existing:
         logger.info(f"[{material_id}] 断点续传：已有 {len(existing)} 世界观向量，跳过")
 
-    # 实体类型映射到文件名
-    entity_files = {
-        "factions": ["factions.yaml"],
-        "regions": ["regions.yaml", "geography.yaml"],
-        "power_systems": ["power_systems.yaml", "power_system.yaml"],
-    }
-
     pending = []
-    for entity_type, filenames in entity_files.items():
-        for filename in filenames:
-            filepath = wb_dir / filename
-            if filepath.exists():
-                data = load_yaml_list(filepath)
+    try:
+        view = load_worldbuilding_view(novel_dir)
+    except Exception as exc:
+        logger.warning(f"[{material_id}] 世界观读取失败，跳过向量化: {exc}")
+        return
 
-                # 处理不同格式
-                if isinstance(data, dict):
-                    if entity_type == "regions":
-                        data = data.get("regions", [])
-                    elif entity_type == "power_systems":
-                        data = [{
-                            "name": data.get("name", ""),
-                            "description": data.get("description", ""),
-                            "properties": {
-                                "levels": data.get("levels", []),
-                                "rules": data.get("rules", []),
-                            },
-                        }]
-                    else:
-                        data = [data]
-
-                for entity in data:
-                    if isinstance(entity, dict):
-                        name = entity.get("name", "")
-                        key = f"{entity_type}:{name}"
-                        if key not in existing:
-                            text = _build_worldbuilding_text(entity, entity_type)
-                            if text:
-                                pending.append((key, text))
+    for entity in view.entities:
+        key = f"{entity.type}:{entity.name}"
+        if key in existing:
+            continue
+        payload = {
+            "name": entity.name,
+            "description": entity.description,
+            "properties": dict(entity.properties),
+            "evidence": [
+                item.model_dump(mode="json") for item in entity.evidence
+            ],
+        }
+        text = _build_worldbuilding_text(payload, entity.type)
+        if text:
+            pending.append((key, text))
 
     if not pending:
         logger.info(f"[{material_id}] 所有世界观实体已向量化，无需处理")
