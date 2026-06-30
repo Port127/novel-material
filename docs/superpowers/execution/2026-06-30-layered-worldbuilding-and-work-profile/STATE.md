@@ -3,16 +3,29 @@
 ```yaml
 feature: layered-worldbuilding-and-work-profile
 phase: 3
-status: ready
-current_packet: task-11-docs-final-verification.md
-last_completed_packet: task-10-search-world-metadata.md
-last_good_commit: 07fc7bb
+status: complete
+current_packet: null
+last_completed_packet: task-11-docs-final-verification.md
+last_good_commit: 0cd18ad
 worktree: current_main_user_approved
 blocking_issue: null
 ```
 
 ## 最近验证
 
+- `python -m pytest tests/worldbuilding tests/pipeline tests/audit tests/reporting tests/storage tests/search tests/cli/test_pipeline_contract.py tests/cli/test_command_contracts.py tests/validation -v`：首次暴露同名 `test_models.py` collection 冲突与 `SearchResult.entity_id` 契约断言缺口；补齐测试包标记和 insight 搜索期望后，最终 326 passed。
+- `python -m novel_material.cli.main pipeline worldbuilding --help`：通过。
+- `python -m novel_material.cli.main pipeline profile --help`：通过，确认 `profile` 命令可见。
+- `python -m novel_material.cli.main pipeline full --help`：通过，确认 navigation 选项可见。
+- `python -m novel_material.cli.main pipeline continue --help`：通过，确认 navigation 选项可见。
+- `python -m novel_material.cli.main search world --help`：通过。
+- `python -m compileall -q src/novel_material`：通过。
+- `python scripts/check_v3_docs.py`：通过。
+- `git diff --check -- . ':(exclude)docs/feedback.md'`：通过。
+- `python -m novel_material.cli.main validate artifacts nm_novel_20260621_4si2`：退出码 3（允许范围），报告 22 个 error 与 64 个 warning，均为既有素材质量问题。
+- `diff -u /private/tmp/nm_novel_20260621_4si2.pre.sha256 /private/tmp/nm_novel_20260621_4si2.post.sha256`：无差异，真实只读 smoke 未修改非 `reports/` 事实文件。
+- `git diff --cached --check`：通过。
+- Packet 11 文档与测试门禁提交：`0cd18ad`。
 - `python -m pytest tests/search/test_retrievers.py tests/search/test_contracts.py tests/cli/test_command_contracts.py tests/storage/test_search_tokens_sync.py -v`：61 passed。
 - `python -m novel_material.cli.main search world --help`：通过。
 - `python -m compileall -q src/novel_material/search src/novel_material/cli src/novel_material/storage`：通过。
@@ -74,11 +87,11 @@ blocking_issue: null
 - 真实素材 LLM 重跑必须单独问用户。
 - 未完成人工 Golden Query 前，不声称检索质量提升。
 
-## 当前开始动作
+## 完成状态
 
-1. 打开 `task-10-search-world-metadata.md`。
-2. 确认工作区除用户 `docs/feedback.md` 外没有未知修改。
-3. 按 packet 内 TDD 步骤实现 `search world` 对 layered 元数据与旧过滤别名的兼容。
+- 第三期 11 个 packet 已全部完成。
+- 当前工作区已知用户修改：`docs/feedback.md`，未纳入第三期提交。
+- 未完成人工 Golden Query 前，仍不得声称检索质量提升。
 
 ## 每次结束必须更新
 
