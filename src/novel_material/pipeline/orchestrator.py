@@ -205,6 +205,7 @@ class PipelineOrchestrator:
                                     item.model_dump(mode="json")
                                     for item in result.diagnostics
                                 ],
+                                "outputs": result.outputs,
                             },
                         )
                     )

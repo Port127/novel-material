@@ -91,6 +91,18 @@ class ArtifactQualityReport(BaseModel):
     review_budget: ReviewBudgetUsage = Field(default_factory=ReviewBudgetUsage)
 
 
+class ReleaseGateReport(BaseModel):
+    """发布门禁摘要，不包含领域正文。"""
+
+    model_config = ConfigDict(frozen=True)
+
+    decision: str = "not_evaluated"
+    release_status: str = "unknown"
+    allow_degraded_sync: bool = False
+    override: bool = False
+    reasons: tuple[str, ...] = ()
+
+
 class BaselineComparison(BaseModel):
     """与可比较历史运行的耗时比较。"""
 
@@ -119,6 +131,7 @@ class PipelineRunReport(BaseModel):
     artifact_quality: ArtifactQualityReport = Field(
         default_factory=ArtifactQualityReport
     )
+    release_gate: ReleaseGateReport = Field(default_factory=ReleaseGateReport)
     baseline: BaselineComparison = Field(default_factory=BaselineComparison)
     next_actions: tuple[str, ...] = ()
 
@@ -128,6 +141,7 @@ __all__ = [
     "BaselineComparison",
     "CharacterQualityReport",
     "PipelineRunReport",
+    "ReleaseGateReport",
     "RuntimeMetrics",
     "SeverityCounts",
     "StageReport",

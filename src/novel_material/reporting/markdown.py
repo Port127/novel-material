@@ -35,6 +35,20 @@ def render_markdown(report: PipelineRunReport) -> str:
         f"- 总耗时：{_duration(report.duration_ms)}",
         f"- 同素材基线：{_baseline_text(report)}",
         "",
+        "## 发布门禁",
+        "",
+        f"- 发布状态：{_text('release_status', report.release_gate.release_status)}",
+        f"- 同步决策：{_text('decision', report.release_gate.decision)}",
+        f"- 人工放行：{'true' if report.release_gate.override else 'false'}",
+        (
+            "- 阻断原因："
+            + (
+                _text("reasons", "，".join(report.release_gate.reasons))
+                if report.release_gate.reasons
+                else "无"
+            )
+        ),
+        "",
         "## 运行情况",
         "",
         (

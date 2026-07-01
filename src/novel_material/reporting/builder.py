@@ -17,6 +17,7 @@ from .models import (
     BaselineComparison,
     CharacterQualityReport,
     PipelineRunReport,
+    ReleaseGateReport,
     RuntimeMetrics,
     SeverityCounts,
     StageReport,
@@ -99,6 +100,7 @@ def build_run_report(
         stages=_stage_reports(started, ordered),
         runtime=runtime,
         artifact_quality=quality,
+        release_gate=_release_gate_report(ordered),
         baseline=_baseline(
             started.material_id,
             started.command,
@@ -220,6 +222,28 @@ def _artifact_quality(
         issues=audit.issues,
         review_budget=audit.review_budget,
     )
+
+
+def _release_gate_report(events: list[RunEvent]) -> ReleaseGateReport:
+    for item in reversed(events):
+        if item.event_name != "StageCompleted":
+            continue
+        if item.attributes.get("stage_name") != "release_gate":
+            continue
+        outputs = item.attributes.get("outputs")
+        if not isinstance(outputs, Mapping):
+            return ReleaseGateReport()
+        reasons = outputs.get("reasons", ())
+        if not isinstance(reasons, (list, tuple)):
+            reasons = ()
+        return ReleaseGateReport(
+            decision=str(outputs.get("decision") or "not_evaluated"),
+            release_status=str(outputs.get("release_status") or "unknown"),
+            allow_degraded_sync=bool(outputs.get("allow_degraded_sync")),
+            override=bool(outputs.get("override")),
+            reasons=tuple(str(reason) for reason in reasons if str(reason)),
+        )
+    return ReleaseGateReport()
 
 
 def _next_actions(quality: ArtifactQualityReport) -> tuple[str, ...]:

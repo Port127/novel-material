@@ -191,6 +191,41 @@ def test_builder_marks_missing_audit_without_failing_report() -> None:
     assert report.runtime.diagnostic_counts["audit_missing"] == 1
 
 
+def test_builder_extracts_release_gate_summary() -> None:
+    events = run_events()
+    started = events[0].occurred_at
+    events.insert(
+        -1,
+        event(
+            "StageCompleted",
+            occurred_at=started + timedelta(seconds=12),
+            stage_id="stage-release",
+            material_id="nm_demo",
+            command="pipeline full",
+            status="degraded",
+            duration_ms=12,
+            attributes={
+                "stage_name": "release_gate",
+                "counts": {},
+                "diagnostics": [{"code": "release_gate_held"}],
+                "outputs": {
+                    "decision": "hold",
+                    "release_status": "degraded",
+                    "allow_degraded_sync": False,
+                    "override": False,
+                    "reasons": ["worldbuilding_degraded"],
+                },
+            },
+        ),
+    )
+
+    report = build_run_report(events)
+
+    assert report.release_gate.decision == "hold"
+    assert report.release_gate.release_status == "degraded"
+    assert report.release_gate.reasons == ("worldbuilding_degraded",)
+
+
 def test_builder_rejects_stage_completed_without_status() -> None:
     events = run_events()
     stage_index = next(

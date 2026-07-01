@@ -1,5 +1,12 @@
+from datetime import datetime, timezone
+
 from novel_material.reporting.markdown import render_markdown
-from novel_material.reporting.models import BaselineComparison, PipelineRunReport
+from novel_material.reporting.models import (
+    BaselineComparison,
+    PipelineRunReport,
+    ReleaseGateReport,
+)
+from novel_material.runtime.contracts import RunStatus
 
 
 def test_markdown_contains_conclusion_risks_and_next_actions(
@@ -46,3 +53,29 @@ def test_markdown_states_when_baseline_and_cost_are_unavailable(
 
     assert "无可比基线" in text
     assert "预估成本：不可用" in text
+
+
+def test_markdown_renders_release_gate_section() -> None:
+    report = PipelineRunReport(
+        run_id="run-test",
+        material_id="nm_demo",
+        command="pipeline full",
+        status=RunStatus.DEGRADED,
+        started_at=datetime(2026, 7, 1, 1, tzinfo=timezone.utc),
+        completed_at=datetime(2026, 7, 1, 1, 1, tzinfo=timezone.utc),
+        duration_ms=60000,
+        release_gate=ReleaseGateReport(
+            decision="hold",
+            release_status="degraded",
+            allow_degraded_sync=False,
+            override=False,
+            reasons=("worldbuilding_degraded",),
+        ),
+    )
+
+    markdown = render_markdown(report)
+
+    assert "## 发布门禁" in markdown
+    assert "- 发布状态：degraded" in markdown
+    assert "- 同步决策：hold" in markdown
+    assert "- 阻断原因：worldbuilding_degraded" in markdown
