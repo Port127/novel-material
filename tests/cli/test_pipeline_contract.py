@@ -9,6 +9,7 @@ from types import SimpleNamespace
 from typer.testing import CliRunner
 import pytest
 
+import novel_material.cli.pipeline as pipeline_cli
 from novel_material.cli.main import app
 from novel_material.audit.models import ArtifactIssue, AuditSeverity
 from novel_material.reporting.models import (
@@ -34,6 +35,24 @@ runner = CliRunner()
 
 def failed_stage(name: str) -> StageResult:
     return StageResult(stage_id=f"stage-{name}", name=name, status=RunStatus.FAILED)
+
+
+def test_stage_result_success_uses_run_status():
+    successful = StageResult(
+        stage_id="stage-sync",
+        name="sync",
+        status=RunStatus.SUCCESS,
+    )
+    failed = StageResult(
+        stage_id="stage-sync",
+        name="sync",
+        status=RunStatus.FAILED,
+    )
+
+    assert pipeline_cli._stage_result_success(successful) is True
+    assert pipeline_cli._stage_result_success(failed) is False
+    assert pipeline_cli._stage_result_success(True) is True
+    assert pipeline_cli._stage_result_success(False) is False
 
 
 def report_with_risk() -> PipelineRunReport:

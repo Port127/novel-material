@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 
 from novel_material.runtime.context import current_context, new_id
 from novel_material.runtime.contracts import Diagnostic, RunStatus, StageResult
@@ -10,6 +10,23 @@ from novel_material.runtime.contracts import Diagnostic, RunStatus, StageResult
 
 CORE_FAILED_STAGES = {"analyze", "refine", "sync"}
 DEGRADED_HOLD_STAGES = {"worldbuilding", "characters", "insights"}
+
+
+def _audit_summary(stage: StageResult | None) -> Mapping:
+    if stage is None:
+        return {}
+
+    summary = stage.outputs.get("summary")
+    if isinstance(summary, Mapping):
+        return summary
+
+    audit = stage.outputs.get("audit")
+    if isinstance(audit, Mapping):
+        nested_summary = audit.get("summary")
+        if isinstance(nested_summary, Mapping):
+            return nested_summary
+
+    return {}
 
 
 def evaluate_release_gate(
@@ -29,8 +46,7 @@ def evaluate_release_gate(
         if item.name in CORE_FAILED_STAGES and item.status is RunStatus.FAILED:
             reasons.append(f"{item.name}_failed")
 
-    audit = by_name.get("audit")
-    audit_summary = audit.outputs.get("summary", {}) if audit else {}
+    audit_summary = _audit_summary(by_name.get("audit"))
     blocker_count = int(audit_summary.get("blocker", 0) or 0)
     error_count = int(audit_summary.get("error", 0) or 0)
     if blocker_count > 0:

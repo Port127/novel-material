@@ -1,3 +1,5 @@
+from novel_material.audit.models import ArtifactAudit, ArtifactIssue, AuditSeverity
+from novel_material.audit.service import audit_to_stage_result
 from novel_material.pipeline.release_gate import evaluate_release_gate
 from novel_material.runtime.contracts import RunStatus, StageResult
 
@@ -30,6 +32,37 @@ def test_audit_error_blocks_sync() -> None:
     assert result.status is RunStatus.FAILED
     assert result.outputs["decision"] == "block"
     assert result.outputs["release_status"] == "failed"
+    assert "audit_error" in result.outputs["reasons"]
+
+
+def test_real_audit_error_blocks_sync() -> None:
+    audit_stage = audit_to_stage_result(
+        ArtifactAudit(
+            material_id="nm_demo",
+            issues=(
+                ArtifactIssue(
+                    code="character_profile_fallback",
+                    severity=AuditSeverity.ERROR,
+                    artifact="characters/profiles/主角.yaml",
+                    message="主要人物为空壳",
+                ),
+            ),
+        )
+    )
+
+    result = evaluate_release_gate(
+        "nm_demo",
+        (
+            stage("analyze", RunStatus.SUCCESS),
+            stage("profile", RunStatus.SUCCESS),
+            audit_stage,
+        ),
+        mode="standard",
+        allow_degraded_sync=False,
+    )
+
+    assert result.status is RunStatus.FAILED
+    assert result.outputs["decision"] == "block"
     assert "audit_error" in result.outputs["reasons"]
 
 

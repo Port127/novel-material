@@ -330,6 +330,46 @@ def test_stage_completed_event_contains_name_duration_counts_and_diagnostics():
     assert result.stages[0].duration_ms == pytest.approx(250)
 
 
+def test_stage_completed_outputs_are_limited_to_release_gate():
+    sink = MemoryEventSink()
+    normal = StageSpec(
+        "analyze",
+        lambda _request: StageResult(
+            stage_id="stage-analyze",
+            name="analyze",
+            status=RunStatus.SUCCESS,
+            outputs={"private": "payload"},
+        ),
+        blocking=False,
+    )
+    release_gate = StageSpec(
+        "release_gate",
+        lambda _request: StageResult(
+            stage_id="stage-release-gate",
+            name="release_gate",
+            status=RunStatus.SUCCESS,
+            outputs={"decision": "allow"},
+        ),
+        blocking=True,
+    )
+    orchestrator = PipelineOrchestrator(
+        [normal, release_gate],
+        dispatcher=RuntimeDispatcher([sink]),
+    )
+
+    orchestrator.run(request())
+
+    completed = sink.events_named("StageCompleted")
+    normal_event = next(
+        item for item in completed if item.attributes["stage_name"] == "analyze"
+    )
+    gate_event = next(
+        item for item in completed if item.attributes["stage_name"] == "release_gate"
+    )
+    assert "outputs" not in normal_event.attributes
+    assert gate_event.attributes["outputs"] == {"decision": "allow"}
+
+
 def test_unhandled_stage_exception_becomes_failed_result_and_run_completed_event():
     sink = MemoryEventSink()
     broken = StageSpec(

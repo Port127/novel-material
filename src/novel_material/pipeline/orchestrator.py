@@ -193,20 +193,23 @@ class PipelineOrchestrator:
                         generation=generation,
                         created_at=created_at,
                     )
+                    event_attributes = {
+                        "stage_name": spec.name,
+                        "counts": result.counts.model_dump(mode="json"),
+                        "diagnostics": [
+                            item.model_dump(mode="json")
+                            for item in result.diagnostics
+                        ],
+                    }
+                    event_outputs = _event_outputs(result)
+                    if event_outputs:
+                        event_attributes["outputs"] = event_outputs
                     required_failures.update(
                         self._emit(
                             "StageCompleted",
                             status=result.status,
                             duration_ms=result.duration_ms,
-                            attributes={
-                                "stage_name": spec.name,
-                                "counts": result.counts.model_dump(mode="json"),
-                                "diagnostics": [
-                                    item.model_dump(mode="json")
-                                    for item in result.diagnostics
-                                ],
-                                "outputs": result.outputs,
-                            },
+                            attributes=event_attributes,
                         )
                     )
                 if result.status is RunStatus.INTERRUPTED or (
@@ -332,6 +335,12 @@ def _report_prior_stages(request: RunRequest) -> list[dict[str, Any]]:
         for stage in value
         if isinstance(stage, StageResult)
     ]
+
+
+def _event_outputs(result: StageResult) -> dict[str, Any]:
+    if result.name == "release_gate":
+        return result.outputs
+    return {}
 
 
 def _with_observability_degradation(

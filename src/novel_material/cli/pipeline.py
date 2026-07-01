@@ -66,6 +66,7 @@ from novel_material.reporting.writer import (
     ReportWriter,
 )
 from novel_material.run_logging.reader import RunLogReadError, read_run_events
+from novel_material.runtime.contracts import RunStatus, StageResult
 from novel_material.terminal.modes import resolve_mode
 from novel_material.terminal.modes import TerminalMode
 from novel_material.terminal.reporter import TerminalReporter
@@ -88,6 +89,12 @@ def _candidate_duplicate_names(file_path: str) -> set[str]:
     if stripped:
         names.add(stripped)
     return names
+
+
+def _stage_result_success(result: object) -> bool:
+    if isinstance(result, StageResult):
+        return result.status is RunStatus.SUCCESS
+    return bool(result)
 
 
 def _find_duplicate_materials(file_path: str) -> list[dict[str, str]]:
@@ -713,8 +720,12 @@ def _legacy_cmd_full(
         if not skip_sync:
             task_sync = progress.add_task("同步数据库", total=1)
             with silent_console():
-                success = sync_novel(material_id, provider=provider, use_window=use_window)
-                if not success:
+                sync_result = sync_novel(
+                    material_id,
+                    provider=provider,
+                    use_window=use_window,
+                )
+                if not _stage_result_success(sync_result):
                     sync_failed = True
                     console.print("[red]数据库同步失败[/red]")
                     console.print("[yellow]可手动执行 nm storage sync 重试[/yellow]")
@@ -1005,8 +1016,12 @@ def _legacy_cmd_continue(
         if not skip_sync and not progress.get("synced"):
             task7 = progress_bar.add_task(f"同步数据库", total=1)
             with silent_console():
-                success = sync_novel(material_id, provider=provider, use_window=use_window)
-                if not success:
+                sync_result = sync_novel(
+                    material_id,
+                    provider=provider,
+                    use_window=use_window,
+                )
+                if not _stage_result_success(sync_result):
                     sync_failed = True
                     console.print("[red]数据库同步失败[/red]")
                     console.print("[yellow]可手动执行 nm storage sync 重试[/yellow]")
