@@ -16,21 +16,63 @@ from novel_material.infra.llm_contracts import (
 def normalize_chapter_analysis_response(payload: object) -> dict:
     """校验单章分析响应的基础字段类型。"""
     result = dict(require_mapping(payload, "chapter_analysis"))
-    for field in ("summary", "pacing", "key_event", "hook_type"):
+    for field in ("summary", "key_event", "hook_type"):
         result[field] = require_string(result.get(field), f"chapter_analysis.{field}")
     for field in (
-        "characters_appear", "chapter_functions", "setting",
-        "emotional_tone", "scene_type", "technique",
+        "characters_appear",
+        "chapter_functions",
+        "setting",
+        "emotional_tone",
+        "scene_type",
+        "technique",
     ):
-        result[field] = require_string_list(result.get(field), f"chapter_analysis.{field}")
-    tension = require_integer(result.get("tension_level"), "chapter_analysis.tension_level")
+        result[field] = require_string_list(
+            result.get(field), f"chapter_analysis.{field}"
+        )
+    tension = require_integer(
+        result.get("tension_level"), "chapter_analysis.tension_level"
+    )
     if not 1 <= tension <= 5:
-        raise LLMResponseContractError("chapter_analysis.tension_level", "1-5 的整数", tension)
+        raise LLMResponseContractError(
+            "chapter_analysis.tension_level", "1-5 的整数", tension
+        )
     result["tension_level"] = tension
+    result["pacing"], quality = _recover_pacing(result)
+    if quality is not None:
+        existing_quality = result.get("quality")
+        if not isinstance(existing_quality, dict):
+            existing_quality = {}
+        result["quality"] = {**existing_quality, **quality}
     for field in ("tension_change", "emotion_transition", "plot_progress"):
         if result.get(field) is not None:
             result[field] = require_string(result[field], f"chapter_analysis.{field}")
     return result
+
+
+def _recover_pacing(payload: dict) -> tuple[str, dict | None]:
+    value = payload.get("pacing")
+    if value is not None:
+        return require_string(value, "chapter_analysis.pacing"), None
+
+    tension = payload.get("tension_level")
+    functions = [str(item) for item in payload.get("chapter_functions", []) or []]
+    joined = " ".join(functions)
+    if tension in (4, 5) or any(
+        keyword in joined for keyword in ("战斗", "冲突", "追逃", "危机")
+    ):
+        pacing = "快"
+    elif tension in (1, 2) or any(
+        keyword in joined for keyword in ("日常", "过渡", "铺垫", "休整")
+    ):
+        pacing = "慢"
+    else:
+        pacing = "中"
+    return pacing, {
+        "fallback_fields": ["pacing"],
+        "fallback_reason": {
+            "pacing": "LLM 返回 null，按 tension_level/chapter_functions 推断",
+        },
+    }
 
 
 def validate_window_fields(result: dict, prev_tension: int | None) -> list[str]:
