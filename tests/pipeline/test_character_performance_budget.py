@@ -5,6 +5,7 @@ from time import perf_counter
 
 from novel_material.infra.yaml_io import load_yaml, save_yaml
 from novel_material.pipeline import characters_core
+from novel_material.runtime.contracts import RunStatus, StageResult
 
 
 def _prepare_large_material(tmp_path: Path) -> Path:
@@ -109,8 +110,11 @@ def test_large_character_selection_and_report_budget_stays_local(
     monkeypatch.setattr(characters_core, "_extract_character_batch", fake_extract)
 
     started = perf_counter()
-    assert characters_core.generate_characters("nm_perf_characters") is True
+    result = characters_core.generate_characters("nm_perf_characters")
     elapsed_seconds = perf_counter() - started
+
+    assert isinstance(result, StageResult)
+    assert result.status is RunStatus.SUCCESS
 
     record_property("baseline_type", "navigation_character_rules_only")
     record_property("character_budget_seconds", elapsed_seconds)

@@ -5,6 +5,7 @@ from pathlib import Path
 
 from novel_material.infra.yaml_io import load_yaml, save_yaml
 from novel_material.pipeline import characters_core
+from novel_material.runtime.contracts import RunStatus, StageResult
 
 
 def _prepare_material(tmp_path: Path, names: list[str]) -> Path:
@@ -86,7 +87,10 @@ def test_characters_stage_generates_full_biographies_only_for_targets(
     monkeypatch.setattr(characters_core, "start_llm_telemetry", lambda: type("Telemetry", (), {"details": []})())
     monkeypatch.setattr(characters_core, "_extract_character_batch", fake_extract)
 
-    assert characters_core.generate_characters("nm_demo") is True
+    result = characters_core.generate_characters("nm_demo")
+
+    assert isinstance(result, StageResult)
+    assert result.status is RunStatus.SUCCESS
 
     core_call = next(call for call in calls if call[0] == "core")
     brief_calls = [call for call in calls if call[0] != "core"]
@@ -132,7 +136,10 @@ def test_characters_index_records_biography_selection_metadata(
     monkeypatch.setattr(characters_core, "start_llm_telemetry", lambda: type("Telemetry", (), {"details": []})())
     monkeypatch.setattr(characters_core, "_extract_character_batch", fake_extract)
 
-    assert characters_core.generate_characters("nm_demo") is True
+    result = characters_core.generate_characters("nm_demo")
+
+    assert isinstance(result, StageResult)
+    assert result.status is RunStatus.SUCCESS
 
     index = load_yaml(novels_dir / "nm_demo" / "characters" / "_index.yaml")
     assert index["biography_target_count"] == 6
@@ -214,10 +221,13 @@ def test_repair_characters_only_rebuilds_requested_profile(tmp_path, monkeypatch
     )
     monkeypatch.setattr(characters_core, "_extract_character_batch", fake_extract)
 
-    assert characters_core.generate_characters(
+    result = characters_core.generate_characters(
         "nm_demo",
         repair_characters=("甲",),
-    ) is True
+    )
+
+    assert isinstance(result, StageResult)
+    assert result.status is RunStatus.SUCCESS
 
     assert calls == [["甲"]]
     after_hashes = {

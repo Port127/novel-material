@@ -41,6 +41,13 @@ from novel_material.pipeline.evaluation_models import (
     EvaluationNavigation,
     load_evaluation_navigation,
 )
+from novel_material.runtime.context import current_context, new_id
+from novel_material.runtime.contracts import (
+    Diagnostic,
+    ProgressCounts,
+    RunStatus,
+    StageResult,
+)
 
 logger = get_pipeline_logger()
 
@@ -50,7 +57,7 @@ def generate_characters(
     progress_callback: Callable[[int, int, str], None] | None = None,
     provider: str | None = None,
     repair_characters: tuple[str, ...] = (),
-) -> bool:
+) -> bool | StageResult:
     """统计驱动的人物提取。
 
     新策略：
@@ -442,10 +449,63 @@ def generate_characters(
         f"  关系: {len(unique_relationships)} 条"
     )
 
-    runner.save_history(status="success")
+    fallback_count = sum(
+        1 for item in all_characters if item.get("profile_level") == "fallback"
+    )
+    stage_status, diagnostic = _characters_stage_status(
+        biography_target_count=char_index["biography_target_count"],
+        biography_completed_count=char_index["biography_completed_count"],
+        biography_failed_count=char_index["biography_failed_count"],
+        fallback_count=fallback_count,
+    )
+    runner.save_history(status=stage_status.value)
 
     # 人物向量已移至 embed_all.py 统一处理
-    return True
+    context = current_context()
+    return StageResult(
+        stage_id=context.stage_id if context and context.stage_id else new_id("stage"),
+        name="characters",
+        status=stage_status,
+        counts=ProgressCounts(
+            expected=char_index["biography_target_count"],
+            processed=char_index["biography_target_count"],
+            succeeded=char_index["biography_completed_count"],
+            degraded=char_index["biography_failed_count"],
+            failed=0,
+            remaining=0,
+        ),
+        diagnostics=(diagnostic,) if diagnostic else (),
+        outputs={
+            "character_count": len(all_characters),
+            "fallback_count": fallback_count,
+            **char_index,
+        },
+    )
+
+
+def _characters_stage_status(
+    *,
+    biography_target_count: int,
+    biography_completed_count: int,
+    biography_failed_count: int,
+    fallback_count: int,
+) -> tuple[RunStatus, Diagnostic | None]:
+    if biography_target_count > 0 and biography_completed_count == 0:
+        return RunStatus.DEGRADED, Diagnostic(
+            code="character_biography_all_failed",
+            message="核心人物完整小传目标全部失败，已保留简档或 fallback 档案",
+            severity="warning",
+            retryable=True,
+            next_action="nm pipeline characters <material_id>",
+        )
+    if biography_failed_count > 0 or fallback_count > 0:
+        return RunStatus.DEGRADED, Diagnostic(
+            code="character_biography_partial_failed",
+            message="部分人物完整小传失败，已保留可用档案",
+            severity="warning",
+            retryable=True,
+        )
+    return RunStatus.SUCCESS, None
 
 
 def _qualified_character_candidates(appearance_stats: dict[str, int]) -> list[tuple[str, int]]:
