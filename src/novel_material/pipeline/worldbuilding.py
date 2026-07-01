@@ -32,6 +32,13 @@ from novel_material.worldbuilding.normalizer import (
     normalize_layered_worldbuilding_response,
 )
 from novel_material.worldbuilding.writer import write_layered_worldbuilding
+from novel_material.runtime.context import current_context, new_id
+from novel_material.runtime.contracts import (
+    Diagnostic,
+    ProgressCounts,
+    RunStatus,
+    StageResult,
+)
 
 logger = get_pipeline_logger()
 
@@ -109,11 +116,14 @@ def _aggregate_worldbuilding_stats(chapters_data: list) -> dict:
     }
 
 
-def generate_worldbuilding(material_id, provider: str | None = None) -> bool:
+def generate_worldbuilding(
+    material_id: str,
+    provider: str | None = None,
+) -> StageResult:
     """提取世界观设定。
 
     容错策略：LLM 失败时生成空结构，不中断流程。
-    返回 True 表示成功。
+    返回 StageResult 表示阶段状态与质量信号。
 
     参数：
         material_id: 素材 ID
@@ -124,7 +134,7 @@ def generate_worldbuilding(material_id, provider: str | None = None) -> bool:
     novel_dir = NOVELS_DIR / material_id
     if not novel_dir.exists():
         logger.error(f"[{material_id}] 小说目录不存在: {novel_dir}")
-        return False
+        return _worldbuilding_missing_result(material_id)
 
     config = load_config(provider)
     wb_dir = novel_dir / "worldbuilding"
@@ -144,7 +154,10 @@ def generate_worldbuilding(material_id, provider: str | None = None) -> bool:
         chapter_count = len(chapter_index)
 
     # 输出小说基本信息
-    logger.info(f"[{material_id}] 小说: {title} | {chapter_count} 章 | {word_count} 字 | 状态: {status}")
+    logger.info(
+        f"[{material_id}] 小说: {title} | {chapter_count} 章 | "
+        f"{word_count} 字 | 状态: {status}"
+    )
 
     wall_start = time.monotonic()
 
@@ -164,7 +177,10 @@ def generate_worldbuilding(material_id, provider: str | None = None) -> bool:
 
     # 构建分析上下文（章级摘要池 > 原文片段，传入已加载的 chapters_data）
     context_text, context_label = build_analysis_context(
-        novel_dir, config, chapters_data, material_id=material_id,
+        novel_dir,
+        config,
+        chapters_data,
+        material_id=material_id,
         summary_tokens_key="worldbuilding_summary_tokens",
         fallback_chars=10000,
     )
@@ -233,16 +249,41 @@ def generate_worldbuilding(material_id, provider: str | None = None) -> bool:
     rate_limit = config["llm"].get("rate_limit_seconds", 1)
 
     # ── 容错调用 ──
+    diagnostic = None
     layered = None
     try:
-        layered = normalize_layered_worldbuilding_response(call_llm(system_prompt, user_prompt, config, timeout_override=config["llm"]["worldbuilding_timeout"], context=f"{material_id} 世界观提取"))
+        layered = normalize_layered_worldbuilding_response(
+            call_llm(
+                system_prompt,
+                user_prompt,
+                config,
+                timeout_override=config["llm"]["worldbuilding_timeout"],
+                context=f"{material_id} 世界观提取",
+            )
+        )
         layered = _apply_dimension_routing(layered, dimension_routing)
-        logger.info(f"[{material_id}] 世界观提取完成: finish={telemetry.last.get('finish_reason', '')}")
+        logger.info(
+            f"[{material_id}] 世界观提取完成: "
+            f"finish={telemetry.last.get('finish_reason', '')}"
+        )
         time.sleep(rate_limit)
     except Exception as e:
-        error_kind = "schema_invalid" if isinstance(e, LLMResponseContractError) else "调用失败"
+        error_kind = (
+            "schema_invalid" if isinstance(e, LLMResponseContractError) else "调用失败"
+        )
         logger.error(f"[{material_id}] 世界观提取 {error_kind}: {e}")
         logger.warning(f"[{material_id}] 使用空结构继续，不中断流程")
+        diagnostic = Diagnostic(
+            code=(
+                "worldbuilding_schema_invalid"
+                if isinstance(e, LLMResponseContractError)
+                else "worldbuilding_api_failed"
+            ),
+            message=f"世界观提取失败，已写入空结构: {type(e).__name__}",
+            severity="warning",
+            retryable=True,
+            next_action=f"nm pipeline worldbuilding {material_id}",
+        )
         layered = _empty_layered_worldbuilding(dimension_routing)
 
     write_layered_worldbuilding(novel_dir, layered)
@@ -257,6 +298,12 @@ def generate_worldbuilding(material_id, provider: str | None = None) -> bool:
 
     # 保存运行历史
     elapsed = time.monotonic() - wall_start
+    stage_result = _worldbuilding_stage_result(
+        material_id,
+        layered,
+        elapsed=elapsed,
+        diagnostic=diagnostic,
+    )
     call_details = telemetry.details
     tokens_in = sum(d.get("input_tokens", 0) for d in call_details)
     tokens_out = sum(d.get("output_tokens", 0) for d in call_details)
@@ -264,13 +311,81 @@ def generate_worldbuilding(material_id, provider: str | None = None) -> bool:
     save_run_history(
         novel_dir=novel_dir,
         pipeline_name="世界观提取",
-        stage_times=[{"name": "世界观提取", "elapsed_sec": elapsed, "api_calls": api_calls, "api_errors": 0 if layered.index.llm_success else 1, "tokens_in": tokens_in, "tokens_out": tokens_out}],
+        stage_times=[
+            {
+                "name": "世界观提取",
+                "elapsed_sec": elapsed,
+                "api_calls": api_calls,
+                "api_errors": 0 if layered.index.llm_success else 1,
+                "tokens_in": tokens_in,
+                "tokens_out": tokens_out,
+            }
+        ],
         total_elapsed=elapsed,
-        status="success"
+        status=stage_result.status.value,
     )
 
     # 世界观向量已移至 embed_all.py 统一处理
-    return True
+    return stage_result
+
+
+def _worldbuilding_missing_result(material_id: str) -> StageResult:
+    context = current_context()
+    return StageResult(
+        stage_id=context.stage_id if context and context.stage_id else new_id("stage"),
+        name="worldbuilding",
+        status=RunStatus.FAILED,
+        counts=ProgressCounts(expected=1, processed=1, failed=1, remaining=0),
+        diagnostics=(
+            Diagnostic(
+                code="worldbuilding_material_missing",
+                message=f"小说目录不存在: {material_id}",
+                severity="error",
+                retryable=False,
+            ),
+        ),
+        outputs={"material_id": material_id},
+    )
+
+
+def _worldbuilding_stage_result(
+    material_id: str,
+    layered: LayeredWorldbuilding,
+    *,
+    elapsed: float,
+    diagnostic: Diagnostic | None,
+) -> StageResult:
+    llm_success = bool(layered.index.llm_success)
+    entity_count = int(layered.index.entity_count)
+    relation_count = int(layered.index.relation_count)
+    evidence_count = int(layered.index.evidence_count)
+    status = (
+        RunStatus.SUCCESS
+        if llm_success and (entity_count > 0 or evidence_count > 0)
+        else RunStatus.DEGRADED
+    )
+    context = current_context()
+    return StageResult(
+        stage_id=context.stage_id if context and context.stage_id else new_id("stage"),
+        name="worldbuilding",
+        status=status,
+        counts=ProgressCounts(
+            expected=1,
+            processed=1,
+            succeeded=1 if status is RunStatus.SUCCESS else 0,
+            degraded=1 if status is RunStatus.DEGRADED else 0,
+            remaining=0,
+        ),
+        duration_ms=elapsed * 1000,
+        diagnostics=(diagnostic,) if diagnostic else (),
+        outputs={
+            "material_id": material_id,
+            "llm_success": llm_success,
+            "entity_count": entity_count,
+            "relation_count": relation_count,
+            "evidence_count": evidence_count,
+        },
+    )
 
 
 def _load_navigation_dimensions(novel_dir: Path) -> list[str]:

@@ -2,6 +2,7 @@ from pathlib import Path
 
 from novel_material.infra.yaml_io import load_yaml, save_yaml
 from novel_material.pipeline.worldbuilding import generate_worldbuilding
+from novel_material.runtime.contracts import RunStatus, StageResult
 
 
 def test_generate_worldbuilding_writes_layered_outputs(
@@ -62,7 +63,12 @@ def test_generate_worldbuilding_writes_layered_outputs(
         },
     )
 
-    assert generate_worldbuilding("nm_demo") is True
+    result = generate_worldbuilding("nm_demo")
+
+    assert isinstance(result, StageResult)
+    assert result.status is RunStatus.SUCCESS
+    assert result.outputs["llm_success"] is True
+    assert result.outputs["entity_count"] == 1
 
     index = load_yaml(novel / "worldbuilding" / "_index.yaml")
     assert index["layout"] == "layered"
@@ -105,7 +111,12 @@ def test_generate_worldbuilding_writes_empty_layered_outputs_on_llm_failure(
         lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("boom")),
     )
 
-    assert generate_worldbuilding("nm_demo") is True
+    result = generate_worldbuilding("nm_demo")
+
+    assert isinstance(result, StageResult)
+    assert result.status is RunStatus.DEGRADED
+    assert result.outputs["llm_success"] is False
+    assert result.diagnostics[0].code == "worldbuilding_api_failed"
 
     index = load_yaml(novel / "worldbuilding" / "_index.yaml")
     dimensions = load_yaml(novel / "worldbuilding" / "dimensions.yaml")
