@@ -8,6 +8,13 @@ from typing import Any
 from novel_material.infra.config import NOVELS_DIR
 from novel_material.infra.llm import call_llm, load_config
 from novel_material.infra.yaml_io import load_yaml, load_yaml_list, save_yaml
+from novel_material.runtime.context import current_context, new_id
+from novel_material.runtime.contracts import (
+    Diagnostic,
+    ProgressCounts,
+    RunStatus,
+    StageResult,
+)
 from novel_material.worldbuilding.reader import load_worldbuilding_view
 
 from .work_profile_models import normalize_work_profile_response
@@ -17,12 +24,20 @@ from .work_profile_prompt import build_work_profile_prompt
 def generate_work_profile(
     material_id: str,
     provider: str | None = None,
-) -> bool:
+) -> StageResult:
     """从稳定产物生成 work_profile.yaml，不读取完整原文。"""
     novel_dir = NOVELS_DIR / material_id
     context = _build_profile_context(novel_dir, material_id)
     if context is None:
-        return False
+        return _profile_result(
+            RunStatus.FAILED,
+            diagnostic=Diagnostic(
+                code="work_profile_evidence_missing",
+                message="生成作品画像所需 meta.yaml 或 chapters.yaml 不完整",
+                severity="error",
+                retryable=True,
+            ),
+        )
 
     config = load_config(provider)
     system_prompt, user_prompt = build_work_profile_prompt(context)
@@ -35,16 +50,59 @@ def generate_work_profile(
             timeout_override=timeout,
             context=f"{material_id} 作品画像",
         )
+    except Exception as exc:
+        return _profile_result(
+            RunStatus.FAILED,
+            diagnostic=Diagnostic(
+                code="work_profile_api_failed",
+                message=f"作品画像生成失败: {type(exc).__name__}",
+                severity="error",
+                retryable=True,
+            ),
+        )
+
+    try:
         profile = normalize_work_profile_response(
             response,
             material_id=material_id,
             title=str(context.get("title") or ""),
         )
-    except Exception:
-        return False
+    except ValueError as exc:
+        return _profile_result(
+            RunStatus.FAILED,
+            diagnostic=Diagnostic(
+                code="work_profile_schema_invalid",
+                message=f"作品画像生成失败: {type(exc).__name__}",
+                severity="error",
+                retryable=True,
+            ),
+        )
 
     save_yaml(novel_dir / "work_profile.yaml", profile.model_dump(mode="json"))
-    return True
+    return _profile_result(RunStatus.SUCCESS, written=True)
+
+
+def _profile_result(
+    status: RunStatus,
+    *,
+    diagnostic: Diagnostic | None = None,
+    written: bool = False,
+) -> StageResult:
+    context = current_context()
+    return StageResult(
+        stage_id=context.stage_id if context and context.stage_id else new_id("stage"),
+        name="profile",
+        status=status,
+        counts=ProgressCounts(
+            expected=1,
+            processed=1,
+            succeeded=1 if status is RunStatus.SUCCESS else 0,
+            failed=1 if status is RunStatus.FAILED else 0,
+            remaining=0,
+        ),
+        diagnostics=(diagnostic,) if diagnostic else (),
+        outputs={"work_profile_written": written},
+    )
 
 
 def _build_profile_context(novel_dir: Path, material_id: str) -> dict[str, Any] | None:
