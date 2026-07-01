@@ -48,7 +48,9 @@ def load_app_config(provider: str | None = None) -> dict:
     }
 
 
-def _build_llm_config(settings: dict, providers_yaml: dict | None, provider: str | None) -> dict:
+def _build_llm_config(
+    settings: dict, providers_yaml: dict | None, provider: str | None
+) -> dict:
     """构建 LLM 配置。
 
     参数：
@@ -67,7 +69,21 @@ def _build_llm_config(settings: dict, providers_yaml: dict | None, provider: str
         "api_key": settings.get("LLM_API_KEY", ""),
         "base_url": settings.get("LLM_BASE_URL"),
         "max_tokens": int(settings.get("LLM_MAX_TOKENS", 8000)),
-        "evaluation_max_tokens": int(settings.get("LLM_EVALUATION_MAX_TOKENS", 3000)),
+        "evaluation_max_tokens": int(
+            settings.get("LLM_EVALUATION_MAX_TOKENS", 3000)
+        ),
+        "context_window_tokens": int(
+            settings.get("LLM_CONTEXT_WINDOW_TOKENS", 1000000)
+        ),
+        "quality_budget_mode": settings.get("LLM_QUALITY_BUDGET_MODE", "quality"),
+        "worldbuilding_max_tokens": int(
+            settings.get("LLM_WORLDBUILDING_MAX_TOKENS", 64000)
+        ),
+        "characters_max_tokens": int(
+            settings.get("LLM_CHARACTERS_MAX_TOKENS", 64000)
+        ),
+        "profile_max_tokens": int(settings.get("LLM_PROFILE_MAX_TOKENS", 64000)),
+        "insights_max_tokens": int(settings.get("LLM_INSIGHTS_MAX_TOKENS", 32000)),
         "temperature": float(settings.get("LLM_TEMPERATURE", 0.3)),
         "rate_limit_seconds": int(settings.get("LLM_RATE_LIMIT_SECONDS", 60)),
         "analyze_timeout": int(settings.get("LLM_ANALYZE_TIMEOUT", 180)),
@@ -75,10 +91,27 @@ def _build_llm_config(settings: dict, providers_yaml: dict | None, provider: str
         "worldbuilding_timeout": int(settings.get("LLM_WORLDBUILDING_TIMEOUT", 300)),
         "characters_timeout": int(settings.get("LLM_CHARACTERS_TIMEOUT", 300)),
         "other_timeout": int(settings.get("LLM_OTHER_TIMEOUT", 120)),
-        "outline_summary_tokens": int(settings.get("LLM_OUTLINE_SUMMARY_TOKENS", 20000)),
-        "outline_seq_summary_tokens": int(settings.get("LLM_OUTLINE_SEQ_SUMMARY_TOKENS", 5000)),
-        "worldbuilding_summary_tokens": int(settings.get("LLM_WORLDBUILDING_SUMMARY_TOKENS", 15000)),
-        "characters_summary_tokens": int(settings.get("LLM_CHAPTERS_SUMMARY_TOKENS", 15000)),
+        "outline_summary_tokens": int(
+            settings.get("LLM_OUTLINE_SUMMARY_TOKENS", 80000)
+        ),
+        "outline_seq_summary_tokens": int(
+            settings.get("LLM_OUTLINE_SEQ_SUMMARY_TOKENS", 8000)
+        ),
+        "worldbuilding_summary_tokens": int(
+            settings.get("LLM_WORLDBUILDING_SUMMARY_TOKENS", 120000)
+        ),
+        "characters_summary_tokens": int(
+            settings.get("LLM_CHARACTERS_SUMMARY_TOKENS", 120000)
+        ),
+        "profile_context_tokens": int(
+            settings.get("LLM_PROFILE_CONTEXT_TOKENS", 120000)
+        ),
+        "length_retry_multiplier": int(
+            settings.get("LLM_LENGTH_RETRY_MULTIPLIER", 2)
+        ),
+        "length_retry_max_tokens": int(
+            settings.get("LLM_LENGTH_RETRY_MAX_TOKENS", 128000)
+        ),
         "chapter_batch_size": int(settings.get("LLM_CHAPTER_BATCH_SIZE", 5)),
         "insight_batch_size": int(settings.get("LLM_INSIGHT_BATCH_SIZE", 20)),
         "pricing": {
@@ -86,7 +119,9 @@ def _build_llm_config(settings: dict, providers_yaml: dict | None, provider: str
             "output_per_1k": float(settings.get("LLM_PRICE_OUTPUT_1K", 0.0012)),
         },
         "dynamic_prompt_enabled": settings.get("LLM_DYNAMIC_PROMPT_ENABLED", True),
-        "diversity_reminder_interval": int(settings.get("LLM_DIVERSITY_REMINDER_INTERVAL", 10)),
+        "diversity_reminder_interval": int(
+            settings.get("LLM_DIVERSITY_REMINDER_INTERVAL", 10)
+        ),
         "late_chapter_threshold": float(settings.get("LLM_LATE_CHAPTER_THRESHOLD", 0.6)),
         "late_temperature_boost": float(settings.get("LLM_LATE_TEMPERATURE_BOOST", 0.15)),
         "temperature_max": float(settings.get("LLM_TEMPERATURE_MAX", 0.6)),
