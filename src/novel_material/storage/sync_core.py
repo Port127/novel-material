@@ -63,8 +63,12 @@ def _sync_result(
     status: RunStatus,
     *,
     diagnostic: Diagnostic | None = None,
+    release_gate: dict | None = None,
 ) -> StageResult:
     success = status is RunStatus.SUCCESS
+    outputs = {"material_id": material_id}
+    if release_gate is not None:
+        outputs["release_gate"] = release_gate
     return StageResult(
         stage_id=new_id("stage"),
         name="sync",
@@ -77,7 +81,7 @@ def _sync_result(
             remaining=0,
         ),
         diagnostics=(diagnostic,) if diagnostic else (),
-        outputs={"material_id": material_id},
+        outputs=outputs,
     )
 
 
@@ -171,6 +175,7 @@ def _sync_novel_impl(
     use_window: bool = False,
     *,
     repair_allowed: bool = False,
+    release_gate: dict | None = None,
 ) -> StageResult:
     """同步单本小说到数据库。
 
@@ -188,6 +193,7 @@ def _sync_novel_impl(
         return _sync_result(
             material_id,
             RunStatus.FAILED,
+            release_gate=release_gate,
             diagnostic=Diagnostic(
                 code="material_not_found",
                 message=f"素材目录不存在: {material_id}",
@@ -203,6 +209,7 @@ def _sync_novel_impl(
             return _sync_result(
                 material_id,
                 RunStatus.FAILED,
+                release_gate=release_gate,
                 diagnostic=Diagnostic(
                     code="sync_precheck_failed",
                     message=str(e),
@@ -225,6 +232,7 @@ def _sync_novel_impl(
             return _sync_result(
                 material_id,
                 RunStatus.FAILED,
+                release_gate=release_gate,
                 diagnostic=Diagnostic(
                     code="sync_repair_failed",
                     message="自动修复未达到成功阈值",
@@ -250,6 +258,7 @@ def _sync_novel_impl(
             return _sync_result(
                 material_id,
                 RunStatus.FAILED,
+                release_gate=release_gate,
                 diagnostic=Diagnostic(
                     code="sync_precheck_failed",
                     message="修复后预检仍未通过",
@@ -261,6 +270,7 @@ def _sync_novel_impl(
             return _sync_result(
                 material_id,
                 RunStatus.FAILED,
+                release_gate=release_gate,
                 diagnostic=Diagnostic(
                     code="sync_precheck_failed",
                     message="修复后 schema 预检仍未通过",
@@ -272,6 +282,7 @@ def _sync_novel_impl(
         return _sync_result(
             material_id,
             RunStatus.FAILED,
+            release_gate=release_gate,
             diagnostic=Diagnostic(
                 code="sync_precheck_failed",
                 message=str(exc),
@@ -281,10 +292,15 @@ def _sync_novel_impl(
 
     # 预检通过，执行同步
     if _do_sync_with_connection(novel_dir, material_id):
-        return _sync_result(material_id, RunStatus.SUCCESS)
+        return _sync_result(
+            material_id,
+            RunStatus.SUCCESS,
+            release_gate=release_gate,
+        )
     return _sync_result(
         material_id,
         RunStatus.FAILED,
+        release_gate=release_gate,
         diagnostic=Diagnostic(
             code="sync_failed",
             message=f"数据库同步失败: {material_id}",
@@ -301,6 +317,7 @@ def sync_novel(
     *,
     repair_allowed: bool = False,
     dispatcher: RuntimeDispatcher | None = None,
+    release_gate: dict | None = None,
 ) -> StageResult:
     """同步单本素材并发布最小审计事件。"""
     event_dispatcher = dispatcher or NullDispatcher()
@@ -310,6 +327,7 @@ def sync_novel(
         provider=provider,
         use_window=use_window,
         repair_allowed=repair_allowed,
+        release_gate=release_gate,
     )
     _emit_sync_audit(
         event_dispatcher,

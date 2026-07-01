@@ -201,7 +201,8 @@ def test_sync_runs_only_when_release_gate_allows(monkeypatch):
     assert executed == []
 
 
-def test_sync_runs_when_release_gate_decision_is_allow():
+def test_sync_runs_when_release_gate_decision_is_allow(monkeypatch):
+    captured = {}
     specs = pipeline_common._stage_specs(
         "nm_demo",
         {"mode": "standard", "skip_sync": False},
@@ -224,7 +225,23 @@ def test_sync_runs_when_release_gate_decision_is_allow():
         },
     )
 
+    monkeypatch.setattr(
+        pipeline_common,
+        "sync_novel",
+        lambda material_id, **kwargs: captured.update(
+            material_id=material_id,
+            **kwargs,
+        )
+        or StageResult(
+            stage_id="stage-sync",
+            name="sync",
+            status=RunStatus.SUCCESS,
+        ),
+    )
+
     assert sync.enabled(request) is True
+    sync.execute(request)
+    assert captured["release_gate"]["decision"] == "allow"
 
 
 def test_standard_stage_plan_enables_profile(monkeypatch):

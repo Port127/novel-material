@@ -191,6 +191,7 @@ def _stage_specs(
                 provider=provider,
                 use_window=bool(options.get("use_window")),
                 repair_allowed=False,
+                release_gate=_release_gate_outputs(request),
             ),
             blocking=True,
             enabled=lambda request: (
@@ -218,6 +219,18 @@ def _release_gate_allows_sync(request: RunRequest) -> bool:
     if gate is None:
         return True
     return gate.outputs.get("decision") == "allow"
+
+
+def _release_gate_outputs(request: RunRequest) -> dict | None:
+    gate = next(
+        (
+            item
+            for item in reversed(_completed_stages(request))
+            if item.name == "release_gate"
+        ),
+        None,
+    )
+    return dict(gate.outputs) if gate is not None else None
 
 
 def _use_navigation(options: dict) -> bool:
