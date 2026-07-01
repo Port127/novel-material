@@ -203,3 +203,19 @@ nm_novel_20260510_y4fz/characters/profiles 只创建了 16 个人物，但这是
 
 ### 归档日期
 2026-05-12
+---
+
+## 评估阶段批次失败，token 不够用
+
+### 问题
+pipeline 日志显示批次 2、4、5 都失败了，疑似 token 不够。
+
+### 解决
+提升评估阶段 token 上限至 8000，并增加 schema 校验重试机制。
+
+### 相关文件
+- src/novel_material/pipeline/evaluate.py
+- config/settings.yaml
+
+### 归档日期
+2026-07-01

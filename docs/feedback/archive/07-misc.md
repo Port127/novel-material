@@ -245,3 +245,52 @@ chapter_index、chapters 文件会非常大，如何处理？
 
 ### 归档日期
 2026-05-10
+---
+
+## .agents 与 .claude 的 skills 不同步
+
+### 问题
+.agents/.claude 的 skills 内容不一致，需要同步机制。
+
+### 解决
+使用 scripts/sync_agent_skills.py 自动同步，.agents/skills/ 为事实来源，.claude/skills/ 为生成镜像。
+
+### 相关文件
+- scripts/sync_agent_skills.py
+
+### 归档日期
+2026-07-01
+
+---
+
+## v3 文档未同步更新
+
+### 问题
+项目进入 v3 后，AGENTS.md、REQUIREMENTS.md、USER_MANUAL.md 等文档未相应调整。
+
+### 解决
+同步更新项目文档，删除过时文档（如 GENRE_AWARE_ANALYSIS.md），确保文档与当前实现一致。
+
+### 相关文件
+- AGENTS.md
+- docs/USER_MANUAL.md
+- docs/REQUIREMENTS.md
+
+### 归档日期
+2026-07-01
+
+---
+
+## 回复和 commit 使用中文规则
+
+### 问题
+Agent 回复和 commit message 没有统一使用中文，内容也不够详细。
+
+### 解决
+在 AGENTS.md 中添加规则：回复、计划、思考等使用简体中文；commit message 使用中文并写详细内容点。
+
+### 相关文件
+- AGENTS.md
+
+### 归档日期
+2026-07-01
