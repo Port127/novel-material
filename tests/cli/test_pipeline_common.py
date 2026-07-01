@@ -132,16 +132,99 @@ def test_explicit_pipeline_range_overrides_standard_default(monkeypatch):
     assert recorded["end_ch"] == 350
 
 
-def test_stage_plan_places_profile_before_blocking_audit_and_sync():
+def test_stage_plan_places_profile_before_blocking_audit_release_gate_and_sync():
     specs = pipeline_common._stage_specs(
         "nm_demo",
         {"mode": "fast"},
         elapsed_provider=lambda: 0.0,
     )
 
-    assert [item.name for item in specs][-4:] == ["refine", "profile", "audit", "sync"]
+    assert [item.name for item in specs][-5:] == [
+        "refine",
+        "profile",
+        "audit",
+        "release_gate",
+        "sync",
+    ]
     assert next(item for item in specs if item.name == "profile").enabled(None) is False
     assert next(item for item in specs if item.name == "audit").blocking is True
+
+
+def test_stage_plan_places_release_gate_between_audit_and_sync():
+    specs = pipeline_common._stage_specs(
+        "nm_demo",
+        {"mode": "standard"},
+        elapsed_provider=lambda: 0.0,
+    )
+
+    names = [item.name for item in specs]
+    assert names[-3:] == ["audit", "release_gate", "sync"]
+    assert next(item for item in specs if item.name == "release_gate").blocking is True
+
+
+def test_sync_runs_only_when_release_gate_allows(monkeypatch):
+    executed = []
+    specs = pipeline_common._stage_specs(
+        "nm_demo",
+        {"mode": "standard", "skip_sync": False},
+        elapsed_provider=lambda: 0.0,
+    )
+    sync = next(item for item in specs if item.name == "sync")
+    request = RunRequest(
+        run_id="run-test",
+        command="pipeline full",
+        material_id="nm_demo",
+        options={
+            "completed_stages": (
+                StageResult(
+                    stage_id="stage-release",
+                    name="release_gate",
+                    status=RunStatus.DEGRADED,
+                    outputs={"decision": "hold"},
+                ),
+            ),
+        },
+    )
+
+    monkeypatch.setattr(
+        pipeline_common,
+        "sync_novel",
+        lambda *args, **kwargs: executed.append(args)
+        or StageResult(
+            stage_id="stage-sync",
+            name="sync",
+            status=RunStatus.SUCCESS,
+        ),
+    )
+
+    assert sync.enabled(request) is False
+    assert executed == []
+
+
+def test_sync_runs_when_release_gate_decision_is_allow():
+    specs = pipeline_common._stage_specs(
+        "nm_demo",
+        {"mode": "standard", "skip_sync": False},
+        elapsed_provider=lambda: 0.0,
+    )
+    sync = next(item for item in specs if item.name == "sync")
+    request = RunRequest(
+        run_id="run-test",
+        command="pipeline full",
+        material_id="nm_demo",
+        options={
+            "completed_stages": (
+                StageResult(
+                    stage_id="stage-release",
+                    name="release_gate",
+                    status=RunStatus.SUCCESS,
+                    outputs={"decision": "allow"},
+                ),
+            ),
+        },
+    )
+
+    assert sync.enabled(request) is True
 
 
 def test_standard_stage_plan_enables_profile(monkeypatch):

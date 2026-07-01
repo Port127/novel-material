@@ -16,6 +16,7 @@ from .ingest import ingest_file
 from .insights import generate_chapter_insights
 from .outline import generate_outline
 from .refine import refine
+from .release_gate import evaluate_release_gate
 from .stage_contracts import adapt_stage_result
 from .tags import generate_tags
 from .work_profile import generate_work_profile
@@ -66,6 +67,10 @@ def run_profile_stage(*args, **kwargs):
     return adapt_stage_result("profile", generate_work_profile(*args, **kwargs))
 
 
+def run_release_gate_stage(material_id: str, **kwargs):
+    return evaluate_release_gate(material_id, **kwargs)
+
+
 def run_artifact_audit_stage(material_id: str, **kwargs):
     audit = audit_material(material_id, **kwargs)
     dispatcher = current_dispatcher()
@@ -101,6 +106,7 @@ __all__ = [
     "run_outline_stage",
     "run_profile_stage",
     "run_refine_stage",
+    "run_release_gate_stage",
     "run_tags_stage",
     "run_worldbuilding_stage",
 ]

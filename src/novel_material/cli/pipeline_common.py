@@ -30,6 +30,7 @@ from novel_material.pipeline.stages import (
     run_outline_stage,
     run_profile_stage,
     run_refine_stage,
+    run_release_gate_stage,
     run_tags_stage,
     run_worldbuilding_stage,
 )
@@ -174,17 +175,49 @@ def _stage_specs(
             blocking=True,
         ),
         StageSpec(
+            "release_gate",
+            lambda request: run_release_gate_stage(
+                material_id,
+                stages=_completed_stages(request),
+                mode=runtime_mode_name,
+                allow_degraded_sync=bool(options.get("allow_degraded_sync")),
+            ),
+            blocking=True,
+        ),
+        StageSpec(
             "sync",
-            lambda _request: sync_novel(
+            lambda request: sync_novel(
                 material_id,
                 provider=provider,
                 use_window=bool(options.get("use_window")),
                 repair_allowed=False,
             ),
             blocking=True,
-            enabled=lambda _request: not bool(options.get("skip_sync")),
+            enabled=lambda request: (
+                not bool(options.get("skip_sync"))
+                and _release_gate_allows_sync(request)
+            ),
         ),
     )
+
+
+def _completed_stages(request: RunRequest) -> tuple[StageResult, ...]:
+    value = request.options.get("completed_stages", ())
+    return tuple(item for item in value if isinstance(item, StageResult))
+
+
+def _release_gate_allows_sync(request: RunRequest) -> bool:
+    gate = next(
+        (
+            item
+            for item in reversed(_completed_stages(request))
+            if item.name == "release_gate"
+        ),
+        None,
+    )
+    if gate is None:
+        return True
+    return gate.outputs.get("decision") == "allow"
 
 
 def _use_navigation(options: dict) -> bool:

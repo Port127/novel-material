@@ -1127,6 +1127,11 @@ def cmd_full(
     skip_navigation: bool = typer.Option(False, "--skip-navigation", help="跳过前置导航"),
     mode: str = typer.Option("standard", "--mode", help="fast / standard / deep"),
     skip_sync: bool = typer.Option(False, "--skip-sync", help="跳过数据库同步"),
+    allow_degraded_sync: bool = typer.Option(
+        False,
+        "--allow-degraded-sync",
+        help="允许 release_gate 判定为 degraded 的素材继续同步；failed 不可放行",
+    ),
     skip_embedding: bool = typer.Option(False, "--skip-embedding", help="跳过章节向量化"),
 ):
     """使用统一阶段计划执行完整流水线。"""
@@ -1148,6 +1153,7 @@ def cmd_full(
             skip_navigation=skip_navigation,
             mode=mode,
             skip_sync=skip_sync,
+            allow_degraded_sync=allow_degraded_sync,
             skip_embedding=skip_embedding,
             runtime_observer=runtimes.append,
             terminal_sink=_terminal_event_sink(ctx),
@@ -1173,6 +1179,11 @@ def cmd_continue(
     use_navigation: bool = typer.Option(False, "--navigation", help="强制执行前置导航"),
     skip_navigation: bool = typer.Option(False, "--skip-navigation", help="跳过前置导航"),
     mode: str = typer.Option("standard", "--mode", help="fast / standard / deep"),
+    allow_degraded_sync: bool = typer.Option(
+        False,
+        "--allow-degraded-sync",
+        help="允许 release_gate 判定为 degraded 的素材继续同步；failed 不可放行",
+    ),
     skip_embedding: bool = typer.Option(False, "--skip-embedding", help="跳过章节向量化"),
 ):
     """使用持久化/legacy 检查生成统一续传计划。"""
@@ -1192,6 +1203,7 @@ def cmd_continue(
             skip_navigation=skip_navigation,
             mode=mode,
             skip_sync=skip_sync,
+            allow_degraded_sync=allow_degraded_sync,
             skip_embedding=skip_embedding,
             runtime_observer=runtimes.append,
             terminal_sink=_terminal_event_sink(ctx),

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from typing import Any, Callable, Iterable
 
@@ -83,6 +83,7 @@ class PipelineOrchestrator:
                 "refine",
                 "profile",
                 "audit",
+                "release_gate",
                 "sync",
             )
         )
@@ -124,6 +125,18 @@ class PipelineOrchestrator:
                 )
             )
             for spec in enabled:
+                stage_request = replace(
+                    request,
+                    options={
+                        **request.options,
+                        "completed_stages": (
+                            *self._prior_stages,
+                            *tuple(results),
+                        ),
+                    },
+                )
+                if not spec.enabled(stage_request):
+                    continue
                 with stage_context(spec.name):
                     required_failures.update(
                         self._emit(
@@ -133,7 +146,7 @@ class PipelineOrchestrator:
                     )
                     stage_started = self._clock()
                     try:
-                        result = spec.execute(request)
+                        result = spec.execute(stage_request)
                     except KeyboardInterrupt:
                         result = StageResult(
                             stage_id=current_context().stage_id or new_id("stage"),

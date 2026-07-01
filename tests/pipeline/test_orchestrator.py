@@ -123,7 +123,7 @@ def test_orchestrator_rejects_non_stage_result():
 def test_continue_plan_starts_from_invalid_insights_and_includes_downstream():
     names = (
         "analyze", "outline", "worldbuilding", "characters", "tags",
-        "insights", "refine", "profile", "audit", "sync",
+        "insights", "refine", "profile", "audit", "release_gate", "sync",
     )
     stages = {
         name: stage(
@@ -137,7 +137,14 @@ def test_continue_plan_starts_from_invalid_insights_and_includes_downstream():
     plan = PipelineOrchestrator.plan_continue(inspection)
 
     assert plan.first_stage == "insights"
-    assert plan.stage_names == ("insights", "refine", "profile", "audit", "sync")
+    assert plan.stage_names == (
+        "insights",
+        "refine",
+        "profile",
+        "audit",
+        "release_gate",
+        "sync",
+    )
 
 
 def test_continue_plan_starts_from_evaluation_when_navigation_enabled():
@@ -153,6 +160,7 @@ def test_continue_plan_starts_from_evaluation_when_navigation_enabled():
             "refine",
             "profile",
             "audit",
+            "release_gate",
             "sync",
         )
     }
@@ -175,6 +183,7 @@ def test_continue_plan_starts_from_evaluation_when_navigation_enabled():
         "refine",
         "profile",
         "audit",
+        "release_gate",
         "sync",
     )
 
@@ -192,6 +201,7 @@ def test_continue_plan_skips_missing_evaluation_when_navigation_disabled():
             "refine",
             "profile",
             "audit",
+            "release_gate",
             "sync",
         )
     }
@@ -223,7 +233,7 @@ def test_continue_plan_starts_at_audit_for_old_sidecar_without_audit():
 
     plan = PipelineOrchestrator.plan_continue(inspection)
 
-    assert plan.stage_names == ("profile", "audit", "sync")
+    assert plan.stage_names == ("profile", "audit", "release_gate", "sync")
 
 
 def test_orchestrator_persists_latest_stage_result(tmp_path):
