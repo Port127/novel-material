@@ -320,6 +320,29 @@ def _check_layered_worldbuilding(context: AuditContext) -> Iterable[ArtifactIssu
     has_driving_mechanisms = bool(
         view.overview is not None and view.overview.driving_mechanisms
     )
+    dimension_status = view.index.dimension_status
+    if (
+        applicable_dimensions
+        and not view.index.llm_success
+        and not view.entities
+        and not has_driving_mechanisms
+        and all(dimension_status.get(item) == "missing" for item in applicable_dimensions)
+    ):
+        yield _issue(
+            "worldbuilding_empty",
+            AuditSeverity.ERROR,
+            "worldbuilding/_index.yaml",
+            "世界观提取失败且所有适用维度均缺失",
+            evidence={
+                "applicable_dimensions": applicable_dimensions,
+                "dimension_status": dimension_status,
+                "entity_count": len(view.entities),
+                "has_driving_mechanisms": has_driving_mechanisms,
+            },
+            next_actions=(f"nm pipeline worldbuilding {context.material_id}",),
+        )
+        return
+
     if applicable_dimensions and not view.entities and not has_driving_mechanisms:
         yield _issue(
             "worldbuilding_empty_applicable_dimension",

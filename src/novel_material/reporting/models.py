@@ -79,6 +79,8 @@ class WorldbuildingQualityReport(BaseModel):
     evidence_count: int = Field(default=0, ge=0)
     broken_relation_count: int = Field(default=0, ge=0)
     missing_evidence_count: int = Field(default=0, ge=0)
+    dimension_status: dict[str, str] = Field(default_factory=dict)
+    source_quality_counts: dict[str, int] = Field(default_factory=dict)
 
 
 class ArtifactQualityReport(BaseModel):

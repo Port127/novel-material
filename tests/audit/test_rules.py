@@ -266,6 +266,52 @@ def test_worldbuilding_empty_and_legacy_evidence_are_reported(
     assert legacy.reviewable is True
 
 
+def test_layered_worldbuilding_all_missing_dimensions_is_error(
+    tmp_path: Path,
+) -> None:
+    novel = tmp_path / "nm_demo"
+    write_core_files(novel)
+    write_yaml(
+        novel / "worldbuilding/_index.yaml",
+        {
+            "layout": "layered",
+            "llm_success": False,
+            "entity_count": 0,
+            "relation_count": 0,
+            "evidence_count": 0,
+            "dimension_status": {
+                "organization_network": "missing",
+                "locations": "missing",
+            },
+        },
+    )
+    write_yaml(
+        novel / "worldbuilding/dimensions.yaml",
+        {
+            "schema_version": "1.0.0",
+            "dimensions": [
+                {
+                    "id": "organization_network",
+                    "name": "组织网络",
+                    "applicability": "applicable",
+                },
+                {
+                    "id": "locations",
+                    "name": "地点空间",
+                    "applicability": "applicable",
+                },
+            ],
+        },
+    )
+    write_yaml(novel / "worldbuilding/overview.yaml", {"world_summary": ""})
+    write_yaml(novel / "worldbuilding/relations.yaml", {"relations": []})
+
+    issues = run_deterministic_rules(AuditContext("nm_demo", novel))
+    by_code = {item.code: item for item in issues}
+
+    assert by_code["worldbuilding_empty"].severity is AuditSeverity.ERROR
+
+
 def test_zero_power_levels_alone_does_not_mark_worldbuilding_empty(
     tmp_path: Path,
 ) -> None:

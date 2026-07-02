@@ -73,6 +73,8 @@ def sample_report() -> PipelineRunReport:
                 evidence_count=21,
                 broken_relation_count=1,
                 missing_evidence_count=2,
+                dimension_status={"locations": "stats_seeded"},
+                source_quality_counts={"llm_verified": 7, "stats_seeded": 1},
             ),
             summary=SeverityCounts(
                 error=1,

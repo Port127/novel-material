@@ -129,6 +129,10 @@ def render_markdown(report: PipelineRunReport) -> str:
                 f"缺证实体 {quality.worldbuilding_quality.missing_evidence_count}"
             ),
             (
+                "- 世界观维度："
+                f"{_text('dimension_status', quality.worldbuilding_quality.dimension_status or {})}"
+            ),
+            (
                 "- 复审预算："
                 f"模式 {quality.review_budget.mode}，"
                 f"调用 {quality.review_budget.calls_used}/"

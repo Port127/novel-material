@@ -33,6 +33,8 @@ def audit_payload() -> dict:
             "evidence_count": 21,
             "broken_relation_count": 1,
             "missing_evidence_count": 2,
+            "dimension_status": {"locations": "stats_seeded"},
+            "source_quality_counts": {"llm_verified": 7, "stats_seeded": 1},
         },
         "issues": [
             {
@@ -146,6 +148,13 @@ def test_builder_combines_runtime_and_artifact_quality() -> None:
     assert report.artifact_quality.worldbuilding_quality.evidence_count == 21
     assert report.artifact_quality.worldbuilding_quality.broken_relation_count == 1
     assert report.artifact_quality.worldbuilding_quality.missing_evidence_count == 2
+    assert report.artifact_quality.worldbuilding_quality.dimension_status == {
+        "locations": "stats_seeded"
+    }
+    assert report.artifact_quality.worldbuilding_quality.source_quality_counts == {
+        "llm_verified": 7,
+        "stats_seeded": 1,
+    }
     assert report.next_actions == (
         "nm pipeline characters nm_demo --repair-character 主角",
     )
