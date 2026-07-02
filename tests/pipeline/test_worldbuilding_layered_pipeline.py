@@ -2,6 +2,7 @@ from pathlib import Path
 
 from novel_material.infra.yaml_io import load_yaml, save_yaml
 from novel_material.pipeline.worldbuilding import generate_worldbuilding
+from novel_material.pipeline.worldbuilding_jobs import build_worldbuilding_jobs
 from novel_material.runtime.contracts import RunStatus, StageResult
 
 
@@ -124,3 +125,20 @@ def test_generate_worldbuilding_writes_empty_layered_outputs_on_llm_failure(
     assert index["llm_success"] is False
     assert index["entity_count"] == 0
     assert dimensions["dimensions"]
+
+
+def test_build_worldbuilding_jobs_uses_applicable_dimensions_only():
+    dimensions = [
+        {"id": "organizations", "applicability": "applicable", "name": "组织"},
+        {"id": "power_system", "applicability": "not_applicable", "name": "力量体系"},
+    ]
+
+    jobs = build_worldbuilding_jobs(
+        dimensions,
+        context_text="摘要",
+        context_label="章级摘要池",
+    )
+
+    assert [job.dimension_id for job in jobs] == ["organizations"]
+    assert jobs[0].context_text == "摘要"
+    assert jobs[0].context_label == "章级摘要池"
