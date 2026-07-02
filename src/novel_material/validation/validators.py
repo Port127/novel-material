@@ -276,9 +276,13 @@ def validate_chapter_tags(material_id: str, start_ch: int | None = None, end_ch:
 
         funcs = ch.get("chapter_functions", ch.get("chapter_function", []))
         if isinstance(funcs, list) and funcs:
-            valid, invalid = validate_tags_batch("chapter_function", funcs)
+            _valid, invalid = validate_tags_batch("chapter_function", funcs)
             for tag in invalid:
-                errors.append(f"第{ch_num}章: chapter_functions '{tag}' 不在字典中")
+                logger.warning(
+                    "第%s章: chapter_functions '%s' 未在标签字典中，已降级为复核警告",
+                    ch_num,
+                    tag,
+                )
 
         # D5 新增：校验章节级标签字段
         tags_errors = validate_chapter_tags_fields(ch)

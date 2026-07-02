@@ -1,7 +1,11 @@
 """Tests for validation.schema module."""
+import logging
+
 import pytest
 
+from novel_material.infra.yaml_io import save_yaml
 from novel_material.validation.schema import EvaluationModel, MetaModel
+from novel_material.validation.validators import validate_material
 
 
 class TestMetaModel:
@@ -89,3 +93,46 @@ def test_validation_accepts_evaluation_v3_navigation():
         },
     )
     assert model.schema_version == "3.0.0"
+
+
+def test_unknown_chapter_functions_are_review_warnings_not_schema_crash(tmp_path, monkeypatch, caplog):
+    material_id = "nm_novel_20260101_abcd"
+    novel = tmp_path / material_id
+    novel.mkdir()
+    save_yaml(
+        novel / "meta.yaml",
+        {
+            "material_id": material_id,
+            "name": "示例",
+            "status": "clean",
+            "word_count": 100,
+            "chapter_count": 1,
+        },
+    )
+    save_yaml(
+        novel / "chapters.yaml",
+        [
+            {
+                "chapter": 1,
+                "title": "一",
+                "summary": (
+                    "主角在压力下首次登场，遭遇关键阻碍并决定主动破局，"
+                    "为后续主线推进建立清晰动机，同时埋下人物关系和外部冲突的伏笔。"
+                ),
+                "tension_level": 3,
+                "chapter_functions": ["开篇建立"],
+            }
+        ],
+    )
+
+    monkeypatch.setattr("novel_material.validation.validators.NOVELS_DIR", tmp_path)
+    monkeypatch.setattr(
+        "novel_material.validation.validators.validate_tags_batch",
+        lambda _dimension, tags: ([], list(tags)),
+    )
+
+    with caplog.at_level(logging.WARNING):
+        passed = validate_material(material_id, verbose=False)
+
+    assert passed is True
+    assert "chapter_functions '开篇建立' 未在标签字典中，已降级为复核警告" in caplog.text
