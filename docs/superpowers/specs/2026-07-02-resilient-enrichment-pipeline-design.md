@@ -8,7 +8,7 @@
 - `worldbuilding` 单次大调用超时后写入空结构，实体、关系和证据全为 0。
 - `profile` 返回内容未通过 schema 校验，最终没有写出 `work_profile.yaml`。
 - `insights` 只保存了少量成功章节，大量漏章和 schema 错误缺少细粒度补救。
-- `validate` 和 `release_gate` 能发现失败，但 next action 不够具体，无法指导最省 API 的修复路径。
+- `validate` 和 `release_gate` 能发现失败，但 next action 不够具体，无法指导最小无效重跑的修复路径。
 
 这些问题的根因不是某一本素材，而是增强阶段过于依赖“一次大调用 + 严格整体验证”。本设计目标是让长篇素材在 LLM 超时、输出漏字段、局部 schema 漂移时仍保留可用产物，并把不可用部分限定在最小范围。
 
@@ -20,7 +20,7 @@
 - 将 `insights` 改为小批次、缺章单独补、schema 错误单章 repair。
 - 让 LLM timeout 上限可配置，避免 SDK 层 300 秒封顶限制大任务。
 - 让报告和发布门禁展示可执行的质量分布和修复路径。
-- 减少重复 API 消耗：成功的局部产物必须保存，失败只重试失败单元。
+- 避免无效重跑：成功的局部产物必须保存，失败只重试失败单元；API 用量不是降低质量的理由。
 
 ## 非目标
 
@@ -407,7 +407,7 @@ error：worldbuilding 全空、核心人物全 fallback、profile 缺失
 warning：部分 insights 缺失、部分标签 unknown、部分维度 stats_seeded
 ```
 
-`release_gate` 输出必须包含最省 API 的 next actions：
+`release_gate` 输出必须包含最小无效重跑的 next actions：
 
 ```text
 1. repair characters core biographies
@@ -418,7 +418,7 @@ warning：部分 insights 缺失、部分标签 unknown、部分维度 stats_see
 
 ## 实施阶段
 
-### 第一阶段：减少 API 浪费
+### 第一阶段：减少无效重跑
 
 - `characters` 小批次。
 - 人物分层 normalize。
@@ -454,8 +454,8 @@ warning：部分 insights 缺失、部分标签 unknown、部分维度 stats_see
 
 - 风险：schema 放松导致低质量内容被误认为完整。
   缓解：用 `profile_level`、`source_quality`、`schema_issues` 和门禁分级区分质量。
-- 风险：repair 增加 API 成本。
-  缓解：只 repair 失败单元，成功单元立即保存；repair 次数默认 1。
+- 风险：repair 增加调用次数。
+  缓解：只 repair 失败单元，成功单元立即保存；repair 次数默认 1。调用次数不能作为牺牲产物质量的理由。
 - 风险：worldbuilding 分维度后关系重复或冲突。
   缓解：合并阶段统一实体 ID 和关系去重，无法匹配的关系记录后丢弃。
 - 风险：`stats_seeded` 被误用为事实丰富世界观。
