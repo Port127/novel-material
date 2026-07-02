@@ -114,12 +114,14 @@ nm pipeline analyze <id> [--window] [--skip-embedding]
 nm pipeline insights <id> [--start N] [--end N] [--profile NAME]
 nm pipeline outline <id>
 nm pipeline worldbuilding <id>
-nm pipeline characters <id>
+nm pipeline characters <id> [--repair-character NAME]
 nm pipeline tags <id>
 nm pipeline refine <id>
+nm pipeline profile <id>
 nm pipeline full <file> [--mode fast|standard|deep]
 nm pipeline status <id>
 nm pipeline continue <id> [--mode fast|standard|deep]
+nm pipeline report <id> [--run-id RUN_ID]
 ```
 
 ### Search
@@ -165,6 +167,7 @@ nm material classify clean
 ### Storage 与 Validate
 
 ```bash
+nm storage migrate
 nm storage init-db
 nm storage init-data
 nm storage init-tags
@@ -174,6 +177,7 @@ nm validate validate [material_id]
 nm validate validate --all
 nm validate quality <material_id> [--start N] [--end N]
 nm validate insights <material_id>
+nm validate artifacts <material_id> [--review]
 ```
 
 ## 常用流程

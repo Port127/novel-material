@@ -1,60 +1,62 @@
 # 项目文档
 
-本目录只保留与 Novel Material V3 直接相关的现行文档、工作记录和历史反馈。产品边界、技术实现和使用方式分别由不同文档负责，避免同一信息在多处重复维护。
+本目录是 Novel Material V3 的项目文档入口。文档分为事实源、当前工作、历史归档和非项目文档四类；历史归档只用于追溯，不参与当前需求、架构或操作规范裁决。
 
-## 现行文档
+## 事实源
 
-| 文档 | 状态 | 用途 |
+| 文档 | 维护状态 | 用途 |
 |---|---|---|
 | [README](../README.md) | 现行入口 | 项目简介、当前能力与快速开始 |
-| [项目需求](REQUIREMENTS.md) | 产品事实来源 | 产品边界、质量目标、规模与不做什么 |
-| [系统架构](../ARCHITECTURE.md) | 技术事实来源 | 当前架构、数据流、模块边界与已知限制 |
-| [用户手册](USER_MANUAL.md) | 使用事实来源 | 与真实 CLI 一致的安装和操作方法 |
+| [项目需求](REQUIREMENTS.md) | 产品事实源 | 产品边界、质量目标、规模与不做什么 |
+| [系统架构](../ARCHITECTURE.md) | 技术事实源 | 当前架构、数据流、模块边界与已知限制 |
+| [用户手册](USER_MANUAL.md) | 使用事实源 | 与真实 CLI 一致的安装、命令和故障排查 |
 | [Agent 指南](../AGENTS.md) | Agent 规则 | Codex 与通用 Agent 的项目操作规范 |
 | [Claude 指南](../CLAUDE.md) | Agent 规则 | Claude Code 的项目操作规范 |
-| [检索容量与质量门禁](search-benchmark.md) | 实验状态 | 容量计划、ANN 准入条件与未执行项 |
 
-运行健康与产物质量能力已经纳入现行文档：架构文档定义 `runtime/run_logging/audit/reporting/terminal` 的边界和事件流；用户手册说明 `nm validate artifacts [--review]`、`nm pipeline report`、稳定退出码和报告目录；需求文档定义只读审计、严重度语义与可追溯报告的验收口径。
+文档发生冲突时，依次以用户当前请求、Agent 指南、项目需求、系统架构、用户手册、README 为准。归档文档仅供追溯，不参与裁决。
 
-前置导航和人物完整小传能力也已纳入现行文档：架构文档说明 `evaluation.yaml` v3、旧版兼容读取、`--window` 解耦和人物完整小传/简档边界；用户手册说明 `--navigation`、`--skip-navigation`、`--repair-character` 和 `validate artifacts` 的只读语义；需求文档说明该能力只提升人物素材结构完整性，不替代检索质量评测。
+## 当前工作
 
-分层世界观与作品画像能力已经纳入现行文档：架构文档说明 layered `worldbuilding/` 布局、旧格式只读适配、`work_profile.yaml`、`profile` 阶段和 storage/search metadata 适配；用户手册说明 `nm pipeline profile`、世界观目录结构、`search world` metadata 和真实素材 LLM 授权边界；需求文档说明该能力提供更完整的结构化参考，但在 Golden Query 人工标注完成前不构成检索质量提升证明。
+| 文档 | 维护状态 | 用途 |
+|---|---|---|
+| [检索容量与质量门禁](search-benchmark.md) | 当前实验状态 | 容量计划、ANN 准入条件与未执行项 |
+| [未解决反馈](feedback.md) | 当前待办池 | 仍需处理的问题和想法 |
+| [当前计划](current/plans/) | 当前计划 | 仍在执行或即将执行的计划 |
 
-CLI 成本保护和前置导航输出预算已经纳入现行文档：用户手册说明 `pipeline full` 的同名小说确认、不可交互默认不分析和 `LLM_EVALUATION_MAX_TOKENS`；架构文档说明重复分析保护位于 CLI 层，前置导航输出预算从 settings 经 config service 传入 `evaluate_batch()`。
+运行报告、前置导航、人物完整小传、分层世界观和作品画像能够说明流水线是否完整、资源消耗、产物规则问题和作品级结构入口，并让素材结构更完整，但不能替代检索质量评测。Golden Query 人工标注缺口仍然有效。
 
-文档发生冲突时，依次以项目需求、系统架构、用户手册、Agent 指南为准。README 只做摘要，不覆盖详细规范。
+## 历史归档
 
-## 工作记录
+| 目录 | 用途 |
+|---|---|
+| [归档说明](archive/README.md) | 归档区入口和历史链接说明 |
+| [审查报告](archive/reviews/) | 历史代码审查和定向审查报告 |
+| [事故复盘](archive/analysis/) | 事故分析和 postmortem |
+| [已解决反馈](archive/feedback/) | 已完成反馈的历史记录 |
+| [Superpowers 记录](archive/superpowers/) | 已完成或历史化的设计规格、实施计划和执行记录 |
 
-- [未解决反馈](feedback.md)：仍需处理的问题和想法。
-- [反馈归档](feedback/archive/)：已解决问题的历史记录，只用于追溯。
-- [设计规格](superpowers/specs/)：当前仍有参考价值的设计决策。
-- [实施计划](superpowers/plans/)：当前正在执行的任务计划。
-
-工作记录不属于现行功能说明。历史计划与当前代码冲突时，以现行文档和代码为准。
-
-项目 Skills 以 `.agents/skills/` 为事实来源，`.claude/skills/` 为生成镜像；运行 `python scripts/sync_agent_skills.py --check` 可检查漂移。
-
-## 待办与已知缺口
-
-运行报告、前置导航、人物完整小传、分层世界观和作品画像能够说明流水线是否完整、资源消耗、产物规则问题和作品级结构入口，并让素材结构更完整，但不能替代检索质量评测。以下 Golden Query 缺口仍然有效。
-
-### 检索 Golden Query 人工标注
-
-- `eval/search_queries.yaml` 已包含 30 条真实业务查询，候选准备和标签导入命令已经实现。
-- `eval/search_candidates.yaml` 是本地人工标注工作文件，当前标注尚未完成，不纳入版本控制；不得由 Agent 猜测或自动填写 `relevance`。
-- 人工标注延期处理，因此暂未生成 `eval/baselines/4096-exact.json`。在基线补齐前，后续实现可以继续，但不得声称混合检索或重排质量已经达到、不低于或优于 4096 维精确基线。
-- 恢复该待办时，应先保留已有人工填写内容，再完善候选证据和不确定项处理；禁止直接重新生成候选文件覆盖人工修改。
-- 完成人工标注后，依次执行 `nm eval search import-labels` 和 `nm eval search score --mode exact`，再恢复依赖质量基线的门禁验收。
-- 25 万、50 万和 250 万章容量实测随质量基线延期；当前只有安全计划入口和硬门禁，不得虚构结论。
+归档文档默认不维护。历史计划、规格或执行记录与当前代码冲突时，以事实源文档和代码为准。
 
 ## 子系统契约
 
 - [标签体系](../data/tag-system/README.md)：标签分类、维度和平台映射。
 - [数据库迁移](../src/novel_material/storage/migrations/README.md)：已有数据库迁移顺序。
 
+## 非项目文档
+
+以下路径不纳入项目文档维护体系：
+
+- `material/`：小说素材和语料。
+- `data/`：运行数据、事实产物和可重建查询数据。
+- `.pytest_cache/`：测试工具缓存。
+- `*.egg-info/`：构建元数据。
+
+## Skills
+
+项目 Skills 以 `.agents/skills/` 为事实来源，`.claude/skills/` 为生成镜像；运行 `python scripts/sync_agent_skills.py --check` 可检查漂移。
+
 ## 建议阅读顺序
 
-- 普通使用者：README → 用户手册。
-- 开发者：项目需求 → 系统架构 → 用户手册。
-- Agent：AGENTS 或 CLAUDE → 项目需求 → 用户手册。
+- 普通使用者：README -> 用户手册。
+- 开发者：项目需求 -> 系统架构 -> 用户手册。
+- Agent：AGENTS 或 CLAUDE -> 项目需求 -> 用户手册。
