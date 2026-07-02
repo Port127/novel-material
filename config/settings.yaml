@@ -38,6 +38,12 @@ LLM_RATE_LIMIT_SECONDS: 10
 # 一次 API 调用同时分析多少章（推荐 5-30，章节内容长用小值）
 LLM_CHAPTER_BATCH_SIZE: 10
 
+# 人物增强按角色层级拆批，核心人物小批次保障质量
+LLM_CORE_CHARACTER_BATCH_SIZE: 2
+LLM_SUPPORTING_CHARACTER_BATCH_SIZE: 12
+LLM_MINOR_CHARACTER_BATCH_SIZE: 20
+LLM_CHARACTER_REPAIR_MAX_ATTEMPTS: 1
+
 # 单章输入截断上限（tokens），超长部分被截断
 LLM_MAX_CHAPTER_TOKENS: 5000
 
@@ -86,7 +92,10 @@ LLM_ANALYZE_TIMEOUT: 3000        # 章级分析（原文输入，耗时长）
 LLM_OUTLINE_TIMEOUT: 3000        # 大纲生成
 LLM_WORLDBUILDING_TIMEOUT: 1800  # 世界观提取
 LLM_CHARACTERS_TIMEOUT: 1800     # 人物提取（两轮调用）
+LLM_PROFILE_TIMEOUT: 1800        # 作品画像生成
+LLM_INSIGHTS_TIMEOUT: 1200       # 章级 insights 生成
 LLM_OTHER_TIMEOUT: 300           # 其他小任务（兜底）
+LLM_SDK_TIMEOUT_CAP: 1200        # 单次 SDK 请求 timeout 上限
 
 # ──────────────────────────────────────────────
 # 摘要池 Token 上限（各阶段输入量）

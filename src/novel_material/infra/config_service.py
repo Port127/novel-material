@@ -90,7 +90,14 @@ def _build_llm_config(
         "outline_timeout": int(settings.get("LLM_OUTLINE_TIMEOUT", 300)),
         "worldbuilding_timeout": int(settings.get("LLM_WORLDBUILDING_TIMEOUT", 300)),
         "characters_timeout": int(settings.get("LLM_CHARACTERS_TIMEOUT", 300)),
+        "profile_timeout": int(
+            settings.get("LLM_PROFILE_TIMEOUT", settings.get("LLM_OTHER_TIMEOUT", 120))
+        ),
+        "insights_timeout": int(
+            settings.get("LLM_INSIGHTS_TIMEOUT", settings.get("LLM_OTHER_TIMEOUT", 120))
+        ),
         "other_timeout": int(settings.get("LLM_OTHER_TIMEOUT", 120)),
+        "sdk_timeout_cap": int(settings.get("LLM_SDK_TIMEOUT_CAP", 300)),
         "outline_summary_tokens": int(
             settings.get("LLM_OUTLINE_SUMMARY_TOKENS", 80000)
         ),
@@ -114,6 +121,18 @@ def _build_llm_config(
         ),
         "chapter_batch_size": int(settings.get("LLM_CHAPTER_BATCH_SIZE", 5)),
         "insight_batch_size": int(settings.get("LLM_INSIGHT_BATCH_SIZE", 20)),
+        "core_character_batch_size": int(
+            settings.get("LLM_CORE_CHARACTER_BATCH_SIZE", 2)
+        ),
+        "supporting_character_batch_size": int(
+            settings.get("LLM_SUPPORTING_CHARACTER_BATCH_SIZE", 12)
+        ),
+        "minor_character_batch_size": int(
+            settings.get("LLM_MINOR_CHARACTER_BATCH_SIZE", 20)
+        ),
+        "character_repair_max_attempts": int(
+            settings.get("LLM_CHARACTER_REPAIR_MAX_ATTEMPTS", 1)
+        ),
         "pricing": {
             "input_per_1k": float(settings.get("LLM_PRICE_INPUT_1K", 0.0004)),
             "output_per_1k": float(settings.get("LLM_PRICE_OUTPUT_1K", 0.0012)),

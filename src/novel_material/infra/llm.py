@@ -501,7 +501,8 @@ def call_llm(
             base_url=config["llm"].get("base_url"),
             max_retries=0,
         )
-        sdk_timeout = min(total_timeout * 0.8, 300)
+        sdk_timeout_cap = int(config["llm"].get("sdk_timeout_cap", 300))
+        sdk_timeout = min(total_timeout * 0.8, sdk_timeout_cap)
 
         # 构建 create 参数
         # thinking 控制：DashScope OpenAI 兼容接口通过 extra_body 传递 thinking_budget

@@ -43,3 +43,27 @@ def test_build_llm_config_exposes_quality_budget_keys() -> None:
     assert config["profile_context_tokens"] == 120000
     assert config["length_retry_multiplier"] == 2
     assert config["length_retry_max_tokens"] == 128000
+
+
+def test_build_llm_config_exposes_resilient_enrichment_keys() -> None:
+    config = _build_llm_config(
+        {
+            "LLM_SDK_TIMEOUT_CAP": 1200,
+            "LLM_PROFILE_TIMEOUT": 1800,
+            "LLM_INSIGHTS_TIMEOUT": 1200,
+            "LLM_CORE_CHARACTER_BATCH_SIZE": 2,
+            "LLM_SUPPORTING_CHARACTER_BATCH_SIZE": 12,
+            "LLM_MINOR_CHARACTER_BATCH_SIZE": 20,
+            "LLM_CHARACTER_REPAIR_MAX_ATTEMPTS": 1,
+        },
+        providers_yaml=None,
+        provider=None,
+    )
+
+    assert config["sdk_timeout_cap"] == 1200
+    assert config["profile_timeout"] == 1800
+    assert config["insights_timeout"] == 1200
+    assert config["core_character_batch_size"] == 2
+    assert config["supporting_character_batch_size"] == 12
+    assert config["minor_character_batch_size"] == 20
+    assert config["character_repair_max_attempts"] == 1
