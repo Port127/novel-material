@@ -108,12 +108,22 @@ def _cap_confidence(insight: dict, errors: list[str]) -> None:
 def _coerce_items(result: object) -> list[dict]:
     """Return generated insight items from supported LLM result shapes."""
     if isinstance(result, dict):
-        items = result.get("items", [])
+        items = result.get("items", result.get("insights", []))
     elif isinstance(result, list):
         items = result
     else:
         items = []
     return [item for item in items if isinstance(item, dict)]
+
+
+def _coerce_single_insight(result: object, chapter_num: int) -> dict:
+    items = _coerce_items(result)
+    for item in items:
+        if int(item.get("chapter") or 0) == chapter_num:
+            return item
+    if isinstance(result, dict) and "items" not in result and "insights" not in result:
+        return result
+    return {}
 
 
 def generate_chapter_insights(
@@ -197,13 +207,34 @@ def generate_chapter_insights(
             ch_num = int(chapter["chapter"])
             raw = by_chapter.get(ch_num, {})
             if not raw:
-                diagnostics.append(Diagnostic(code="insight_missing_from_batch", message=f"批次 {batch_idx} 未返回第 {ch_num} 章", severity="error", retryable=True))
-                failed += 1
-                done += 1
-                if progress_callback:
-                    progress_callback(done, total, f"insight 批次 {batch_idx}: 第 {ch_num} 章失败")
-                continue
-            repaired = False
+                try:
+                    repair_result = call_llm(
+                        system_prompt=system_prompt,
+                        user_prompt=build_insight_user_prompt(chapter, schema_text),
+                        config=config,
+                        max_tokens_override=config["llm"].get("insights_max_tokens"),
+                        timeout_override=config["llm"].get(
+                            "insights_timeout",
+                            config["llm"].get("other_timeout"),
+                        ),
+                        context=f"{material_id} insights修复#{ch_num}",
+                    )
+                    raw = _coerce_single_insight(repair_result, ch_num)
+                except Exception as exc:
+                    logger.warning(
+                        f"[{material_id}] insight 第 {ch_num} 章缺失修复失败: {exc}"
+                    )
+                    raw = {}
+                if not raw:
+                    diagnostics.append(Diagnostic(code="insight_missing_from_batch", message=f"批次 {batch_idx} 未返回第 {ch_num} 章", severity="error", retryable=True))
+                    failed += 1
+                    done += 1
+                    if progress_callback:
+                        progress_callback(done, total, f"insight 批次 {batch_idx}: 第 {ch_num} 章失败")
+                    continue
+                repaired = True
+            else:
+                repaired = False
             insight = {
                 **raw,
                 "schema_version": "1.0",
