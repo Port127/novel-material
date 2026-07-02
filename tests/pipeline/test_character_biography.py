@@ -4,6 +4,11 @@ import pytest
 
 from novel_material.infra.llm_contracts import LLMResponseContractError
 from novel_material.pipeline.characters_biography import normalize_biography_response
+from novel_material.pipeline.characters_quality import (
+    build_character_quality_counts,
+    classify_profile_quality,
+    mark_schema_issue,
+)
 
 
 def _full_profile() -> dict:
@@ -81,3 +86,35 @@ def test_biography_response_rejects_invalid_basis():
             {"characters": [payload]},
             candidate_names={"陈汉升"},
         )
+
+
+def test_character_quality_classifies_full_enriched_partial_and_fallback():
+    full = {"name": "甲", "profile_level": "full", "biography_complete": True}
+    enriched = {"name": "乙", "profile_level": "enriched", "biography_complete": False}
+    partial = {"name": "丙", "profile_level": "partial", "schema_issues": ["缺少 psychology"]}
+    fallback = {"name": "丁", "profile_level": "fallback"}
+
+    assert classify_profile_quality(full) == "full"
+    assert classify_profile_quality(enriched) == "enriched"
+    assert classify_profile_quality(partial) == "partial"
+    assert classify_profile_quality(fallback) == "fallback"
+
+    counts = build_character_quality_counts([full, enriched, partial, fallback])
+    assert counts == {"full": 1, "enriched": 1, "partial": 1, "fallback": 1}
+
+
+def test_mark_schema_issue_records_source_quality_and_attempt_count():
+    profile = {"name": "丙"}
+
+    result = mark_schema_issue(
+        profile,
+        issue="psychology 缺失",
+        level="partial",
+        source_quality="llm_repaired",
+        repair_attempts=1,
+    )
+
+    assert result["profile_level"] == "partial"
+    assert result["source_quality"] == "llm_repaired"
+    assert result["repair_attempts"] == 1
+    assert result["schema_issues"] == ["psychology 缺失"]
