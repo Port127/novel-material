@@ -2,6 +2,7 @@ from pathlib import Path
 
 from novel_material.infra.yaml_io import load_yaml, save_yaml
 from novel_material.pipeline.worldbuilding import generate_worldbuilding
+from novel_material.pipeline.worldbuilding_fallback import build_stats_seeded_entities
 from novel_material.pipeline.worldbuilding_jobs import build_worldbuilding_jobs
 from novel_material.runtime.contracts import RunStatus, StageResult
 
@@ -142,3 +143,18 @@ def test_build_worldbuilding_jobs_uses_applicable_dimensions_only():
     assert [job.dimension_id for job in jobs] == ["organizations"]
     assert jobs[0].context_text == "摘要"
     assert jobs[0].context_label == "章级摘要池"
+
+
+def test_build_stats_seeded_entities_creates_conservative_entities():
+    stats = {
+        "organizations": {"黑星军团": 12},
+        "locations": {"海蓝星": 7},
+    }
+
+    entities = build_stats_seeded_entities(stats, min_count=5)
+
+    by_name = {entity["name"]: entity for entity in entities}
+    assert by_name["黑星军团"]["source_quality"] == "stats_seeded"
+    assert by_name["黑星军团"]["type"] == "organization"
+    assert by_name["海蓝星"]["type"] == "location"
+    assert by_name["海蓝星"]["confidence"] == 0.45
