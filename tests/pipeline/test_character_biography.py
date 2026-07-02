@@ -12,6 +12,7 @@ from novel_material.pipeline.characters_quality import (
     classify_profile_quality,
     mark_schema_issue,
 )
+from novel_material.pipeline.characters_repair import repair_core_biography_profile
 
 
 def _full_profile() -> dict:
@@ -145,3 +146,30 @@ def test_lenient_biography_normalization_marks_missing_candidate():
     )
 
     assert result.missing_names == ("沈幼楚",)
+
+
+def test_repair_core_biography_profile_returns_repaired_profile(monkeypatch):
+    raw = {"name": "沈幼楚", "role": "supporting", "description": "重要角色"}
+
+    def fake_call_llm(*_args, **_kwargs):
+        fixed = _full_profile()
+        fixed["name"] = "沈幼楚"
+        return {"characters": [fixed]}
+
+    monkeypatch.setattr("novel_material.pipeline.characters_repair.call_llm", fake_call_llm)
+
+    repaired = repair_core_biography_profile(
+        raw_profile=raw,
+        issues=("arc_stages 缺失",),
+        candidate_names={"沈幼楚"},
+        config={"llm": {"characters_timeout": 1}},
+        material_id="nm_demo",
+        context_label="摘要池",
+        context_text="第1章：沈幼楚登场",
+    )
+
+    assert repaired["name"] == "沈幼楚"
+    assert repaired["profile_level"] == "full"
+    assert repaired["biography_complete"] is True
+    assert repaired["source_quality"] == "llm_repaired"
+    assert repaired["repair_attempts"] == 1
