@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -68,18 +69,57 @@ def generate_work_profile(
             title=str(context.get("title") or ""),
         )
     except ValueError as exc:
-        return _profile_result(
-            RunStatus.FAILED,
-            diagnostic=Diagnostic(
-                code="work_profile_schema_invalid",
-                message=f"作品画像生成失败: {type(exc).__name__}",
-                severity="error",
-                retryable=True,
-            ),
-        )
+        try:
+            repaired_response = call_llm(
+                system_prompt,
+                _build_profile_repair_prompt(
+                    original_response=response,
+                    error=str(exc),
+                    context=context,
+                ),
+                config,
+                timeout_override=timeout,
+                context=f"{material_id} 作品画像repair",
+            )
+            profile = normalize_work_profile_response(
+                repaired_response,
+                material_id=material_id,
+                title=str(context.get("title") or ""),
+            )
+        except Exception as repair_exc:
+            return _profile_result(
+                RunStatus.FAILED,
+                diagnostic=Diagnostic(
+                    code="work_profile_schema_invalid",
+                    message=f"作品画像生成失败: {type(repair_exc).__name__}",
+                    severity="error",
+                    retryable=True,
+                ),
+            )
 
     save_yaml(novel_dir / "work_profile.yaml", profile.model_dump(mode="json"))
     return _profile_result(RunStatus.SUCCESS, written=True)
+
+
+def _build_profile_repair_prompt(
+    *,
+    original_response: object,
+    error: str,
+    context: dict[str, Any],
+) -> str:
+    return "\n".join(
+        (
+            "请修复上一轮 work_profile JSON 响应，只返回修复后的 JSON 对象。",
+            "必须补 evidence_index，并至少引用 chapters、characters 或 worldbuilding_entities 中的一类。",
+            "如果前置证据不足，quality_level 写 limited，并在 limitations 说明限制。",
+            "原始响应：",
+            json.dumps(original_response, ensure_ascii=False, default=str),
+            "错误信息：",
+            error,
+            "可用压缩事实：",
+            json.dumps(context, ensure_ascii=False, sort_keys=True, default=str),
+        )
+    )
 
 
 def _profile_result(

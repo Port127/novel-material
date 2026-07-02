@@ -126,3 +126,48 @@ def test_generate_work_profile_reports_schema_invalid(
     assert isinstance(result, StageResult)
     assert result.status is RunStatus.FAILED
     assert result.diagnostics[0].code == "work_profile_schema_invalid"
+
+
+def test_generate_work_profile_repairs_missing_evidence_index_as_limited(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    novel = tmp_path / "nm_demo"
+    novel.mkdir()
+    save_yaml(novel / "meta.yaml", {"material_id": "nm_demo", "name": "示例"})
+    save_yaml(novel / "chapters.yaml", [{"chapter": 1, "summary": "主角登场"}])
+
+    calls = []
+
+    def fake_call_llm(*_args, **_kwargs):
+        calls.append(1)
+        if len(calls) == 1:
+            return {
+                "core_hooks": ["开局"],
+                "reader_expectations": ["爽点"],
+                "confidence": 0.5,
+            }
+        return {
+            "quality_level": "limited",
+            "core_hooks": ["开局"],
+            "reader_expectations": ["爽点"],
+            "story_structure": {"pacing_pattern": "快节奏"},
+            "evidence_index": {"chapters": [1]},
+            "limitations": ["首次响应缺少证据索引，已修复为 limited"],
+            "confidence": 0.5,
+        }
+
+    monkeypatch.setattr("novel_material.pipeline.work_profile.NOVELS_DIR", tmp_path)
+    monkeypatch.setattr(
+        "novel_material.pipeline.work_profile.call_llm",
+        fake_call_llm,
+    )
+    monkeypatch.setattr(
+        "novel_material.pipeline.work_profile.load_config",
+        lambda _provider=None: {"llm": {"profile_timeout": 1}},
+    )
+
+    result = generate_work_profile("nm_demo")
+
+    assert result.status.value == "success"
+    assert load_yaml(novel / "work_profile.yaml")["quality_level"] == "limited"
