@@ -59,6 +59,13 @@ class CharacterQualityReport(BaseModel):
     biography_completed_count: int = Field(default=0, ge=0)
     brief_profile_count: int = Field(default=0, ge=0)
     biography_failed_count: int = Field(default=0, ge=0)
+    full_profile_count: int = Field(default=0, ge=0)
+    enriched_profile_count: int = Field(default=0, ge=0)
+    partial_profile_count: int = Field(default=0, ge=0)
+    fallback_profile_count: int = Field(default=0, ge=0)
+    repair_attempted_count: int = Field(default=0, ge=0)
+    repair_succeeded_count: int = Field(default=0, ge=0)
+    repair_failed_count: int = Field(default=0, ge=0)
 
 
 class WorldbuildingQualityReport(BaseModel):

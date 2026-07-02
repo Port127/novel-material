@@ -18,6 +18,13 @@ def audit_payload() -> dict:
             "biography_completed_count": 4,
             "brief_profile_count": 3,
             "biography_failed_count": 1,
+            "full_profile_count": 2,
+            "enriched_profile_count": 1,
+            "partial_profile_count": 1,
+            "fallback_profile_count": 1,
+            "repair_attempted_count": 2,
+            "repair_succeeded_count": 1,
+            "repair_failed_count": 1,
         },
         "worldbuilding_quality": {
             "layout": "layered",
@@ -126,6 +133,13 @@ def test_builder_combines_runtime_and_artifact_quality() -> None:
     assert report.artifact_quality.character_quality.biography_completed_count == 4
     assert report.artifact_quality.character_quality.brief_profile_count == 3
     assert report.artifact_quality.character_quality.biography_failed_count == 1
+    assert report.artifact_quality.character_quality.full_profile_count == 2
+    assert report.artifact_quality.character_quality.enriched_profile_count == 1
+    assert report.artifact_quality.character_quality.partial_profile_count == 1
+    assert report.artifact_quality.character_quality.fallback_profile_count == 1
+    assert report.artifact_quality.character_quality.repair_attempted_count == 2
+    assert report.artifact_quality.character_quality.repair_succeeded_count == 1
+    assert report.artifact_quality.character_quality.repair_failed_count == 1
     assert report.artifact_quality.worldbuilding_quality.layout == "layered"
     assert report.artifact_quality.worldbuilding_quality.entity_count == 8
     assert report.artifact_quality.worldbuilding_quality.relation_count == 6

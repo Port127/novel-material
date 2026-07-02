@@ -19,6 +19,7 @@ def test_markdown_contains_conclusion_risks_and_next_actions(
     assert "API 调用：尝试 2，完成 1" in text
     assert "character_profile_fallback" in text
     assert "完整小传：目标 5，完成 4，失败 1，简档 3" in text
+    assert "人物质量：full=2，enriched=1，partial=1，fallback=1，repair=1/2" in text
     assert "世界观：layered，实体 8，关系 6，证据 21，断裂关系 1，缺证实体 2" in text
     assert "nm pipeline characters" in text
     assert "未复审项" in text

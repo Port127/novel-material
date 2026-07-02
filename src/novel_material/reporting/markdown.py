@@ -111,6 +111,15 @@ def render_markdown(report: PipelineRunReport) -> str:
                 f"简档 {quality.character_quality.brief_profile_count}"
             ),
             (
+                "- 人物质量："
+                f"full={quality.character_quality.full_profile_count}，"
+                f"enriched={quality.character_quality.enriched_profile_count}，"
+                f"partial={quality.character_quality.partial_profile_count}，"
+                f"fallback={quality.character_quality.fallback_profile_count}，"
+                f"repair={quality.character_quality.repair_succeeded_count}/"
+                f"{quality.character_quality.repair_attempted_count}"
+            ),
+            (
                 "- 世界观："
                 f"{quality.worldbuilding_quality.layout or 'unknown'}，"
                 f"实体 {quality.worldbuilding_quality.entity_count}，"

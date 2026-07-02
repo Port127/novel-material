@@ -36,6 +36,7 @@ from novel_material.pipeline.characters_profile import (
     _save_character_profile,
     _load_existing_profiles,
 )
+from novel_material.pipeline.characters_quality import build_character_quality_counts
 from novel_material.pipeline.characters_layer import _extract_character_batch
 from novel_material.pipeline.evaluation_models import (
     EvaluationNavigation,
@@ -386,6 +387,24 @@ def generate_characters(
 
     # 合并所有人物
     all_characters = existing_profiles
+    quality_counts = build_character_quality_counts(all_characters)
+    repair_counts = {
+        "attempted": sum(
+            1 for c in all_characters if int(c.get("repair_attempts") or 0) > 0
+        ),
+        "succeeded": sum(
+            1
+            for c in all_characters
+            if int(c.get("repair_attempts") or 0) > 0
+            and c.get("source_quality") == "llm_repaired"
+        ),
+        "failed": sum(
+            1
+            for c in all_characters
+            if int(c.get("repair_attempts") or 0) > 0
+            and c.get("source_quality") != "llm_repaired"
+        ),
+    }
 
     # 关系去重
     seen_pairs = set()
@@ -423,6 +442,8 @@ def generate_characters(
         ),
         "biography_selection_reason": selection.selection_reason,
         "repair_requested": bool(repair_names),
+        "quality_counts": quality_counts,
+        "repair_counts": repair_counts,
         "biography_targets": [
             {
                 "name": target.name,

@@ -58,6 +58,13 @@ def sample_report() -> PipelineRunReport:
                 biography_completed_count=4,
                 brief_profile_count=3,
                 biography_failed_count=1,
+                full_profile_count=2,
+                enriched_profile_count=1,
+                partial_profile_count=1,
+                fallback_profile_count=1,
+                repair_attempted_count=2,
+                repair_succeeded_count=1,
+                repair_failed_count=1,
             ),
             worldbuilding_quality=WorldbuildingQualityReport(
                 layout="layered",
@@ -121,6 +128,9 @@ def sample_events(sample_report: PipelineRunReport):
         material_id=sample_report.material_id,
         checks=sample_report.artifact_quality.checks,
         issues=sample_report.artifact_quality.issues,
+        character_quality=sample_report.artifact_quality.character_quality.model_dump(
+            mode="json"
+        ),
         worldbuilding_quality=sample_report.artifact_quality.worldbuilding_quality.model_dump(
             mode="json"
         ),
