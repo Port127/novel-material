@@ -10,6 +10,18 @@ from novel_material.runtime.contracts import Diagnostic, RunStatus, StageResult
 
 CORE_FAILED_STAGES = {"analyze", "refine", "sync"}
 DEGRADED_HOLD_STAGES = {"worldbuilding", "characters", "insights"}
+NEXT_ACTIONS_BY_REASON = {
+    "audit_blocker": "nm validate artifacts <material_id> --review",
+    "audit_error": "nm validate artifacts <material_id> --review",
+    "profile_missing": "nm pipeline profile <material_id>",
+    "profile_failed": "nm pipeline profile <material_id>",
+    "worldbuilding_degraded": "nm pipeline worldbuilding <material_id>",
+    "characters_degraded": "nm pipeline characters <material_id>",
+    "insights_degraded": "nm pipeline insights <material_id>",
+    "analyze_failed": "nm pipeline analyze <material_id>",
+    "refine_failed": "nm pipeline refine <material_id>",
+    "sync_failed": "nm storage sync <material_id>",
+}
 
 
 def _audit_summary(stage: StageResult | None) -> Mapping:
@@ -83,6 +95,11 @@ def evaluate_release_gate(
         release_status = "success"
         status = RunStatus.SUCCESS
 
+    next_actions = _next_actions_for_reasons(
+        material_id,
+        (*reasons, *hold_reasons),
+    )
+
     context = current_context()
     diagnostics = (
         Diagnostic(
@@ -110,8 +127,27 @@ def evaluate_release_gate(
             "allow_degraded_sync": allow_degraded_sync,
             "override": override,
             "reasons": tuple(reasons or hold_reasons),
+            "next_actions": next_actions,
         },
     )
+
+
+def _next_actions_for_reasons(
+    material_id: str,
+    reasons: Iterable[str],
+) -> tuple[str, ...]:
+    actions: list[str] = []
+    seen: set[str] = set()
+    for reason in reasons:
+        template = NEXT_ACTIONS_BY_REASON.get(reason)
+        if not template:
+            continue
+        action = template.replace("<material_id>", material_id)
+        if action in seen:
+            continue
+        seen.add(action)
+        actions.append(action)
+    return tuple(actions)
 
 
 __all__ = ["evaluate_release_gate"]

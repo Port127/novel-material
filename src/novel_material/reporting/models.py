@@ -110,6 +110,7 @@ class ReleaseGateReport(BaseModel):
     allow_degraded_sync: bool = False
     override: bool = False
     reasons: tuple[str, ...] = ()
+    next_actions: tuple[str, ...] = ()
 
 
 class BaselineComparison(BaseModel):

@@ -115,3 +115,21 @@ def test_profile_missing_blocks_standard() -> None:
     assert result.status is RunStatus.FAILED
     assert result.outputs["decision"] == "block"
     assert "profile_missing" in result.outputs["reasons"]
+
+
+def test_release_gate_next_actions_are_stage_specific() -> None:
+    result = evaluate_release_gate(
+        "nm_demo",
+        (
+            stage("characters", RunStatus.DEGRADED),
+            stage("worldbuilding", RunStatus.DEGRADED),
+            stage("profile", RunStatus.FAILED),
+        ),
+        mode="standard",
+        allow_degraded_sync=False,
+    )
+
+    assert result.outputs["decision"] == "block"
+    assert "nm pipeline characters nm_demo" in result.outputs["next_actions"]
+    assert "nm pipeline worldbuilding nm_demo" in result.outputs["next_actions"]
+    assert "nm pipeline profile nm_demo" in result.outputs["next_actions"]

@@ -236,12 +236,16 @@ def _release_gate_report(events: list[RunEvent]) -> ReleaseGateReport:
         reasons = outputs.get("reasons", ())
         if not isinstance(reasons, (list, tuple)):
             reasons = ()
+        next_actions = outputs.get("next_actions", ())
+        if not isinstance(next_actions, (list, tuple)):
+            next_actions = ()
         return ReleaseGateReport(
             decision=str(outputs.get("decision") or "not_evaluated"),
             release_status=str(outputs.get("release_status") or "unknown"),
             allow_degraded_sync=bool(outputs.get("allow_degraded_sync")),
             override=bool(outputs.get("override")),
             reasons=tuple(str(reason) for reason in reasons if str(reason)),
+            next_actions=tuple(str(action) for action in next_actions if str(action)),
         )
     return ReleaseGateReport()
 
