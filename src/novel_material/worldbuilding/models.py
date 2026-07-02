@@ -59,6 +59,8 @@ class WorldbuildingEntity(BaseModel):
     key_appearances: tuple[dict[str, Any], ...] = ()
     evidence: tuple[WorldbuildingEvidence, ...] = ()
     confidence: float = 0.0
+    source_quality: str = "llm_verified"
+    dimension_id: str | None = None
 
 
 class WorldbuildingRelation(BaseModel):
@@ -92,6 +94,8 @@ class WorldbuildingIndex(BaseModel):
     llm_success: bool = False
     created_at: str | None = None
     legacy_counts: dict[str, Any] = Field(default_factory=dict)
+    dimension_status: dict[str, str] = Field(default_factory=dict)
+    source_quality_counts: dict[str, int] = Field(default_factory=dict)
 
 
 class WorldbuildingView(BaseModel):

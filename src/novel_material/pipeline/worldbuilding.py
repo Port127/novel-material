@@ -20,11 +20,14 @@ from novel_material.infra.yaml_io import load_yaml, save_yaml, load_yaml_list
 from novel_material.infra.llm import load_config, call_llm, start_llm_telemetry
 from novel_material.infra.common import is_special_chapter_type
 from novel_material.pipeline.loader import load_chapters_data, build_analysis_context
+from novel_material.pipeline.worldbuilding_fallback import build_stats_seeded_entities
+from novel_material.pipeline.worldbuilding_jobs import build_worldbuilding_jobs
 from novel_material.infra.progress import get_pipeline_logger, save_run_history
 from novel_material.infra.llm_contracts import LLMResponseContractError, require_mapping, require_mapping_list
 from novel_material.worldbuilding.dimensions import resolve_worldbuilding_dimensions
 from novel_material.worldbuilding.models import (
     LayeredWorldbuilding,
+    WorldbuildingEntity,
     WorldbuildingIndex,
     WorldbuildingOverview,
 )
@@ -248,43 +251,73 @@ def generate_worldbuilding(
 
     rate_limit = config["llm"].get("rate_limit_seconds", 1)
 
-    # ── 容错调用 ──
+    jobs = build_worldbuilding_jobs(
+        [item.model_dump(mode="json") for item in dimension_routing.dimensions],
+        context_text=context_text,
+        context_label=context_label,
+    )
+
     diagnostic = None
-    layered = None
-    try:
-        layered = normalize_layered_worldbuilding_response(
-            call_llm(
-                system_prompt,
-                user_prompt,
-                config,
-                timeout_override=config["llm"]["worldbuilding_timeout"],
-                context=f"{material_id} 世界观提取",
+    dimension_status: dict[str, str] = {}
+    successful_layers: list[LayeredWorldbuilding] = []
+    failed_dimensions: list[str] = []
+    for job_index, job in enumerate(jobs):
+        dimension_prompt = (
+            user_prompt
+            + "\n\n"
+            + f"当前只抽取维度：{job.dimension_id} / {job.dimension_name}。"
+            + "不要输出其他维度的实体。"
+        )
+        try:
+            layer = normalize_layered_worldbuilding_response(
+                call_llm(
+                    system_prompt,
+                    dimension_prompt,
+                    config,
+                    max_tokens_override=config["llm"].get("worldbuilding_max_tokens"),
+                    timeout_override=config["llm"]["worldbuilding_timeout"],
+                    context=f"{material_id} 世界观#{job.dimension_id}",
+                )
             )
-        )
-        layered = _apply_dimension_routing(layered, dimension_routing)
-        logger.info(
-            f"[{material_id}] 世界观提取完成: "
-            f"finish={telemetry.last.get('finish_reason', '')}"
-        )
-        time.sleep(rate_limit)
-    except Exception as e:
-        error_kind = (
-            "schema_invalid" if isinstance(e, LLMResponseContractError) else "调用失败"
-        )
-        logger.error(f"[{material_id}] 世界观提取 {error_kind}: {e}")
-        logger.warning(f"[{material_id}] 使用空结构继续，不中断流程")
+            successful_layers.append(_mark_layer_dimension(layer, job.dimension_id))
+            dimension_status[job.dimension_id] = "llm_verified"
+            logger.info(
+                f"[{material_id}] 世界观维度 {job.dimension_id} 提取完成: "
+                f"finish={telemetry.last.get('finish_reason', '')}"
+            )
+        except Exception as e:
+            error_kind = (
+                "schema_invalid"
+                if isinstance(e, LLMResponseContractError)
+                else "调用失败"
+            )
+            logger.error(
+                f"[{material_id}] 世界观维度 {job.dimension_id} {error_kind}: {e}"
+            )
+            dimension_status[job.dimension_id] = "missing"
+            failed_dimensions.append(job.dimension_id)
+        if job_index < len(jobs) - 1:
+            time.sleep(rate_limit)
+
+    layered = _merge_dimension_layers(
+        dimension_routing,
+        successful_layers,
+        dimension_status=dimension_status,
+    )
+    layered = _apply_stats_seeded_fallback(layered, dimension_status, wb_stats)
+
+    if failed_dimensions:
         diagnostic = Diagnostic(
             code=(
-                "worldbuilding_schema_invalid"
-                if isinstance(e, LLMResponseContractError)
-                else "worldbuilding_api_failed"
+                "worldbuilding_api_failed"
+                if len(failed_dimensions) == len(jobs)
+                else "worldbuilding_dimension_partial_failed"
             ),
-            message=f"世界观提取失败，已写入空结构: {type(e).__name__}",
+            message="世界观部分维度提取失败，已保留成功维度和统计兜底",
             severity="warning",
             retryable=True,
             next_action=f"nm pipeline worldbuilding {material_id}",
         )
-        layered = _empty_layered_worldbuilding(dimension_routing)
 
     write_layered_worldbuilding(novel_dir, layered)
 
@@ -384,6 +417,8 @@ def _worldbuilding_stage_result(
             "entity_count": entity_count,
             "relation_count": relation_count,
             "evidence_count": evidence_count,
+            "dimension_status": dict(layered.index.dimension_status),
+            "source_quality_counts": dict(layered.index.source_quality_counts),
         },
     )
 
@@ -398,10 +433,12 @@ def _load_navigation_dimensions(novel_dir: Path) -> list[str]:
 
 def _apply_dimension_routing(layered, dimension_routing):
     dimensions = layered.dimensions or dimension_routing.dimensions
+    source_quality_counts = _source_quality_counts(layered.entities)
     index = layered.index.model_copy(
         update={
             "dimension_count": len(dimensions),
             "created_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "source_quality_counts": source_quality_counts,
         }
     )
     return layered.model_copy(
@@ -413,8 +450,160 @@ def _apply_dimension_routing(layered, dimension_routing):
     )
 
 
+def _mark_layer_dimension(
+    layered: LayeredWorldbuilding,
+    dimension_id: str,
+) -> LayeredWorldbuilding:
+    return layered.model_copy(
+        update={
+            "entities": tuple(
+                entity.model_copy(
+                    update={
+                        "dimension_id": entity.dimension_id or dimension_id,
+                        "source_quality": entity.source_quality or "llm_verified",
+                    }
+                )
+                for entity in layered.entities
+            )
+        }
+    )
+
+
+def _merge_dimension_layers(
+    dimension_routing,
+    layers: list[LayeredWorldbuilding],
+    *,
+    dimension_status: dict[str, str],
+) -> LayeredWorldbuilding:
+    dimensions = dimension_routing.dimensions
+    entities = _dedupe_entities(
+        entity for layer in layers for entity in layer.entities
+    )
+    entity_ids = {entity.id for entity in entities}
+    relations = tuple(
+        relation
+        for layer in layers
+        for relation in layer.relations
+        if relation.source_id in entity_ids and relation.target_id in entity_ids
+    )
+    overview = _merge_overview(layers)
+    evidence_count = sum(len(entity.evidence) for entity in entities) + sum(
+        len(relation.evidence) for relation in relations
+    )
+    source_quality_counts = _source_quality_counts(entities)
+    index = WorldbuildingIndex(
+        layout="layered",
+        dimension_count=len(dimensions),
+        entity_count=len(entities),
+        relation_count=len(relations),
+        evidence_count=evidence_count,
+        legacy_compatible=True,
+        llm_success=bool(entities or overview.world_summary),
+        created_at=time.strftime("%Y-%m-%dT%H:%M:%S"),
+        dimension_status=dict(dimension_status),
+        source_quality_counts=source_quality_counts,
+    )
+    return LayeredWorldbuilding(
+        index=index,
+        overview=overview,
+        dimensions=dimensions,
+        entities=entities,
+        relations=relations,
+        dimension_source=dimension_routing.source,
+    )
+
+
+def _merge_overview(layers: list[LayeredWorldbuilding]) -> WorldbuildingOverview:
+    summaries = [
+        layer.overview.world_summary
+        for layer in layers
+        if layer.overview.world_summary
+    ]
+    mechanisms = [
+        mechanism
+        for layer in layers
+        for mechanism in layer.overview.driving_mechanisms
+    ]
+    limitations = [
+        limitation
+        for layer in layers
+        for limitation in layer.overview.limitations
+    ]
+    return WorldbuildingOverview(
+        world_summary="；".join(dict.fromkeys(summaries)),
+        driving_mechanisms=tuple(mechanisms),
+        limitations=tuple(dict.fromkeys(limitations)),
+        confidence=max((layer.overview.confidence for layer in layers), default=0.0),
+    )
+
+
+def _dedupe_entities(entities) -> tuple[WorldbuildingEntity, ...]:
+    by_key: dict[tuple[str, str], WorldbuildingEntity] = {}
+    for entity in entities:
+        key = (entity.type, entity.name)
+        by_key.setdefault(key, entity)
+    return tuple(by_key.values())
+
+
+def _apply_stats_seeded_fallback(
+    layered: LayeredWorldbuilding,
+    dimension_status: dict[str, str],
+    wb_stats: dict,
+) -> LayeredWorldbuilding:
+    current_keys = {(entity.type, entity.name) for entity in layered.entities}
+    seeded_payloads = [
+        payload
+        for payload in build_stats_seeded_entities(wb_stats)
+        if (payload["type"], payload["name"]) not in current_keys
+    ]
+    if not seeded_payloads:
+        return layered
+
+    seeded_entities = tuple(WorldbuildingEntity(**payload) for payload in seeded_payloads)
+    entities = _dedupe_entities((*layered.entities, *seeded_entities))
+    status = dict(dimension_status)
+    if any(entity.type == "organization" for entity in seeded_entities):
+        for dimension_id in ("organization_network", "organizations"):
+            if dimension_id in status:
+                status[dimension_id] = "stats_seeded"
+    if any(entity.type == "location" for entity in seeded_entities):
+        if "locations" in status:
+            status["locations"] = "stats_seeded"
+
+    evidence_count = sum(len(entity.evidence) for entity in entities) + sum(
+        len(relation.evidence) for relation in layered.relations
+    )
+    index = layered.index.model_copy(
+        update={
+            "entity_count": len(entities),
+            "evidence_count": evidence_count,
+            "llm_success": bool(
+                any(entity.source_quality != "stats_seeded" for entity in entities)
+            ),
+            "dimension_status": status,
+            "source_quality_counts": _source_quality_counts(entities),
+        }
+    )
+    return layered.model_copy(update={"index": index, "entities": entities})
+
+
+def _source_quality_counts(
+    entities: tuple[WorldbuildingEntity, ...],
+) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for entity in entities:
+        quality = entity.source_quality or "llm_verified"
+        counts[quality] = counts.get(quality, 0) + 1
+    return counts
+
+
 def _empty_layered_worldbuilding(dimension_routing) -> LayeredWorldbuilding:
     dimensions = dimension_routing.dimensions
+    dimension_status = {
+        dimension.id: "missing"
+        for dimension in dimensions
+        if dimension.applicability == "applicable"
+    }
     return LayeredWorldbuilding(
         index=WorldbuildingIndex(
             layout="layered",
@@ -425,6 +614,8 @@ def _empty_layered_worldbuilding(dimension_routing) -> LayeredWorldbuilding:
             legacy_compatible=True,
             llm_success=False,
             created_at=time.strftime("%Y-%m-%dT%H:%M:%S"),
+            dimension_status=dimension_status,
+            source_quality_counts={},
         ),
         overview=WorldbuildingOverview(
             world_summary="",

@@ -158,3 +158,72 @@ def test_build_stats_seeded_entities_creates_conservative_entities():
     assert by_name["黑星军团"]["type"] == "organization"
     assert by_name["海蓝星"]["type"] == "location"
     assert by_name["海蓝星"]["confidence"] == 0.45
+
+
+def test_worldbuilding_dimension_failure_keeps_successful_dimension(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    novel = tmp_path / "nm_demo"
+    novel.mkdir()
+    save_yaml(
+        novel / "meta.yaml",
+        {"material_id": "nm_demo", "name": "示例", "genre": ["科幻"]},
+    )
+    save_yaml(novel / "chapter_index.yaml", [{"chapter": 1, "title": "一"}])
+    save_yaml(
+        novel / "chapters.yaml",
+        [
+            {
+                "chapter": 1,
+                "summary": "黑星军团在海蓝星行动",
+                "characters_appear": ["黑星军团成员"],
+                "setting": ["海蓝星"],
+            }
+        ],
+    )
+
+    calls = []
+
+    def fake_call_llm(*_args, **kwargs):
+        calls.append(kwargs.get("context", ""))
+        if "locations" in kwargs.get("context", ""):
+            raise RuntimeError("timeout")
+        return {
+            "overview": {"world_summary": "组织推动剧情", "driving_mechanisms": []},
+            "dimensions": [],
+            "entities": [
+                {
+                    "type": "organization",
+                    "name": "黑星军团",
+                    "description": "核心组织",
+                    "importance": "primary",
+                    "evidence": [{"chapter": 1, "basis": "fact", "summary": "出现"}],
+                }
+            ],
+            "relations": [],
+        }
+
+    monkeypatch.setattr("novel_material.pipeline.worldbuilding.NOVELS_DIR", tmp_path)
+    monkeypatch.setattr("novel_material.pipeline.worldbuilding.call_llm", fake_call_llm)
+    monkeypatch.setattr(
+        "novel_material.pipeline.worldbuilding.load_config",
+        lambda _provider=None: {
+            "llm": {
+                "worldbuilding_timeout": 1,
+                "rate_limit_seconds": 0,
+                "worldbuilding_summary_tokens": 1000,
+            }
+        },
+    )
+    monkeypatch.setattr(
+        "novel_material.pipeline.worldbuilding.build_analysis_context",
+        lambda *_args, **_kwargs: ("黑星军团在海蓝星行动", "章级摘要池"),
+    )
+
+    result = generate_worldbuilding("nm_demo")
+
+    assert calls
+    assert result.status.value in {"success", "degraded"}
+    assert result.outputs["entity_count"] >= 1
+    assert result.outputs["dimension_status"]["locations"] in {"stats_seeded", "missing"}
