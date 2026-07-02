@@ -5,7 +5,14 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 
 class StoryStructure(BaseModel):
@@ -70,6 +77,7 @@ class WorkProfile(BaseModel):
     schema_version: str = "1.0.0"
     material_id: str = Field(min_length=1)
     title: str = ""
+    quality_level: str = "full"
     core_hooks: tuple[str, ...] = ()
     reader_expectations: tuple[str, ...] = ()
     story_structure: StoryStructure = Field(default_factory=StoryStructure)
@@ -82,6 +90,13 @@ class WorkProfile(BaseModel):
     evidence_index: EvidenceIndex
     limitations: tuple[str, ...] = ()
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+
+    @field_validator("quality_level")
+    @classmethod
+    def validate_quality_level(cls, value: str) -> str:
+        if value not in {"full", "limited"}:
+            raise ValueError("quality_level 必须是 full 或 limited")
+        return value
 
 
 def normalize_work_profile_response(

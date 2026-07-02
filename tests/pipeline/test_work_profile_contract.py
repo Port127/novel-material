@@ -74,6 +74,25 @@ def test_normalize_work_profile_rejects_empty_evidence() -> None:
         )
 
 
+def test_work_profile_allows_limited_quality_with_limitations():
+    profile = normalize_work_profile_response(
+        {
+            "quality_level": "limited",
+            "core_hooks": ["NPC 视角"],
+            "reader_expectations": ["升级爽点"],
+            "story_structure": {"pacing_pattern": "阶段推进"},
+            "evidence_index": {"chapters": [1]},
+            "limitations": ["世界观部分来自统计兜底"],
+            "confidence": 0.55,
+        },
+        material_id="nm_demo",
+        title="示例",
+    )
+
+    assert profile.quality_level == "limited"
+    assert profile.limitations == ("世界观部分来自统计兜底",)
+
+
 def test_work_profile_prompt_requires_lower_level_evidence() -> None:
     system_prompt, user_prompt = build_work_profile_prompt(
         {
