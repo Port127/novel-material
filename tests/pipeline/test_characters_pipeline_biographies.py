@@ -5,6 +5,7 @@ from pathlib import Path
 
 from novel_material.infra.yaml_io import load_yaml, save_yaml
 from novel_material.pipeline import characters_core
+from novel_material.pipeline.characters_layer import _extract_character_batch
 from novel_material.runtime.contracts import RunStatus, StageResult
 
 
@@ -246,3 +247,67 @@ def test_repair_characters_only_rebuilds_requested_profile(tmp_path, monkeypatch
     assert repaired_profiles[0]["biography_complete"] is True
     index = load_yaml(novels_dir / "nm_demo" / "characters" / "_index.yaml")
     assert index["repair_requested"] is True
+
+
+def test_core_extraction_preserves_valid_profile_when_same_batch_has_invalid(monkeypatch):
+    candidates = [("陈汉升", 10), ("沈幼楚", 9)]
+    calls = []
+
+    def fake_call_llm(*_args, **_kwargs):
+        calls.append(_kwargs.get("context", ""))
+        return {
+            "characters": [
+                {
+                    "name": "陈汉升",
+                    "role": "protagonist",
+                    "archetype": "重生者",
+                    "moral_spectrum": "灰色",
+                    "identity": "学生",
+                    "life_summary": "重生后重新选择。",
+                    "external_goal": "创业",
+                    "internal_need": "承担责任",
+                    "fear": "重蹈覆辙",
+                    "fatal_flaw": "自负",
+                    "contradiction": "功利与真心冲突",
+                    "arc_stages": [{"stage": "opening", "change": "破局", "evidence": {"chapters": [1]}}],
+                    "description": "核心人物",
+                    "arc_summary": "从逃避走向承担",
+                    "narrative_function": "推动主线",
+                    "psychology": {"motivation": "改变命运"},
+                    "first_appearance_chapter": 1,
+                    "key_events": [{"chapter": 1, "description": "重生"}],
+                    "relationships": [],
+                    "habits": [],
+                    "speech_style": "调侃",
+                    "interaction_patterns": [],
+                    "key_scenes": [{"chapter": 1, "event": "重生", "function": "开篇"}],
+                    "craft_notes": [{"technique": "反差", "boundary": "不照搬"}],
+                    "confidence": 0.8,
+                    "basis": "fact",
+                },
+                {"name": "沈幼楚", "role": "supporting", "description": "缺字段"},
+            ]
+        }
+
+    monkeypatch.setattr("novel_material.pipeline.characters_layer.call_llm", fake_call_llm)
+    monkeypatch.setattr(
+        "novel_material.pipeline.characters_layer.repair_core_biography_profile",
+        lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("repair failed")),
+    )
+
+    profiles = _extract_character_batch(
+        candidates,
+        "core",
+        "第1章：人物登场",
+        "摘要池",
+        {"theme": ["都市"]},
+        {"llm": {"characters_timeout": 1, "rate_limit_seconds": 0, "character_repair_max_attempts": 1}},
+        material_id="nm_demo",
+        batch_size=2,
+        chapters_data=[{"chapter": 1, "characters_appear": ["沈幼楚"], "key_event": "沈幼楚登场"}],
+    )
+
+    by_name = {profile["name"]: profile for profile in profiles}
+    assert by_name["陈汉升"]["profile_level"] == "full"
+    assert by_name["沈幼楚"]["profile_level"] in {"partial", "fallback"}
+    assert len(profiles) == 2

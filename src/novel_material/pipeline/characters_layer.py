@@ -7,7 +7,12 @@ import time
 
 from novel_material.infra.llm import call_llm
 from novel_material.infra.progress import get_pipeline_logger
-from novel_material.pipeline.characters_biography import normalize_biography_response
+from novel_material.pipeline.characters_biography import (
+    normalize_biography_candidates,
+    normalize_biography_response,
+)
+from novel_material.pipeline.characters_quality import mark_schema_issue
+from novel_material.pipeline.characters_repair import repair_core_biography_profile
 from novel_material.pipeline.characters_stats import CHARACTER_BATCH_SIZE
 from novel_material.pipeline.characters_profile import _build_basic_profile_from_stats
 from novel_material.infra.llm_contracts import LLMResponseContractError, require_mapping, require_mapping_list, require_string
@@ -63,7 +68,17 @@ def _extract_character_batch(
         return []
 
     if batch_size is None:
-        batch_size = CHARACTER_BATCH_SIZE
+        llm_config = config.get("llm", {})
+        if role_tier == "core":
+            batch_size = int(llm_config.get("core_character_batch_size", 2))
+        elif role_tier == "supporting":
+            batch_size = int(
+                llm_config.get("supporting_character_batch_size", CHARACTER_BATCH_SIZE)
+            )
+        else:
+            batch_size = int(
+                llm_config.get("minor_character_batch_size", CHARACTER_BATCH_SIZE)
+            )
 
     prefix = f"[{material_id}] " if material_id else ""
     role_mapping = {
@@ -196,7 +211,63 @@ def _extract_character_batch(
             # 验证返回的人物是否在候选名单中
             candidate_names = {name for name, _ in batch_candidates}
             if role_tier == "core":
-                characters = normalize_biography_response(result, candidate_names)
+                normalized_result = normalize_biography_candidates(result, candidate_names)
+                characters = list(normalized_result.valid_profiles)
+                candidate_counts = dict(batch_candidates)
+                repair_attempts = int(
+                    config["llm"].get("character_repair_max_attempts", 1)
+                )
+                if repair_attempts > 0:
+                    for invalid in normalized_result.invalid_profiles:
+                        if invalid.name not in candidate_names:
+                            continue
+                        try:
+                            characters.append(
+                                repair_core_biography_profile(
+                                    raw_profile=invalid.raw,
+                                    issues=invalid.issues,
+                                    candidate_names={invalid.name},
+                                    config=config,
+                                    material_id=material_id,
+                                    context_label=context_label,
+                                    context_text=context_text,
+                                )
+                            )
+                        except Exception as repair_error:
+                            logger.error(
+                                f"{prefix}核心人物 {invalid.name} repair 失败: {repair_error}"
+                            )
+                            count = candidate_counts.get(invalid.name, 0)
+                            fallback = _build_basic_profile_from_stats(
+                                invalid.name,
+                                count,
+                                valid_roles[0],
+                                chapters_data or [],
+                            )
+                            fallback = mark_schema_issue(
+                                fallback,
+                                issue="; ".join(invalid.issues),
+                                level="partial",
+                                source_quality="llm_partial",
+                                repair_attempts=repair_attempts,
+                            )
+                            characters.append(fallback)
+                for missing_name in normalized_result.missing_names:
+                    count = candidate_counts.get(missing_name, 0)
+                    fallback = _build_basic_profile_from_stats(
+                        missing_name,
+                        count,
+                        valid_roles[0],
+                        chapters_data or [],
+                    )
+                    fallback = mark_schema_issue(
+                        fallback,
+                        issue="LLM 未返回该核心人物",
+                        level="fallback",
+                        source_quality="stats_seeded",
+                        repair_attempts=0,
+                    )
+                    characters.append(fallback)
             else:
                 characters = normalize_characters_response(result, candidate_names)
             for ch in characters:
