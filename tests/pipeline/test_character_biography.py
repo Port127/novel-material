@@ -3,7 +3,10 @@
 import pytest
 
 from novel_material.infra.llm_contracts import LLMResponseContractError
-from novel_material.pipeline.characters_biography import normalize_biography_response
+from novel_material.pipeline.characters_biography import (
+    normalize_biography_candidates,
+    normalize_biography_response,
+)
 from novel_material.pipeline.characters_quality import (
     build_character_quality_counts,
     classify_profile_quality,
@@ -118,3 +121,27 @@ def test_mark_schema_issue_records_source_quality_and_attempt_count():
     assert result["source_quality"] == "llm_repaired"
     assert result["repair_attempts"] == 1
     assert result["schema_issues"] == ["psychology 缺失"]
+
+
+def test_lenient_biography_normalization_preserves_valid_and_invalid_candidates():
+    valid = _full_profile()
+    invalid = {"name": "沈幼楚", "role": "supporting", "description": "重要角色"}
+
+    result = normalize_biography_candidates(
+        {"characters": [valid, invalid]},
+        candidate_names={"陈汉升", "沈幼楚"},
+    )
+
+    assert [profile["name"] for profile in result.valid_profiles] == ["陈汉升"]
+    assert result.invalid_profiles[0].name == "沈幼楚"
+    assert result.invalid_profiles[0].raw["description"] == "重要角色"
+    assert result.invalid_profiles[0].issues
+
+
+def test_lenient_biography_normalization_marks_missing_candidate():
+    result = normalize_biography_candidates(
+        {"characters": [_full_profile()]},
+        candidate_names={"陈汉升", "沈幼楚"},
+    )
+
+    assert result.missing_names == ("沈幼楚",)

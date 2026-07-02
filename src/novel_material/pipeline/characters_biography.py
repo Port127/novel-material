@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 from novel_material.infra.llm_contracts import (
@@ -28,6 +29,20 @@ _REQUIRED_STRING_FIELDS = (
     "arc_summary",
     "narrative_function",
 )
+
+
+@dataclass(frozen=True)
+class InvalidBiographyProfile:
+    name: str
+    raw: dict[str, Any]
+    issues: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class BiographyNormalizationResult:
+    valid_profiles: list[dict[str, Any]]
+    invalid_profiles: list[InvalidBiographyProfile]
+    missing_names: tuple[str, ...]
 
 
 def normalize_biography_response(
@@ -119,6 +134,50 @@ def normalize_biography_response(
     return normalized
 
 
+def normalize_biography_candidates(
+    payload: object,
+    candidate_names: set[str],
+) -> BiographyNormalizationResult:
+    """宽松规范化完整小传响应，保留同批有效人物和失败人物。"""
+    raw = (
+        payload
+        if isinstance(payload, list)
+        else require_mapping(payload, "characters").get("characters")
+    )
+    characters = require_mapping_list(raw, "characters")
+    valid_profiles: list[dict[str, Any]] = []
+    invalid_profiles: list[InvalidBiographyProfile] = []
+    seen_names: set[str] = set()
+
+    for index, character in enumerate(characters):
+        raw_profile = dict(character)
+        name = str(raw_profile.get("name") or "").strip()
+        if name:
+            seen_names.add(name)
+        try:
+            normalized = normalize_biography_response(
+                {"characters": [raw_profile]},
+                candidate_names,
+            )
+        except Exception as exc:
+            invalid_profiles.append(
+                InvalidBiographyProfile(
+                    name=name or f"characters[{index}]",
+                    raw=raw_profile,
+                    issues=(str(exc),),
+                )
+            )
+            continue
+        valid_profiles.extend(normalized)
+
+    missing_names = tuple(sorted(candidate_names - seen_names))
+    return BiographyNormalizationResult(
+        valid_profiles=valid_profiles,
+        invalid_profiles=invalid_profiles,
+        missing_names=missing_names,
+    )
+
+
 def _normalize_arc_stages(value: object, path: str) -> list[dict[str, Any]]:
     stages = require_mapping_list(value, path)
     for index, stage in enumerate(stages):
@@ -199,4 +258,9 @@ def _require_basis(value: object, path: str) -> str:
     return basis
 
 
-__all__ = ["normalize_biography_response"]
+__all__ = [
+    "BiographyNormalizationResult",
+    "InvalidBiographyProfile",
+    "normalize_biography_candidates",
+    "normalize_biography_response",
+]
