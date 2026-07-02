@@ -144,6 +144,40 @@ def test_full_profile_with_incomplete_biography_is_error(tmp_path: Path) -> None
     assert fallback.evidence["biography_complete"] is False
 
 
+def test_character_audit_treats_partial_less_severely_than_fallback(
+    tmp_path: Path,
+) -> None:
+    novel = tmp_path / "nm_demo"
+    write_core_files(novel)
+    write_yaml(
+        novel / "characters/profiles/甲_000.yaml",
+        {
+            "name": "甲",
+            "role": "protagonist",
+            "profile_level": "partial",
+            "biography_complete": False,
+            "schema_issues": ["psychology 缺失"],
+            "description": "核心人物",
+        },
+    )
+    write_yaml(
+        novel / "characters/profiles/乙_001.yaml",
+        {
+            "name": "乙",
+            "role": "protagonist",
+            "profile_level": "fallback",
+            "biography_complete": False,
+            "description": "统计兜底",
+        },
+    )
+
+    issues = list(run_deterministic_rules(AuditContext("nm_demo", novel)))
+    by_artifact = {issue.artifact: issue for issue in issues}
+
+    assert by_artifact["characters/profiles/甲_000.yaml"].severity is AuditSeverity.WARNING
+    assert by_artifact["characters/profiles/乙_001.yaml"].severity is AuditSeverity.ERROR
+
+
 def test_character_biography_targets_must_be_completed(tmp_path: Path) -> None:
     novel = tmp_path / "nm_demo"
     write_core_files(novel)

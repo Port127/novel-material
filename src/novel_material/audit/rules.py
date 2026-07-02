@@ -135,6 +135,41 @@ def check_character_profiles(context: AuditContext) -> Iterable[ArtifactIssue]:
                 )
             continue
 
+        if profile_level in {"fallback", "partial", "enriched"}:
+            schema_issues = profile.get("schema_issues")
+            if not isinstance(schema_issues, list):
+                schema_issues = []
+            if profile_level == "fallback":
+                severity = (
+                    AuditSeverity.ERROR
+                    if role in {"protagonist", "antagonist"}
+                    else AuditSeverity.WARNING
+                )
+                code = "character_profile_fallback"
+                message = "人物档案仍是统计兜底或缺少完整小传字段"
+            elif profile_level == "partial":
+                severity = AuditSeverity.WARNING
+                code = "character_profile_partial"
+                message = "人物档案为 partial，需按 schema_issues 定向修复"
+            elif schema_issues:
+                severity = AuditSeverity.INFO
+                code = "character_profile_partial"
+                message = "人物档案为 enriched，但仍有低风险 schema_issues"
+            else:
+                continue
+            yield _issue(
+                code,
+                severity,
+                profile_path.relative_to(context.novel_dir).as_posix(),
+                message,
+                evidence={
+                    "profile_level": profile_level,
+                    "schema_issues": schema_issues,
+                },
+                next_actions=(f"nm pipeline characters {context.material_id}",),
+            )
+            continue
+
         requires_full_profile = role in {"protagonist", "antagonist"} or (
             profile_level == "full"
         )
